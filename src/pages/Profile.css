@@ -1,0 +1,65 @@
+.profile-page {
+  padding: 0;
+}
+
+/* Page title */
+.page-title {
+  margin-bottom: 30px;
+}
+
+/* Form container */
+.profile-form {
+  max-width: 420px;
+  margin: 0 auto; /* ✅ centers the form */
+}
+
+
+/* Form group */
+.form-group {
+  margin-bottom: 18px;
+}
+
+/* Labels */
+.form-group label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #111;
+}
+
+/* Inputs */
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid #999;
+  font-size: 14px;
+  background-color: #f3f3f3;
+  color: #333;
+}
+
+/* Password label row */
+.password-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+/* Reset password link */
+.reset-link {
+  font-size: 13px;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.reset-link:hover {
+  text-decoration: underline;
+}
+
+/* Note */
+.password-note {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #111;
+}

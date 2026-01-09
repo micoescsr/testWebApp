@@ -1,0 +1,183 @@
+.device-page {
+  padding: 0;
+}
+
+.page-title {
+  margin-bottom: 20px;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 8px 20px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  background-color: #f5f5f5;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tab.active {
+  background-color: #000;
+  color: #fff;
+  border: none;
+}
+
+/* Layout */
+.device-content {
+  display: flex;
+  gap: 20px;
+}
+
+.left-panel {
+  flex: 3;
+}
+
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+/* Editor section */
+.editor-section {
+  width: 100%;
+}
+
+/* Title + pencil row */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Pencil */
+.edit-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #555;
+}
+
+.edit-icon:hover {
+  color: #000;
+}
+
+/* Textarea */
+.announcement-box {
+  width: 100%;
+  height: 260px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  padding: 12px;
+  resize: none;
+  font-size: 14px;
+  outline: none;
+}
+
+/* Published on */
+.published-on {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #555;
+}
+
+.date-boxes {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.date-boxes span {
+  background-color: #e5e7eb;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Side panel */
+.side-card {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 12px;
+  background-color: #fff;
+}
+
+.side-card h3 {
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+
+/* Toggle wrapper */
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 18px;
+  display: inline-block;
+}
+
+/* Hide checkbox */
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* Slider background */
+.slider {
+  position: absolute;
+  inset: 0;                 /* 🔑 ensures full size */
+  background-color: #9ca3af;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+/* Knob */
+.slider::before {
+  content: "";
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  top: 2px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+/* Checked state */
+.toggle-switch input:checked + .slider {
+  background-color: #4f46e5;
+}
+
+.toggle-switch input:checked + .slider::before {
+  transform: translateX(18px);
+}
+
+/* Info rows */
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
