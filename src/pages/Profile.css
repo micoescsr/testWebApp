@@ -2,24 +2,19 @@
   padding: 0;
 }
 
-/* Page title */
 .page-title {
   margin-bottom: 30px;
 }
 
-/* Form container */
 .profile-form {
   max-width: 420px;
-  margin: 0 auto; /* ✅ centers the form */
+  margin: 0 auto; 
 }
 
-
-/* Form group */
 .form-group {
   margin-bottom: 18px;
 }
 
-/* Labels */
 .form-group label {
   display: block;
   font-size: 13px;
@@ -27,7 +22,6 @@
   color: #111;
 }
 
-/* Inputs */
 .form-group input {
   width: 100%;
   padding: 10px 12px;
@@ -38,7 +32,6 @@
   color: #333;
 }
 
-/* Password label row */
 .password-label-row {
   display: flex;
   justify-content: space-between;
@@ -46,7 +39,6 @@
   margin-bottom: 6px;
 }
 
-/* Reset password link */
 .reset-link {
   font-size: 13px;
   color: #2563eb;
@@ -57,7 +49,6 @@
   text-decoration: underline;
 }
 
-/* Note */
 .password-note {
   margin-top: 16px;
   font-size: 13px;

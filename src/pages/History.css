@@ -1,19 +1,15 @@
-/* Page wrapper */
 .history-page {
   padding: 0;
 }
 
-/* Title */
 .page-title {
   margin-bottom: 20px;
 }
 
-/* Tabs spacing */
 .history-tabs {
   margin-bottom: 20px;
 }
 
-/* Card container */
 .history-card {
   border: 1px solid #d1d5db;
   border-radius: 8px;
@@ -21,7 +17,6 @@
   overflow: hidden;
 }
 
-/* Card header */
 .history-card-header {
   display: flex;
   justify-content: space-between;
@@ -35,7 +30,6 @@
   font-weight: 600;
 }
 
-/* Filter button */
 .filter-btn {
   padding: 6px 12px;
   border-radius: 6px;
@@ -44,10 +38,6 @@
   cursor: pointer;
   font-size: 13px;
 }
-
-/* ===================== */
-/* MAIN TABLE */
-/* ===================== */
 
 .history-table {
   width: 100%;
@@ -74,7 +64,6 @@
   background-color: #fff;
 }
 
-/* Column widths (main row) */
 .history-table th:nth-child(1),
 .history-table td:nth-child(1) {
   width: 30%;
@@ -96,7 +85,6 @@
   text-align: right;
 }
 
-/* Expand / Collapse */
 .expand-btn {
   color: #2563eb;
   cursor: pointer;
@@ -105,16 +93,11 @@
   border: none;
 }
 
-/* ===================== */
-/* EXPANDED ROW */
-/* ===================== */
-
 .expanded-row td {
   padding: 0;
   background-color: #fafafa;
 }
 
-/* Inner table */
 .inner-table {
   width: 100%;
   border-collapse: collapse;
@@ -139,7 +122,6 @@
   border-top: 1px solid #e5e7eb;
 }
 
-/* Inner table column balance */
 .inner-table th:nth-child(1),
 .inner-table td:nth-child(1) {
   width: 20%;
@@ -171,10 +153,6 @@
   text-align: right;
 }
 
-/* ===================== */
-/* SEVERITY BADGES */
-/* ===================== */
-
 .severity {
   display: inline-block;
   padding: 4px 10px;
@@ -200,14 +178,12 @@
   background-color: #16a34a;
 }
 
-/* View link */
 .view-link {
   color: #2563eb;
   font-weight: 500;
   cursor: pointer;
 }
 
-/* Empty spacing safety */
 .history-table tr:last-child td {
   border-bottom: none;
 }

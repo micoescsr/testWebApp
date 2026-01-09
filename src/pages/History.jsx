@@ -10,10 +10,7 @@ const History = () => {
     { label: "Vulnerabilities", value: "vulnerabilities" },
     { label: "Threats", value: "threats" },
   ];
-
-  /* =======================
-     VULNERABILITIES DATA
-  ======================= */
+  
   const vulnerabilityHistory = [
     {
       id: 1,
@@ -30,9 +27,6 @@ const History = () => {
     },
   ];
 
-  /* =======================
-     THREATS DATA
-  ======================= */
   const threatHistory = [
     {
       id: 1,
@@ -68,9 +62,6 @@ const History = () => {
 
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* =======================
-          VULNERABILITIES TAB
-      ======================= */}
       {activeTab === "vulnerabilities" && (
         <div className="history-card">
           <div className="history-card-header">
@@ -135,9 +126,6 @@ const History = () => {
         </div>
       )}
 
-      {/* =======================
-            THREATS TAB
-      ======================= */}
       {activeTab === "threats" && (
         <div className="history-card">
           <div className="history-card-header">

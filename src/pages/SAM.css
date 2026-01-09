@@ -1,0 +1,270 @@
+.sam-page {
+  padding: 0;
+}
+
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.sam-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.scan-info {
+  text-align: right;
+  font-size: 12px;
+  color: #666;
+}
+
+.scan-label {
+  display: block;
+  font-weight: 500;
+}
+
+.scan-time {
+  font-weight: 600;
+}
+
+.sam-card {
+  margin-top: 16px;
+  background: #fafafa;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sam-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px;
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.sam-card-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.sort-dropdown {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sam-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #f9f9f9;
+}
+
+.sam-table th {
+  background: #f3f3f3;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+  text-align: left;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.sam-table td {
+  padding: 14px 18px;
+  font-size: 14px;
+  border-bottom: 1px solid #e6e6e6;
+  background: #fff;
+  vertical-align: middle;
+}
+
+.sam-table tbody tr {
+  height: 56px;
+}
+
+.sam-table tbody tr:hover {
+  background: #f5f5f5;
+}
+
+.severity {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.severity.critical {
+  background-color: #c1121f;
+}
+
+.severity.high {
+  background-color: #f97316;
+}
+
+.view-action {
+  font-weight: 600;
+  color: #000;
+  cursor: pointer;
+}
+
+.view-action:hover {
+  text-decoration: underline;
+}
+
+.empty-state {
+  padding: 80px 20px;
+  text-align: center;
+  font-size: 14px;
+  color: #777;
+  background: #f9f9f9;
+}
+
+.sam-actions {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 18px;
+  background: #fff;
+  border-top: 1px solid #e5e5e5;
+}
+
+.export-btn,
+.clear-btn {
+  padding: 10px 18px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-btn {
+  background: #000;
+  color: #fff;
+  border: none;
+}
+
+.clear-btn {
+  background: #000;
+  color: #fff;
+  border: none;
+}
+
+@media (max-width: 768px) {
+  .sam-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .sam-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.detail-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.detail-card {
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 0;
+  overflow: hidden;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #f9f9f9;
+}
+
+.detail-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.detail-section {
+  padding: 18px 20px;
+}
+
+.detail-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.detail-section p {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.recommendation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.framework-tag {
+  font-size: 12px;
+  padding: 4px 14px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #fce8e6;
+  font-weight: 600;
+}
+
+.recommendation-list {
+  border-top: 1px solid #e5e5e5;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.recommendation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 6px;
+  border-bottom: 1px solid #e5e5e5;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.recommendation-item:hover {
+  background: #f5f5f5;
+}
+
+.rec-text {
+  color: #333;
+}
+
+.arrow {
+  font-size: 18px;
+  color: #666;
+}

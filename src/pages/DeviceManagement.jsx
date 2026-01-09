@@ -13,7 +13,6 @@ const DeviceManagement = () => {
     <div className="device-page">
       <h1 className="page-title">Device</h1>
 
-      {/* Tabs */}
       <div className="tabs">
         <button
           className={`tab ${activeTab === "announcement" ? "active" : ""}`}
@@ -30,7 +29,6 @@ const DeviceManagement = () => {
       </div>
 
       <div className="device-content">
-        {/* LEFT MAIN CONTENT */}
         <div className="left-panel">
           <div className="editor-section">
             <div className="section-header">
@@ -55,7 +53,6 @@ const DeviceManagement = () => {
           </div>
         </div>
 
-        {/* RIGHT SIDE PANEL */}
         <div className="right-panel">
           <div className="side-card">
             <h3>Device Access Point</h3>

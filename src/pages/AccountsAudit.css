@@ -2,7 +2,6 @@
   padding: 0;
 }
 
-/* Top bar */
 .top-bar {
   display: flex;
   justify-content: space-between;
@@ -10,7 +9,6 @@
   margin-bottom: 20px;
 }
 
-/* Search */
 .search-input {
   padding: 8px 12px;
   border-radius: 20px;
@@ -18,7 +16,6 @@
   width: 220px;
 }
 
-/* Table */
 .table-container {
   border: 1px solid #ccc;
   border-radius: 8px;
@@ -50,13 +47,11 @@
   background-color: #fff;
 }
 
-/* Actions */
 .edit-action {
   color: #2563eb;
   cursor: pointer;
 }
 
-/* Add user button */
 .add-user-btn {
   margin-top: 15px;
   padding: 10px 18px;
@@ -70,7 +65,6 @@
   gap: 8px;
 }
 
-/* Status styles (Audit Logs) */
 .status.success {
   color: #16a34a;
   font-weight: 600;

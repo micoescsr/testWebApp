@@ -78,7 +78,6 @@ const AccountsAudit = () => {
     <div className="accounts-audit">
       <h1 className="page-title">Accounts and Audit</h1>
 
-      {/* Tabs + Search */}
       <div className="top-bar">
         <Tabs
           tabs={tabs}
@@ -93,7 +92,6 @@ const AccountsAudit = () => {
         />
       </div>
 
-      {/* ACCOUNTS TAB */}
       {activeTab === "accounts" && (
         <>
           <div className="table-container">
@@ -125,7 +123,6 @@ const AccountsAudit = () => {
         </>
       )}
 
-      {/* AUDIT LOGS TAB */}
       {activeTab === "logs" && (
         <div className="table-container">
           <table className="accounts-table">
