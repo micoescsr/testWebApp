@@ -92,6 +92,7 @@ if (selectedThreat) {
             <h3>Detected Threats</h3>
             <select className="sort-dropdown">
               <option>High - Low</option>
+              <option>Low - High</option>
             </select>
           </div>
 
