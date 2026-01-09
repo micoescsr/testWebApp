@@ -251,3 +251,339 @@
 .legend-value {
   font-weight: 500;
 }
+
+/* Add to existing Dashboard.css */
+
+/* Per-network stat cards with 6 columns */
+.dash-stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-highlight {
+  position: relative;
+  border: 2px solid #ef4444;
+}
+
+.stat-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #ef4444;
+}
+
+.stat-sublabel {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+/* Panel actions for toggle button */
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.toggle-btn:hover {
+  background-color: #f3f4f6;
+}
+
+/* Legend for score */
+.legend-for-score {
+  padding: 20px;
+}
+
+.legend-for-score h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.legend-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.legend-table th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 2px solid #e5e7eb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.legend-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.indicator-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.indicator-dot.green {
+  background-color: #22c55e;
+}
+
+.indicator-dot.yellow {
+  background-color: #fbbf24;
+}
+
+.indicator-dot.orange {
+  background-color: #f97316;
+}
+
+.indicator-dot.red {
+  background-color: #ef4444;
+}
+
+.indicator-dot.dark-red {
+  background-color: #991b1b;
+}
+
+/* Detailed vulnerability list */
+.vuln-list-detailed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vuln-item-detailed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #f9fafb;
+}
+
+.vuln-severity-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  background-color: #6b7280;
+  min-width: 60px;
+  text-align: center;
+}
+
+.vuln-details {
+  flex: 1;
+}
+
+.vuln-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+  margin: 0;
+}
+
+.vuln-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.vuln-indicator.critical {
+  background-color: #7f1d1d;
+}
+
+.vuln-indicator.high {
+  background-color: #ef4444;
+}
+
+.vuln-indicator.medium {
+  background-color: #f97316;
+}
+
+.vuln-indicator.low {
+  background-color: #fbbf24;
+}
+
+/* Existing styles remain the same... */
+
+/* 6-column stat cards for per-network view */
+.dash-stats-row-6 {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-highlight {
+  position: relative;
+  border: 2px solid #ef4444;
+}
+
+.stat-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #ef4444;
+}
+
+.stat-sublabel {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+/* Panel actions for toggle button */
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.toggle-btn:hover {
+  background-color: #f3f4f6;
+}
+
+/* Legend for score */
+.legend-for-score {
+  padding: 20px;
+}
+
+.legend-for-score h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.legend-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.legend-table th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 2px solid #e5e7eb;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.legend-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.indicator-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.indicator-dot.green {
+  background-color: #22c55e;
+}
+
+.indicator-dot.yellow {
+  background-color: #fbbf24;
+}
+
+.indicator-dot.orange {
+  background-color: #f97316;
+}
+
+.indicator-dot.red {
+  background-color: #ef4444;
+}
+
+.indicator-dot.dark-red {
+  background-color: #991b1b;
+}
+
+/* Detailed vulnerability list */
+.vuln-list-detailed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vuln-item-detailed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #f9fafb;
+}
+
+.vuln-severity-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  background-color: #6b7280;
+  min-width: 60px;
+  text-align: center;
+}
+
+.vuln-details {
+  flex: 1;
+}
+
+.vuln-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+  margin: 0;
+}
+
+.vuln-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.vuln-indicator.critical {
+  background-color: #7f1d1d;
+}
+
+.vuln-indicator.high {
+  background-color: #ef4444;
+}
+
+.vuln-indicator.medium {
+  background-color: #f97316;
+}
+
+.vuln-indicator.low {
+  background-color: #fbbf24;
+}
