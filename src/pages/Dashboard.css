@@ -587,3 +587,11 @@
 .vuln-indicator.low {
   background-color: #fbbf24;
 }
+
+.dash-header-summary {
+  display: grid;
+  grid-template-columns: auto auto 260px;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 20px;
+}

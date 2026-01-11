@@ -75,22 +75,28 @@ const Dashboard = () => {
   return (
     <div className="dashboard">
       {/* Top title bar */}
-      <div className="dash-header">
+      <div className={isSummary ? "dash-header-summary" : "dash-header"}>
         <h1>Dashboard</h1>
         <div className="dash-filters">
           <div className="filter-group">
             <label>NETWORK</label>
-            <select value={viewMode} onChange={(e) => setViewMode(e.target.value)}>
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+            >
               <option>Summary</option>
               <option>Nacho_WiFi</option>
             </select>
           </div>
-          <div className="filter-group">
-            <label>DATE</label>
-            <select>
-              <option>Nov 14, 2025</option>
-            </select>
-          </div>
+          {/* Only show DATE filter in per-network view */}
+          {!isSummary && (
+            <div className="filter-group">
+              <label>DATE</label>
+              <select>
+                <option>Nov 14, 2025</option>
+              </select>
+            </div>
+          )}
         </div>
         <div className="device-status">
           <p className="status-label">Device Status:</p>
@@ -137,7 +143,10 @@ const Dashboard = () => {
               <div className="panel-header">
                 <h2>Wi-Fi Security Risk Score</h2>
                 <div className="panel-actions">
-                  <button className="toggle-btn" onClick={() => setShowLegend(!showLegend)}>
+                  <button
+                    className="toggle-btn"
+                    onClick={() => setShowLegend(!showLegend)}
+                  >
                     {showLegend ? "←" : "→"}
                   </button>
                 </div>
@@ -152,8 +161,17 @@ const Dashboard = () => {
                       startAngle={90}
                       endAngle={-270}
                     >
-                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                      <RadialBar background dataKey="value" cornerRadius={50} fill="#ef4444" />
+                      <PolarAngleAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={false}
+                      />
+                      <RadialBar
+                        background
+                        dataKey="value"
+                        cornerRadius={50}
+                        fill="#ef4444"
+                      />
                       <text
                         x="50%"
                         y="50%"
@@ -315,7 +333,10 @@ const Dashboard = () => {
                         paddingAngle={3}
                       >
                         {threatsData.map((entry, index) => (
-                          <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                          <Cell
+                            key={entry.name}
+                            fill={COLORS[index % COLORS.length]}
+                          />
                         ))}
                       </Pie>
                     </PieChart>
@@ -326,10 +347,14 @@ const Dashboard = () => {
                     <div key={t.name} className="threat-row-item">
                       <span
                         className="legend-dot"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                        style={{
+                          backgroundColor: COLORS[index % COLORS.length],
+                        }}
                       />
                       <span className="legend-label">{t.name}</span>
-                      <span className="legend-value">{t.value.toFixed(2)}%</span>
+                      <span className="legend-value">
+                        {t.value.toFixed(2)}%
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -377,7 +402,10 @@ const Dashboard = () => {
               <div className="panel-header">
                 <h2>Wi-Fi Security Risk Score</h2>
                 <div className="panel-actions">
-                  <button className="toggle-btn" onClick={() => setShowLegend(!showLegend)}>
+                  <button
+                    className="toggle-btn"
+                    onClick={() => setShowLegend(!showLegend)}
+                  >
                     {showLegend ? "←" : "→"}
                   </button>
                 </div>
@@ -392,8 +420,17 @@ const Dashboard = () => {
                       startAngle={90}
                       endAngle={-270}
                     >
-                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                      <RadialBar background dataKey="value" cornerRadius={50} fill="#f97316" />
+                      <PolarAngleAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={false}
+                      />
+                      <RadialBar
+                        background
+                        dataKey="value"
+                        cornerRadius={50}
+                        fill="#f97316"
+                      />
                       <text
                         x="50%"
                         y="50%"
@@ -499,7 +536,10 @@ const Dashboard = () => {
                         paddingAngle={3}
                       >
                         {threatsDataPerNetwork.map((entry, index) => (
-                          <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                          <Cell
+                            key={entry.name}
+                            fill={COLORS[index % COLORS.length]}
+                          />
                         ))}
                       </Pie>
                     </PieChart>
@@ -510,11 +550,14 @@ const Dashboard = () => {
                     <div key={t.name} className="threat-row-item">
                       <span
                         className="legend-dot"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                        style={{
+                          backgroundColor: COLORS[index % COLORS.length],
+                        }}
                       />
                       <span className="legend-label">{t.name}</span>
                       <span className="legend-value">
-                        {t.value.toFixed(2)}% ({t.name === "Evil Twins" ? 3 : 2})
+                        {t.value.toFixed(2)}% ({t.name === "Evil Twins" ? 3 : 2}
+                        )
                       </span>
                     </div>
                   ))}
@@ -541,7 +584,9 @@ const Dashboard = () => {
                       <div className="vuln-details">
                         <p className="vuln-name">{v.name}</p>
                       </div>
-                      <div className={`vuln-indicator ${v.severity.toLowerCase()}`}></div>
+                      <div
+                        className={`vuln-indicator ${v.severity.toLowerCase()}`}
+                      ></div>
                     </div>
                   ))}
                 </div>
@@ -564,7 +609,10 @@ const Dashboard = () => {
                     <Tooltip />
                     <Bar dataKey="count" radius={[0, 8, 8, 0]}>
                       {detectedThreatsData.map((entry, index) => (
-                        <Cell key={entry.name} fill={index === 0 ? "#ef4444" : "#f97316"} />
+                        <Cell
+                          key={entry.name}
+                          fill={index === 0 ? "#ef4444" : "#f97316"}
+                        />
                       ))}
                     </Bar>
                   </BarChart>

@@ -1,3 +1,17 @@
+/* Add to existing History.css */
+
+.view-action {
+  color: #2563eb;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: right;
+}
+
+.view-action:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 .history-page {
   padding: 0;
 }
