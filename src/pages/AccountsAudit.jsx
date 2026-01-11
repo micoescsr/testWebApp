@@ -1,9 +1,16 @@
 import { useState } from "react";
 import Tabs from "../components/Tabs";
+import Modal from "../components/AccAuditModal";
 import "./AccountsAudit.css";
 
 const AccountsAudit = () => {
   const [activeTab, setActiveTab] = useState("accounts");
+
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  const [modalMode, setModalMode] = useState("add"); // add | edit | delete
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const tabs = [
     { label: "Accounts", value: "accounts" },
@@ -15,18 +22,12 @@ const AccountsAudit = () => {
       name: "Juan Cruz",
       username: "JCruz",
       email: "jcruz@gmail.com",
-      role: "Super Administrator",
+      role: "Administrator",
     },
     {
       name: "Cardo Dalisay",
       username: "CDalisay",
       email: "cdalisay@gmail.com",
-      role: "Administrator",
-    },
-    {
-      name: "Jay Rizal",
-      username: "JRizal",
-      email: "jrizal@gmail.com",
       role: "Administrator",
     },
   ];
@@ -42,54 +43,46 @@ const AccountsAudit = () => {
     },
     {
       user: "CDalisay",
-      event: "LOGIN",
+      event: "EDIT USER",
       date: "11/14/2025",
-      time: "10:11 AM",
-      module: "LOGIN",
-      status: "SUCCESS",
-    },
-    {
-      user: "CDalisay",
-      event: "EDIT NETWORK DETAILS",
-      date: "11/14/2025",
-      time: "10:13 AM",
-      module: "SAM",
-      status: "SUCCESS",
-    },
-    {
-      user: "CDalisay",
-      event: "INITIATED NETWORK VULNERABILITY SCAN",
-      date: "11/14/2025",
-      time: "10:16 AM",
-      module: "SAM",
-      status: "FAILED",
-    },
-    {
-      user: "JRizal",
-      event: "INITIATED NETWORK VULNERABILITY SCAN",
-      date: "11/14/2025",
-      time: "10:18 AM",
-      module: "SAM",
+      time: "10:15 AM",
+      module: "ACCOUNTS",
       status: "SUCCESS",
     },
   ];
+
+  const openAddUser = () => {
+    setModalMode("add");
+    setSelectedUser(null);
+    setShowUserModal(true);
+  };
+
+  const openEditUser = (user) => {
+    setModalMode("edit");
+    setSelectedUser(user);
+    setShowUserModal(true);
+  };
+
+  const openConfirmModal = (mode) => {
+    setModalMode(mode);
+    setShowUserModal(false);
+    setShowConfirmModal(true); 
+  };
+
+  const confirmAction = () => {
+    console.log("Confirmed:", modalMode, selectedUser);
+
+    setShowConfirmModal(false);
+    setShowUserModal(false);
+  };
 
   return (
     <div className="accounts-audit">
       <h1 className="page-title">Accounts and Audit</h1>
 
       <div className="top-bar">
-        <Tabs
-          tabs={tabs}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-        />
-
-        <input
-          type="text"
-          placeholder="Search"
-          className="search-input"
-        />
+        <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+        <input type="text" placeholder="Search" className="search-input" />
       </div>
 
       {activeTab === "accounts" && (
@@ -112,14 +105,21 @@ const AccountsAudit = () => {
                     <td>{user.username}</td>
                     <td>{user.email}</td>
                     <td>{user.role}</td>
-                    <td className="edit-action">Edit Details</td>
+                    <td
+                      className="edit-action"
+                      onClick={() => openEditUser(user)}
+                    >
+                      Edit Details
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <button className="add-user-btn"> Add a new User</button>
+          <button className="add-user-btn" onClick={openAddUser}>
+            Add a New User
+          </button>
         </>
       )}
 
@@ -153,6 +153,95 @@ const AccountsAudit = () => {
           </table>
         </div>
       )}
+
+      <Modal
+        isOpen={showUserModal}
+        title={modalMode === "add" ? "Add User" : "Edit User"}
+        onClose={() => setShowUserModal(false)}
+        footer={
+          <>
+            {modalMode === "edit" && (
+              <button
+                className="tertiary-btn"
+                onClick={() => openConfirmModal("delete")}
+              >
+                Delete Account
+              </button>
+            )}
+            <button
+              className="cancel-btn"
+              onClick={() => setShowUserModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="confirm-btn"
+              onClick={() =>
+                openConfirmModal(modalMode === "add" ? "add" : "edit")
+              }
+            >
+              {modalMode === "add" ? "Save User" : "Save Changes"}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label>First Name</label>
+          <input type="text" defaultValue={selectedUser?.name.split(" ")[0]} />
+        </div>
+
+        <div className="form-group">
+          <label>Last Name</label>
+          <input type="text" defaultValue={selectedUser?.name.split(" ")[1]} />
+        </div>
+
+        <div className="form-group">
+          <label>Username</label>
+          <input type="text" defaultValue={selectedUser?.username} />
+        </div>
+
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" defaultValue={selectedUser?.email} />
+        </div>
+
+        <div className="form-group">
+          <label>Password</label>
+          <input type="password" placeholder="********" />
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showConfirmModal}
+        title="Confirm Action"
+        onClose={() => setShowConfirmModal(false)}
+        footer={
+          <>
+            <button
+              className="cancel-btn"
+              onClick={() => setShowConfirmModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className={
+                modalMode === "delete" ? "tertiary-btn" : "confirm-btn"
+              }
+              onClick={confirmAction}
+            >
+              Confirm
+            </button>
+          </>
+        }
+      >
+        <p>
+          {modalMode === "add" && "Are you sure you want to save this new user?"}
+          {modalMode === "edit" &&
+            "Are you sure you want to save these changes?"}
+          {modalMode === "delete" &&
+            "This action cannot be undone. Do you really want to delete this account?"}
+        </p>
+      </Modal>
     </div>
   );
 };

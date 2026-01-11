@@ -3,11 +3,32 @@ import { useState } from "react";
 
 const DeviceManagement = () => {
   const [activeTab, setActiveTab] = useState("announcement");
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [savedContent, setSavedContent] = useState("");
+  const [draftContent, setDraftContent] = useState("");
 
   const sectionTitle =
     activeTab === "announcement"
       ? "Captive Portal Announcement"
       : "Terms and Conditions";
+
+  const startEdit = () => {
+    setDraftContent(savedContent);
+    setIsEditing(true);
+  };
+
+  const discardChanges = () => {
+    setDraftContent(savedContent);
+    setIsEditing(false);
+  };
+
+  const publishChanges = () => {
+    setSavedContent(draftContent);
+    setIsEditing(false);
+  };
+
+  const hasChanges = draftContent !== savedContent;
 
   return (
     <div className="device-page">
@@ -29,30 +50,51 @@ const DeviceManagement = () => {
       </div>
 
       <div className="device-content">
+        {/* LEFT */}
         <div className="left-panel">
           <div className="editor-section">
             <div className="section-header">
               <h2 className="section-title">{sectionTitle}</h2>
-              <button className="edit-icon" title="Edit">
-                Edit
-              </button>
+
+              {!isEditing && (
+                <button className="edit-icon" onClick={startEdit}>
+                  Edit
+                </button>
+              )}
             </div>
 
             <textarea
               className="announcement-box"
+              value={isEditing ? draftContent : savedContent}
+              onChange={(e) => setDraftContent(e.target.value)}
+              readOnly={!isEditing}
               placeholder="Enter text"
             />
 
-            <div className="published-on">
-              <span>Published On</span>
-              <div className="date-boxes">
-                <span>-- --</span>
-                <span>--</span>
+            <div className="footer-row">
+              <div className="published-on">
+                <span>Published On</span>
+                <div className="date-boxes">
+                  <span>-- --</span>
+                  <span>--</span>
+                </div>
               </div>
+
+              {isEditing && hasChanges && (
+                <div className="editor-actions">
+                  <button className="discard-btn" onClick={discardChanges}>
+                    Discard
+                  </button>
+                  <button className="publish-btn" onClick={publishChanges}>
+                    Publish
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
+        {/* RIGHT */}
         <div className="right-panel">
           <div className="side-card">
             <h3>Device Access Point</h3>
@@ -62,7 +104,6 @@ const DeviceManagement = () => {
                 <input type="checkbox" defaultChecked />
                 <span className="slider"></span>
               </label>
-
             </div>
           </div>
 

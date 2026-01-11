@@ -1,6 +1,10 @@
+import { useState } from "react";
 import "./Profile.css";
+import ProfileModal from "../components/ProfileModal";
 
 const Profile = () => {
+  const [showResetModal, setShowResetModal] = useState(false);
+
   const profileData = {
     welcomeName: "Pedro Gil",
     email: "pgil@gmail.com",
@@ -38,16 +42,20 @@ const Profile = () => {
         <div className="form-group">
           <div className="password-label-row">
             <label>Password</label>
-            <span className="reset-link">Reset Password</span>
+            <span
+              className="reset-link"
+              onClick={() => setShowResetModal(true)}
+            >
+              Reset Password
+            </span>
           </div>
           <input type="password" value={profileData.password} readOnly />
         </div>
-
-        {/*
-        <p className="password-note">
-          Note: Contact your super administrator to change your password
-        </p>*/}
       </div>
+
+      {showResetModal && (
+        <ProfileModal onClose={() => setShowResetModal(false)} />
+      )}
     </div>
   );
 };
