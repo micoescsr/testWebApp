@@ -26,7 +26,6 @@ const HistoryModal = ({ onClose, vulnerability }) => {
         <div className="modal-body">
           <div className="modal-section">
             <div className="description-header">
-              <h3>Description</h3>
               <div className="cvss-info">
                 <p className="cvss-score">
                   CVSS Base Score ({vulnerability.cvss})
@@ -34,6 +33,7 @@ const HistoryModal = ({ onClose, vulnerability }) => {
                 <p className="cvss-vector">{vulnerability.cvssVector}</p>
               </div>
             </div>
+            <h3>Description</h3>
             <p className="description-text">{vulnerability.description}</p>
           </div>
 
