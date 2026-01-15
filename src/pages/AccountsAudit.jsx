@@ -1,7 +1,7 @@
-import { useState } from "react";
 import Tabs from "../components/Tabs";
 import Modal from "../components/AccAuditModal";
 import "./AccountsAudit.css";
+import { useState, useEffect } from "react";
 
 const AccountsAudit = () => {
   const [activeTab, setActiveTab] = useState("accounts");
@@ -17,7 +17,46 @@ const AccountsAudit = () => {
     { label: "Audit Logs", value: "logs" },
   ];
 
-  const users = [
+
+
+  const [users, setUsers] = useState([]);
+  //const [auditLogs, setAuditLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("http://localhost:3000/user_account");
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch users");
+      }
+
+      const data = await res.json();
+      //setUsers(data);
+      const formattedUsers = data.map(u => ({
+        name: `${u.first_name} ${u.last_name}`,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+      }));
+
+        setUsers(formattedUsers);
+
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchUsers();
+}, []);
+
+
+/*   const users = [
     {
       name: "Juan Cruz",
       username: "JCruz",
@@ -30,7 +69,7 @@ const AccountsAudit = () => {
       email: "cdalisay@gmail.com",
       role: "Administrator",
     },
-  ];
+  ]; */
 
   const auditLogs = [
     {
