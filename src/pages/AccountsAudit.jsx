@@ -28,7 +28,7 @@ const AccountsAudit = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:3000/user_account");
+      const res = await fetch("http://localhost:3000/api/users/user_account");
 
       if (!res.ok) {
         throw new Error("Failed to fetch users");
