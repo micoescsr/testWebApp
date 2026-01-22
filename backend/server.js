@@ -57,9 +57,6 @@ app.get('/user_account', async (req, res) => {
 
 /*
 
-
-
-
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/user_account?select=*`,
       {
@@ -91,7 +88,24 @@ app.listen(3000, () =>
 console.log("CWD:", process.cwd());
 console.log("ENV FILE URL:", process.env.SUPABASE_URL);*/
 
-const path = require("path");
+/* WHEN INTEGRATING IT TO FRONTEND
+
+const allowedOrigins = [
+'http://localhost:5173', // Vite dev
+'https://your-dashboard-domain', // production React SPA
+];
+
+const corsOptions = {
+origin: allowedOrigins,
+};
+
+app.use(cors(corsOptions)); // applies to all /api routes
+
+*/
+
+// ---------------------------------------------------------------
+
+/* const path = require("path");
 
 require("dotenv").config({
   path: require("path").resolve(__dirname, ".env"),
@@ -122,25 +136,6 @@ app.use(
 );
 
 const { createClient } = require('@supabase/supabase-js');
-
-
-
-
-
-/* WHEN INTEGRATING IT TO FRONTEND
-
-const allowedOrigins = [
-'http://localhost:5173', // Vite dev
-'https://your-dashboard-domain', // production React SPA
-];
-
-const corsOptions = {
-origin: allowedOrigins,
-};
-
-app.use(cors(corsOptions)); // applies to all /api routes
-
-*/
 
 app.use(express.json()); // <-- important for POST/PUT later
 app.use(cors({
@@ -174,6 +169,54 @@ app.get('/user_account', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`API running on http://localhost:${PORT}`);
+});
+ */
+
+
+// server.js
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+//const { supabaseClient } = require("./config/supabaseClient");
+const webAppRoutes = require("./routes/webAppRoutes");
+const rasPiRoutes = require("./routes/rasPiRoutes");
+const captivePortalRoutes = require("./routes/captivePortalRoutes");
+
+const app = express();
+
+const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS not allowed"));
+      }
+    },
+    credentials: true,
+  })
+);
+
+app.use(express.json());
+
+// basic health route (can stay here or move to its own router)
+app.get("/ping", (req, res) => {
+  res.json({ ok: true });
+});
+
+app.use("/api/", webAppRoutes); 
+//app.use("/api/rasPi", rasPiRoutes);
+//app.use("/api/captivePortal", captivePortalRoutes);
+
+app.use("/api/", webAppRoutes); 
+app.use("/api/rasPi", rasPiRoutes);
+//app.use("/api/captivePortal", captivePortalRoutes);
 
 const PORT = 3000;
 app.listen(PORT, () => {
