@@ -182,6 +182,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 //const { supabaseClient } = require("./config/supabaseClient");
+
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
 const captivePortalRoutes = require("./routes/captivePortalRoutes");
@@ -204,11 +205,6 @@ app.use(
 );
 
 app.use(express.json());
-
-// basic health route (can stay here or move to its own router)
-app.get("/ping", (req, res) => {
-  res.json({ ok: true });
-});
 
 app.use("/api/", webAppRoutes); 
 //app.use("/api/rasPi", rasPiRoutes);

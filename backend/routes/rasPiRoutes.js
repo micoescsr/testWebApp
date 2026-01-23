@@ -49,10 +49,6 @@ app.post("/api/rasPi/networks1", (req, res) => {
   res.json({ status: "received"});
 });
 
-// Start server
-app.listen(3000, () => {
-  console.log("API running on http://localhost:3000");
-})
 
 const router = express.Router();
 const rasPiController = require("../controllers/rasPiController");
@@ -60,8 +56,6 @@ const { insertMetadataValidator } = require("../validators/rasPiValidator"); //w
 
 router.get("/networks", rasPiController.getAccessPointDetails);
 router.post("/networks", insertMetadataValidator, rasPiController.insertMetadata);
-console.log("RasPi routes loaded");
-
 
 /*fetch("http://localhost:3000/api/users/user_account", {
   method: "POST",
