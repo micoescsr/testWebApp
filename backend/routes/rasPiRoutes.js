@@ -52,10 +52,11 @@ app.post("/api/rasPi/networks1", (req, res) => {
 
 const router = express.Router();
 const rasPiController = require("../controllers/rasPiController");
-const { insertMetadataValidator } = require("../validators/rasPiValidator"); //when it needs to be validated
+//const { insertMetadataValidator } = require("../validators/rasPiValidator"); //when it needs to be validated
 
 router.get("/networks", rasPiController.getAccessPointDetails);
-router.post("/networks", insertMetadataValidator, rasPiController.insertMetadata);
+//router.post("/networks", insertMetadataValidator, rasPiController.insertMetadata);
+router.post("/networks", rasPiController.insertMetadata);
 
 /*fetch("http://localhost:3000/api/users/user_account", {
   method: "POST",

@@ -38,5 +38,9 @@ async function insert(assessment) {
   return data;
 }
 
+//added for auth routes
 
+// findEmailByUsername(username) -- not sure lng since we will implement email
+// findByAuthUserID(auth_user_id)
+// insert(user) -- create user
 module.exports = { findFirstUsers, insert };

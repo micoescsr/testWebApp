@@ -37,4 +37,49 @@ async function createUser(req, res) {
     }
     } */
 
+
+    const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+exports.createUser = async (req, res) => {
+  try {
+    const { user } = await supabase.auth.getUser(req.headers.authorization);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.data.user.id)
+      .single();
+
+    if (profile.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Only superadmins can create users' });
+    }
+
+    const { first_name, last_name, email, role, username, password } = req.body;
+
+    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { first_name, last_name, role }
+    });
+
+    if (authError) return res.status(400).json({ error: authError.message });
+
+    // Update profile (trigger creates it)
+    await supabase.from('profiles').update({ role, username }).eq('id', authUser.user.id);
+
+    res.status(201).json({ message: 'User created', userId: authUser.user.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getAllUsers = async (req, res) => {
+  // Your existing get all logic...
+};
+
+
 module.exports = {createUser, getAllUsers };
