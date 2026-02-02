@@ -1,16 +1,17 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import SAM from "./pages/SAM";
-import DeviceManagement from "./pages/DeviceManagement";
-import AccountsAudit from "./pages/AccountsAudit";
-import History from "./pages/History";
-import Profile from "./pages/Profile";
-import Login from "./pages/Login";   // ← import Login page
+import Sidebar from "./layouts/Sidebar";
+import Dashboard from "./pages/Dashboard/Dashboard";
+import SAM from "./pages/SAM/SAM";
+import DeviceManagement from "./pages/DeviceManagement/DeviceManagement";
+import AccountsAudit from "./pages/AccountsAudit/AccountsAudit";
+import History from "./pages/History/History";
+import Profile from "./pages/Profile/Profile";
+import Login from "./pages/Login/Login";
 import "./App.css";
 
 function App() {
   return (
+
     <Router>
       <Routes>
         {/* Login screen without sidebar */}

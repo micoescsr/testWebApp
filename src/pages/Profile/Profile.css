@@ -1,0 +1,103 @@
+/* pages/Profile/Profile.css */
+
+.profile-page {
+  padding: 0;
+}
+
+.page-title {
+  margin-bottom: 30px;
+}
+
+.profile-form {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #111;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid #999;
+  font-size: 14px;
+  background-color: #f3f3f3;
+  color: #333;
+}
+
+.password-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.reset-link {
+  font-size: 13px;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.reset-link:hover {
+  text-decoration: underline;
+}
+
+/* Remove these if ProfileModal now uses BaseModal:
+.modal-overlay, .modal, .modal-title, .modal-body, .modal-actions,
+.cancel-btn, .save-btn
+*/
+
+/* ==============
+   Responsive
+   ============== */
+
+/* Tablet and below */
+@media (max-width: 1024px) {
+  .profile-page {
+    padding: 0 12px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    margin-bottom: 20px;
+  }
+
+  .profile-form {
+    max-width: 100%;
+  }
+}
+
+/* Phone */
+@media (max-width: 640px) {
+  .page-title {
+    font-size: 18px;
+    text-align: left;
+  }
+
+  .form-group {
+    margin-bottom: 14px;
+  }
+
+  .form-group input {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .password-label-row {
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .reset-link {
+    font-size: 12px;
+  }
+}
