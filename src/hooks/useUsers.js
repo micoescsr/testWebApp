@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   getUserAccounts,
-  // createUser,
+  createUser,
   // updateUser,
   // deleteUser,
 } from "../api/userApi";
@@ -11,6 +11,7 @@ const useUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
 
   // =========================
   // READ – Fetch all users
@@ -53,7 +54,7 @@ const useUsers = () => {
   // =========================
   // CREATE – Add new user
   // =========================
-  /*
+  
   const addUser = async (userPayload) => {
     try {
       setLoading(true);
@@ -70,7 +71,7 @@ const useUsers = () => {
       setLoading(false);
     }
   };
-  */
+  
 
   // =========================
   // UPDATE – Edit existing user
@@ -124,7 +125,7 @@ const useUsers = () => {
     // exposed actions
     fetchUsers,
 
-    // addUser,
+    addUser,
     // updateUserById,
     // deleteUserById,
   };

@@ -2,7 +2,7 @@
 const { supabaseClient } = require("../config/supabaseClient");
 
 // simple entity shape (optional but nice)
-function mapRowToUser(row) {
+function mapRowToProfile(row) {
   return {
     id: row.id,
     first_name: row.first_name,
@@ -13,34 +13,70 @@ function mapRowToUser(row) {
   };
 }
 
-async function findFirstUsers(limit = 10) {
+async function findAllProfiles(limit = 50) {
   const { data, error } = await supabaseClient
-    .from("user_account")
+    .from("profiles")
     .select("*")
     .limit(limit);
 
-  if (error) {
-    console.error("Supabase error:", error);
-    throw error;
-  }
-
-  return data.map(mapRowToUser);
+  if (error) throw error;
+  return data.map(mapRowToProfile);
 }
 
-async function insert(assessment) {
+
+// GET by id
+async function findProfileById(id) {
   const { data, error } = await supabaseClient
-    .from("assessments")
-    .insert(assessment)
+    .from("profiles")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return mapRowToProfile(data);
+}
+
+// CREATE row in profiles
+async function insertProfile(user) {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .insert(user)
     .select()
     .single();
 
   if (error) throw error;
-  return data;
+  return mapRowToProfile(data);
 }
+
+// UPDATE
+async function updateProfile(id, updates) {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapRowToProfile(data);
+}
+
+async function deleteProfile(id) {
+  const { error } = await supabaseClient.from("profiles").delete().eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
+module.exports = {
+  findAllProfiles,
+  findProfileById,
+  insertProfile,
+  updateProfile,
+  deleteProfile,
+};
 
 //added for auth routes
 
 // findEmailByUsername(username) -- not sure lng since we will implement email
 // findByAuthUserID(auth_user_id)
 // insert(user) -- create user
-module.exports = { findFirstUsers, insert };
