@@ -20,7 +20,10 @@ const AccountsAudit = () => {
   const [modalMode, setModalMode] = useState("add");
   const [selectedUser, setSelectedUser] = useState(null);
 
-  const { users, loading, error } = useUsers();
+  //const { users, loading, error } = useUsers();
+  const [pendingUser, setPendingUser] = useState(null); //new state
+   // ← HERE: use the hook
+  const { users, loading, error, addUser } = useUsers();
 
   const {
   logs: auditLogs,
@@ -107,16 +110,19 @@ const AccountsAudit = () => {
     setShowUserModal(true);
   };
 
-  const openConfirmModal = (mode) => {
+  const openConfirmModal = (mode, data = null) => {
     setModalMode(mode);
 
     setReturnToUserModal(mode === "edit" || mode === "delete");
+     if (mode === "add" || mode === "edit") {
+    setPendingUser(data);           // store the form data here
+    }
 
     setShowUserModal(false);
     setShowConfirmModal(true);
   };
 
-  const confirmAction = () => {
+  /* const confirmAction = () => {
     console.log("Confirmed:", modalMode, selectedUser);
 
     if (modalMode === "delete") {
@@ -125,6 +131,26 @@ const AccountsAudit = () => {
 
     setShowConfirmModal(false);
     setShowUserModal(false);
+  }; */
+
+  const confirmAction = async () => {
+  console.log("Confirmed: add", pendingUser);
+
+  if (modalMode === "add" && pendingUser) {
+    await addUser({
+      first_name: pendingUser.firstName,
+      last_name: pendingUser.lastName,
+      username: pendingUser.username,
+      email: pendingUser.email,
+      role: pendingUser.role,
+      password: pendingUser.password,
+    });
+  }
+
+  setShowConfirmModal(false);
+  setShowUserModal(false);
+  setPendingUser(null);
+  setSelectedUser(null);
   };
 
   const cancelConfirm = () => {
@@ -198,7 +224,8 @@ const cancelUserForm = () => {
             onCancel={cancelUserForm}
           onSubmit={(data) => {
             console.log("SAVE USER:", data);
-            openConfirmModal(modalMode);
+            setPendingUser(data);           // ← store form data
+            openConfirmModal(modalMode, data);    // then open confirm, pass data 
           }}
           onDelete={() => {
             setSelectedUser(selectedUser);

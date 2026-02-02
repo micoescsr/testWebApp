@@ -6,13 +6,13 @@ const { createUserValidator } = require("../validators/userValidators"); //when 
 const authMiddleware = require("../middleware/authMiddleware");
 
 // Add authMiddleware to protect routes
-router.post("/user_account", createUserValidator, authMiddleware.authJWT, userController.createUser);
-//router.get("/user_account", authMiddleware.authJWT, userController.getAllUsers);
-//router.delete("/user_account/:id", authMiddleware.authJWT, userController.deleteUser);
-
+router.post("/profiles", authMiddleware.authJWT, createUserValidator, userController.createUser);
+router.get("/profiles", authMiddleware.authJWT, userController.getAllUsers);
+router.put("/profiles/:id", authMiddleware.authJWT, userController.updateUser);
+router.delete("/profiles/:id", authMiddleware.authJWT, userController.deleteUser);
 
 //router.post("/user_account", createUserValidator, userController.createUser); //oop need to omit this later
-//router.put("/user_account/:id", updateUserValidator, userController.updateUser);
+
 
 
 
