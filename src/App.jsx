@@ -14,6 +14,8 @@ function App() {
 
     <Router>
       <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+
         {/* Login screen without sidebar */}
         <Route path="/login" element={<Login />} />
 
@@ -25,7 +27,7 @@ function App() {
               <Sidebar />
               <main className="main-content">
                 <Routes>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  {/* <Route path="/" element={<Navigate to="/dashboard" replace />} /> */}
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/security-assessment" element={<SAM />} />
                   <Route path="/device-management" element={<DeviceManagement />} />
