@@ -19,6 +19,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
               <th>SEVERITY</th>
               <th>VULNERABILITY NAME</th>
               <th>SEVERITY SCORE</th>
+              <th>OBSERVED CONFIGURATION</th> {/* NEW COLUMN */}
               <th>DETECTED TIME</th>
               <th>ACTION</th>
             </tr>
@@ -37,6 +38,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
                   </td>
                   <td>{vuln.name}</td>
                   <td>{vuln.score}</td>
+                  <td>{vuln.observedConfig || "N/A"}</td> {/* NEW COLUMN DATA */}
                   <td>{vuln.detectedTime}</td>
                   <td
                     className="view-action"
