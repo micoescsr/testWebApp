@@ -3,7 +3,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const FASTAPI_BASE = "http://100.103.60.77:8000"; //ADDED 06:13 PM - 01/29/2026
+const FASTAPI_BASE = "http://mothership.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
 //const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
 
 const webAppRoutes = require("./routes/webAppRoutes");
@@ -93,14 +93,16 @@ app.get("/api/networks", async (req, res) => {
  */
 app.post("/api/scan", async (req, res) => {
   try {
+
     const { ssid, bssid, channel } = req.body;
+    console.log("req.bidy:", req.body);
 
     // Basic validation
     if (!ssid || !bssid || channel === undefined) {
       return res.status(400).json({
         dispatch_status: "ERROR",
         error: "Missing required fields",
-        detail: "ssid, bssid, and channel are required",
+        detail: "ssid, bssid, channel, and signal are required",
       });
     }
 
