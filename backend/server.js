@@ -94,8 +94,9 @@ app.get("/api/rasPi/networks_list", async (req, res) => {
 app.post("/api/scan", async (req, res) => {
   try {
 
-    const { ssid, bssid, channel } = req.body;
-    console.log("req.bidy:", req.body);
+  //uncomment if from react na galing
+    /* const { ssid, bssid, channel } = req.body;
+    console.log("req.body:", req.body);
 
     // Basic validation
     if (!ssid || !bssid || channel === undefined) {
@@ -104,14 +105,15 @@ app.post("/api/scan", async (req, res) => {
         error: "Missing required fields",
         detail: "ssid, bssid, channel, and signal are required",
       });
-    }
+    } */
 
     // Payload expected by dispatcher.py
     const payload = {
       signal: "enable",   // REQUIRED
-      ssid,
-      bssid,
-      channel,
+      //hardcoded ko muna to test
+      ssid: "Test_SSID_From_Server",
+      bssid: "00:11:22:33:44:55",
+      channel: 6,
     };
 
     const r = await fetch(`${FASTAPI_BASE}/scan`, {

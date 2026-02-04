@@ -12,9 +12,11 @@ export const sendMetadata = (payload) => {
 };
 
 // Trigger scan for a selected network
-export const triggerScan = async (ssid) => {
-  const res = await api.post("/rasPi_scan/trigger_scan", {
-    ssid,
+export const triggerScan = async (ssid, bssid, channel) => {
+  const res = await api.post("/scan", {
+    ssid, 
+    bssid,
+    channel
   });
   return res.data;
 };
