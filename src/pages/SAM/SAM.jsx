@@ -50,6 +50,24 @@ const SAM = () => {
       return;
     }
 
+      // NEW: Save before scan
+    try {
+      const saveRes = await fetch('/api/selected_networks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ssid: selectedNetwork.ssid,
+          bssid: selectedNetwork.bssid,
+          channel: selectedNetwork.channel
+        })
+      });
+      if (!saveRes.ok) throw new Error('Save failed');
+      console.log('Network saved before scan');
+    } catch (err) {
+      console.error('Save failed (scan continues):', err);
+    }
+
+    //for existing scan trigger
     try {
       const result = await triggerScan(selectedNetwork);
       alert("Scan started successfully");
@@ -85,6 +103,37 @@ const SAM = () => {
     { label: "Threats", value: "threats" },
     { label: "Vulnerabilities", value: "vulnerabilities" },
   ];
+
+    // Add this function inside SAM component, before return()
+  const saveSelectedNetwork = async () => {
+    if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
+      alert('Select a full network first');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/networks', {  // Your new POST endpoint
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ssid: selectedNetwork.ssid,
+          bssid: selectedNetwork.bssid,
+          channel: selectedNetwork.channel
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      alert('Network saved to DB!');
+      console.log('Saved:', await res.json());  // { status: 'OK', network: { network_id: 123 } }
+    } catch (err) {
+      console.error(err);
+      alert(`Save failed: ${err.message}`);
+    }
+  };
 
   return (
     <div
@@ -126,6 +175,7 @@ const SAM = () => {
           onScan={handleScan} 
           networksLoading={networksLoading}  // optional, if you want to show spinner
           networksError={networksError}      // optional
+          onSaveNetwork={saveSelectedNetwork}  // for chosen network 
         />
 
         
