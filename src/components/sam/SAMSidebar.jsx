@@ -4,6 +4,8 @@ const SAMSidebar = ({
   onSelectNetwork,
   availableNetworks,
   onScan,
+  networksLoading,   // NEW
+  networksError,     // NEW
 }) => {
   return (
     <div className="sam-sidebar">
@@ -11,7 +13,9 @@ const SAMSidebar = ({
         <div className="info-row">
           <span className="info-label">Current Network</span>
           <span className="info-value">
-            {selectedNetwork || "N/A"}
+            {/* {selectedNetwork || "N/A"} */}
+            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"}
+            
           </span>
         </div>
         <div className="info-row">
@@ -26,7 +30,31 @@ const SAMSidebar = ({
 
       <div className="sidebar-section">
         <h3 className="sidebar-title">Available Networks</h3>
+
+          {networksLoading && <div className="info-value">Loading...</div>}
+          {networksError && <div className="info-value error">{networksError}</div>}
+        {!networksLoading && !networksError && (
         <div className="network-list">
+        
+          {availableNetworks && availableNetworks.length > 0 ? (
+              availableNetworks.map((net) => (
+                <div
+                  key={net.bssid || net.ssid} // use a stable unique field
+                  className={`network-item ${
+                    selectedNetwork && selectedNetwork.bssid === net.bssid ? "active" : ""
+                  }`}
+                  onClick={() => onSelectNetwork(net)}
+                >
+                  {net.ssid || "(hidden)"} ({net.bssid})
+                </div>
+              ))
+            ) : (
+              <div className="network-item">No networks found</div>
+            )}
+          </div>
+        )}
+
+      {/*         <div className="network-list">
           {availableNetworks.map((network, index) => (
             <div
               key={index}
@@ -38,7 +66,7 @@ const SAMSidebar = ({
               {network}
             </div>
           ))}
-        </div>
+        </div> */}
       </div>
 
       <div className="sidebar-section">
