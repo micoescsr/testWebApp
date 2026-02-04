@@ -19,9 +19,9 @@ import {
         setLoading(true);
         setError(null);
 
-        const res = await fetch("http://localhost:3000/api/networks");
+        const res = await fetch("http://localhost:3000/api/rasPi/networks_list");
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+          throw new Error(`HTTP ${res.status} testing error`);
         }
 
         const body = await res.json(); // { status, networks, cached }
