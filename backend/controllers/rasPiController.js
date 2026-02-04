@@ -69,7 +69,7 @@ const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.t
     });
   }
 } */
-
+const { supabaseClient } = require("../config/supabaseClient");
   async function triggerScan(req, res) {
   try {
     const { ssid, bssid, channel } = req.body;
@@ -86,30 +86,38 @@ const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.t
 
     // 2. ASYNC: Insert scan metadata (non-blocking)
     Promise.resolve().then(async () => {
-      try {
-        // Find/create network (idempotent: skip if exists)
-        let { data: network } = await supabase
+    try {
+      // 1. Check for existing network
+      let { data: network, error: lookupErr } = await supabaseClient  // or supabase
+        .from('networks')
+        .select('network_id')
+        .eq('bssid', bssid)
+        .maybeSingle();
+
+      if (lookupErr) throw lookupErr;
+
+      // 2. Create if missing
+      if (!network) {
+        const { data: newNet, error: insertErr } = await supabaseClient
           .from('networks')
+          .insert({ ssid, bssid, channel })
           .select('network_id')
-          .eq('bssid', bssid)
-          .maybeSingle();  // Returns existing or null
+          .single();
+        
+        if (insertErr) throw insertErr;
+        network = newNet;
+      }
 
-        if (!network) {
-          const { data: newNet } = await supabase
-            .from('networks')
-            .insert({ ssid, bssid, channel })
-            .select('network_id')
-            .single();
-          network = newNet;
-        }
-
-        // Insert scan record
-        await supabase.from('scans').insert({
-          network_id: network.network_id,  // FK link!
+      // 3. NOW safe: Insert scan with network_id
+      const { error: scanErr } = await supabaseClient
+        .from('scans')
+        .insert({
+          network_id: network.network_id,  // Guaranteed to exist now
           scan_start: new Date().toISOString(),
-          dispatch_status: fastapiData.dispatch_status || 'OK',
-          // Add fastapiData.results later via service
+          //dispatch_status: fastapiData.dispatch_status || 'OK'
         });
+
+      if (scanErr) throw scanErr;
 
         console.log(`Scan saved: network_id=${network.network_id}`);
       } catch (dbErr) {

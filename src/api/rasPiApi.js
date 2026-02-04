@@ -11,15 +11,17 @@ export const sendMetadata = (payload) => {
   return api.post("/rasPi/networks", payload);
 };
 
-// Trigger scan for a selected network
-export const triggerScan = async (ssid, bssid, channel) => {
-  const res = await api.post("/scan", {
-    ssid, 
-    bssid,
-    channel
+// api/rasPiApi.js
+export const triggerScan = async (network) => {  // Pass full network object
+  console.log('triggerScan payload:', network);  // Debug
+  const res = await api.post("/rasPi/scan", {
+    ssid: network.ssid,
+    bssid: network.bssid,
+    channel: parseInt(network.channel)  // Ensure number
   });
   return res.data;
 };
+
 
 export const toggleAccessPoint = async (toggleState) => {
   const res = await api.post("/rasPi_scan/signal_ap", {
