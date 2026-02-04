@@ -64,5 +64,23 @@ router.post("/networks", rasPiController.insertMetadata);
   body: JSON.stringify(newUser),
 }); */  
 
+
+
+
+//OFFICIAL SCAN ROUTE
+//const { rasPiValidators } = require('../validators/rasPiValidators');  // Your existing
+
+// Scan validation (reuse/enhance your insertMetadataValidator)
+router.post('/scan', 
+  //rasPiValidators.insertMetadataValidator,  // Validates ssid/bssid/channel
+  rasPiController.triggerScan  // MVC: route → controller
+);
+
+/**
+ * Proxy: GET /api/networks
+ * Forwards request to FastAPI GET /networks
+ */
+router.get('/networks_list', rasPiController.getNetworksList);
+router.post('/networks', rasPiController.saveNetwork); //for inserting the chosen network data to db
 module.exports = router;
 

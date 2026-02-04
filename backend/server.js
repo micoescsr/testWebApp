@@ -66,7 +66,7 @@ app.post('/admin/create-user', async (req, res) => {
  * Proxy: GET /api/networks
  * Forwards request to FastAPI GET /networks
  */
-app.get("/api/rasPi/networks_list", async (req, res) => {
+app.get("/api/rasPi/networks_list_original", async (req, res) => {
   try {
     const r = await fetch(`${FASTAPI_BASE}/networks`, { //dpt aligned sa endpoint ni kerby which is naka /network lng
       method: "GET",
@@ -91,7 +91,7 @@ app.get("/api/rasPi/networks_list", async (req, res) => {
  * Proxy: POST /api/scan
  * Forwards request to FastAPI POST /scan
  */
-app.post("/api/scan", async (req, res) => {
+app.post("/api/scan_original", async (req, res) => {
   try {
 
   //uncomment if from react na galing
@@ -114,6 +114,9 @@ app.post("/api/scan", async (req, res) => {
       ssid: "Test_SSID_From_Server",
       bssid: "00:11:22:33:44:55",
       channel: 6,
+      /* ssid,
+      bssid,
+      channel */
     };
 
     const r = await fetch(`${FASTAPI_BASE}/scan`, {
@@ -127,6 +130,7 @@ app.post("/api/scan", async (req, res) => {
 
     const data = await r.json();
     return res.status(r.status).json(data);
+    
 
   } catch (err) {
     return res.status(502).json({

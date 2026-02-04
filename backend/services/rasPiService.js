@@ -102,7 +102,7 @@ module.exports = { insertMetadata, getAccessPointDetails, orchestrateSingleScan 
 // services/rasPiService.js (expects one scan at a time)
 const { supabaseClient } = require("../config/supabaseClient");
 
-async function insertMetadata(scan) {
+async function insertScanResults(scan) {
   const userId = 2;
   return handleSingleScan(userId, scan);
 }
@@ -172,4 +172,4 @@ async function handleSingleScan(userId, scan) {
   };
 }
 
-module.exports = { insertMetadata };
+module.exports = { insertScanResults };
