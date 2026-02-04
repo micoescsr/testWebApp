@@ -7,6 +7,44 @@ import {
   getVulnerabilityDetail,
 } from "../api/samApi";
 
+  export const useNetworks = () => {
+    const [networks, setNetworks] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [cached, setCached] = useState(false) ;
+
+  useEffect(() => {
+    const fetchNetworks = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch("http://localhost:3000/api/networks");
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const body = await res.json(); // { status, networks, cached }
+
+        if (body.status !== "OK") {
+          throw new Error(body.error || "Backend returned ERROR");
+        }
+
+        setNetworks(body.networks || []);
+        setCached(body.cached ?? false);
+      } catch (err) {
+        setError(err.message || "Failed to load networks");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNetworks();
+  }, []);
+
+  return { networks, loading, error, cached };
+};
+
 /* =========================
    THREATS
 ========================= */
@@ -186,4 +224,5 @@ export const useVulnerabilities = () => {
     vulnDetailLoading,
     fetchVulnDetail,
   };
+  
 };

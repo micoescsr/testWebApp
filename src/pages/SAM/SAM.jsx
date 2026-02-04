@@ -8,6 +8,7 @@ import SAMSidebar from "../../components/sam/SAMSidebar";
 import { useThreats, useVulnerabilities } from "../../hooks/useSAM";
 import { triggerScan } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
+import { useNetworks } from "../../hooks/useSAM"; //added from hook
 
 const SAM = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
@@ -28,14 +29,20 @@ const SAM = () => {
     vulnDetailLoading,
   } = useVulnerabilities();
 
-  const availableNetworks = [
+   const { //added for networks list
+    networks, loading: networksLoading, 
+    error: networksError 
+  } = useNetworks();
+  // remove the hard-coded availableNetworks array
+
+  /* const availableNetworks = [
     "Nacho_WiFi",
     "TheGOODWiFi",
     "kWsk1N1nJ4ZX",
     "Back2HonoluluWiFi_5G",
     "LibrengWiFi:>",
     "Free_WiFi",
-  ];
+  ]; */
 
   const handleScan = async () => {
     if (!selectedNetwork) {
@@ -115,9 +122,13 @@ const SAM = () => {
         <SAMSidebar
           selectedNetwork={selectedNetwork}
           onSelectNetwork={setSelectedNetwork}
-          availableNetworks={availableNetworks}
-          onScan={handleScan}
+          availableNetworks={networks}
+          onScan={handleScan} 
+          networksLoading={networksLoading}  // optional, if you want to show spinner
+          networksError={networksError}      // optional
         />
+
+        
       )}
 
       {isModalOpen && currentDetail && (
