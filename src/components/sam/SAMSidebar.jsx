@@ -11,9 +11,27 @@ const SAMSidebar = ({
   onChangeMeta,
 }) => {
 
-   const lastScanLabel = lastScan
+  /* const lastScanLabel = lastScan
     ? lastScan.scan_end          // or format with new Date(...)
-    : "N/A";
+    : "N/A"; */
+
+  // helper for formatting to Asia/Manila
+  const formatLastScan = (scan) => {
+    if (!scan?.scan_end) return "N/A";
+    const d = new Date(scan.scan_end);
+    return new Intl.DateTimeFormat("en-PH", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(d);
+  };
+
+  const lastScanLabel = formatLastScan(lastScan);
+
 
 
   return (
@@ -22,10 +40,14 @@ const SAMSidebar = ({
         <div className="info-row">
           <span className="info-label">Current Network</span>
           <span className="info-value">
-            {/* {selectedNetwork || "N/A"} */}
-            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"}
-            
+            {selectedNetwork
+              ? selectedNetwork.ssid || "(hidden)"
+              : "N/A"}
+              
+            {/* with bssid */}
+            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"} 
           </span>
+          
         </div>
         <div className="info-row">
           <span className="info-label">Last Scan</span>
