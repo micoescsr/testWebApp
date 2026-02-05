@@ -94,7 +94,7 @@ async function getNetworksList(req, res) {
   }
 };
 
-async function saveNetworkMetadataScan(req, res) {  // POST /api/rasPi/networks
+async function saveNetworkMetadataScan(req, res) {  // POST /api/rasPi/networks WORKING
   try {
     const { ssid, bssid, channel, city, province, notes, encryption, num_clients, scan } = req.body;
 
