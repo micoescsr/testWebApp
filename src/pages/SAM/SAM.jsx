@@ -41,11 +41,15 @@ const SAM = () => {
     notes: "",
   });
 
+  const handleMetaChange = (field, value) => {
+    setLocationMeta((prev) => ({ ...prev, [field]: value }));
+  };
+
   const handleSelectNetwork = async (net) => {
     setSelectedNetwork(net);
 
     try {
-      const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`);
+      const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`); //wla pa to sa backend
       if (res.ok) {
         const data = await res.json();   // { city, province, notes } or null
         if (data) {
@@ -70,17 +74,21 @@ const SAM = () => {
       return;
     }
 
-    //required
+    // required
     if (!locationMeta.city || !locationMeta.province || !locationMeta.notes) {
-    alert("City, Province, and Notes are required");
-    return;
-  }
+      alert("City, Province, and Notes are required");
+      return;
+    }
 
-      // NEW: Save before scan
     try {
-      const saveRes = await fetch('/api/selected_networks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // 1) trigger scan
+      const result = await triggerScan(selectedNetwork); // single scan object
+      setLastScan(result); // store it
+
+      // 2) save network + metadata + scan
+      const saveRes = await fetch("/api/selected_networks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ssid: selectedNetwork.ssid,
           bssid: selectedNetwork.bssid,
@@ -88,27 +96,21 @@ const SAM = () => {
           city: locationMeta.city,
           province: locationMeta.province,
           notes: locationMeta.notes,
-          scan: scanResult,              // includes scan_end, findings, etc.
-        })
+          scan: result, // use result, not scanResult
+        }),
       });
-      if (!saveRes.ok) throw new Error('Save failed');
-      console.log('Network saved before scan');
-    } catch (err) {
-      console.error('Save failed (scan continues):', err);
-    }
 
-    //for existing scan trigger
-    try {
-      const result = await triggerScan(selectedNetwork); // single scan object
-      setLastScan(result); // just store it
+      if (!saveRes.ok) {
+        throw new Error("Save failed");
+      }
 
       alert("Scan started successfully");
-      console.log(result);
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
     }
   };
+
 
   const openThreatDetail = async (threat) => {
     await fetchThreatDetail(threat.name); // later: use id from DB
