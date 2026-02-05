@@ -70,6 +70,12 @@ const SAM = () => {
       return;
     }
 
+    //required
+    if (!locationMeta.city || !locationMeta.province || !locationMeta.notes) {
+    alert("City, Province, and Notes are required");
+    return;
+  }
+
       // NEW: Save before scan
     try {
       const saveRes = await fetch('/api/selected_networks', {
@@ -78,7 +84,11 @@ const SAM = () => {
         body: JSON.stringify({
           ssid: selectedNetwork.ssid,
           bssid: selectedNetwork.bssid,
-          channel: selectedNetwork.channel
+          channel: selectedNetwork.channel,
+          city: locationMeta.city,
+          province: locationMeta.province,
+          notes: locationMeta.notes,
+          scan: scanResult,              // includes scan_end, findings, etc.
         })
       });
       if (!saveRes.ok) throw new Error('Save failed');
