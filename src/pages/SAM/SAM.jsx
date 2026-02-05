@@ -86,7 +86,7 @@ const SAM = () => {
       setLastScan(result); // store it
 
       // 2) save network + metadata + scan
-      const saveRes = await fetch("/api/rasPi/networks", {
+      const saveRes = await fetch("http://localhost:3000/api/rasPi/networks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
