@@ -9,7 +9,14 @@ const networkMetadataRoutes = require("./networkMetadataRoutes");
 //const dashboardRoutes = require("./dashboardRoutes");
 
 router.use("/users", userRoutes); 
-router.use("/network_metadata", networkMetadataRoutes);       
+/* router.use("/network_metadata", networkMetadataRoutes);  
+router.use("/vulnerabilities", networkMetadataRoutes.);   */ 
+
+const metadataController = require("../controllers/metadataController");
+
+// like your rasPi routes:
+router.get("/network_metadata", metadataController.getNetworkMetadata);
+router.get("/vulnerabilities_latest", metadataController.getVulnerabilitiesLatest);
 //router.use("/deviceMgmt", require("./deviceMgmtRoutes")); 
 //router.use("/threatVuln_result", require("./threatVulnResultRoutes"));  //iseparate nlng sila sa controllers service repository
 //router.use("/dashboard", require("./dashboardRoutes"));
