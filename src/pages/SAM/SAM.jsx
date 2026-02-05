@@ -81,7 +81,7 @@ const SAM = () => {
     }
 
     try {
-      // 1) trigger scan
+      // 1) trigger scan (fastapi only)
       const result = await triggerScan(selectedNetwork); // single scan object
       setLastScan(result); // store it
 
@@ -97,6 +97,9 @@ const SAM = () => {
           province: locationMeta.province,
           notes: locationMeta.notes,
           scan: result, // use result, not scanResult
+          encryption_status: selectedNetwork.encryption_status,
+          num_clients: selectedNetwork.num_clients,
+
         }),
       });
       console.log("Save response:", saveRes);
