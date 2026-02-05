@@ -1,74 +1,7 @@
-/* //controllers/rasPiController.js
-const rasPiService = require("../services/rasPiService");
-
-
-async function insertMetadata(req, res) {
-  try {
-    const metadata = await rasPiService.insertMetadata(req.body);
-    res.status(201).json(metadata);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to insert metadata" });
-  }
-}
-
-async function getAccessPointDetails(req, res) {
-  try {
-    const user = await rasPiService.getAccessPointDetails();
-    res.status(201).json(user);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to get access point details" });
-  }
-}
-
-module.exports = {insertMetadata, getAccessPointDetails};
-
- */
-
-
 // controllers/rasPiController.js
 const rasPiService = require("../services/rasPiService");
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
 
-/* async function triggerScan(req, res) {
-  try {
-    // Payload for FastAPI (your hardcoded works for testing)
-    const payload = {
-      //signal: "enable",
-      ssid: req.body.ssid || "Test_SSID_From_Server",  // From React or hardcoded
-      bssid: req.body.bssid || "00:11:22:33:44:55",
-      channel: req.body.channel || 0,
-    };
-
-    // Call FastAPI (your exact logic)
-    const r = await fetch(`${FASTAPI_BASE}/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const fastapiData = await r.json();
-
-    // 1. IMMEDIATE RESPONSE (display-first)
-    res.status(r.status).json(fastapiData);
-
-    // 2. ASYNC DB PERSIST (non-blocking)
-    Promise.resolve().then(async () => {
-      try {
-        await rasPiService.insertScanResults(fastapiData);  // Your service!
-      } catch (dbErr) {
-        console.error("Background scan insert failed:", dbErr);
-      }
-    });
-
-  } catch (err) {
-    res.status(502).json({
-      dispatch_status: "ERROR",
-      error: "Failed to reach FastAPI /scan",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
-    });
-  }
-} */
 const { supabaseClient } = require("../config/supabaseClient");
   async function triggerScan(req, res) {
   try {
