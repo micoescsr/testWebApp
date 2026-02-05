@@ -17,7 +17,7 @@ const SAMSidebar = ({
 
   // helper for formatting to Asia/Manila
   const formatLastScan = (scan) => {
-    if (!scan?.scan_end) return "N/A";
+    if (!scan?.scan_end) return null;
     const d = new Date(scan.scan_end);
     return new Intl.DateTimeFormat("en-PH", {
       timeZone: "Asia/Manila",
@@ -44,15 +44,15 @@ const SAMSidebar = ({
               ? selectedNetwork.ssid || "(hidden)"
               : "N/A"}
               
-            {/* with bssid */}
-            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"} 
+            {/* with bssid 
+            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"}  */}
           </span>
           
         </div>
         <div className="info-row">
           <span className="info-label">Last Scan</span>
-          <span className="info-value">N/A
-            {lastScanLabel}
+          <span className="info-value">
+            {lastScanLabel || "N/A"}
           </span>
         </div>
         <div className="info-row">
@@ -78,7 +78,8 @@ const SAMSidebar = ({
                   }`}
                   onClick={() => onSelectNetwork(net)}
                 >
-                  {net.ssid || "(hidden)"} ({net.bssid})
+                  {net.ssid || "(hidden)"} 
+                  {/* {net.ssid || "(hidden)"} ({net.bssid}) --with bssid */}
                 </div>
               ))
             ) : (
