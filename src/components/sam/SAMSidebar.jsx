@@ -6,7 +6,14 @@ const SAMSidebar = ({
   onScan,
   networksLoading,   // NEW
   networksError,     // NEW
+  lastScan, // NEW for scan display scan_end
 }) => {
+
+   const lastScanLabel = lastScan
+    ? lastScan.scan_end          // or format with new Date(...)
+    : "N/A";
+
+
   return (
     <div className="sam-sidebar">
       <div className="sidebar-section">
@@ -20,7 +27,9 @@ const SAMSidebar = ({
         </div>
         <div className="info-row">
           <span className="info-label">Last Scan</span>
-          <span className="info-value">N/A</span>
+          <span className="info-value">N/A
+            {lastScanLabel}
+          </span>
         </div>
         <div className="info-row">
           <span className="info-label">Scheduled Scan</span>
