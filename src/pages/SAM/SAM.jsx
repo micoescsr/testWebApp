@@ -41,29 +41,28 @@ const SAM = () => {
     notes: "",
   });
 
-  const handleMetaChange = (field, value) => {
-    setLocationMeta((prev) => ({ ...prev, [field]: value }));
-  };
-  try {
-    const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`);
-    if (res.ok) {
-      const data = await res.json();   // { city, province, notes } or null
-      if (data) {
-        setLocationMeta({
-          city: data.city || "",
-          province: data.province || "",
-          notes: data.notes || "",
-        });
-      } else {
-        setLocationMeta({ city: "", province: "", notes: "" });
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load metadata", e);
-    setLocationMeta({ city: "", province: "", notes: "" });
-  }
-};
+  const handleSelectNetwork = async (net) => {
+    setSelectedNetwork(net);
 
+    try {
+      const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`);
+      if (res.ok) {
+        const data = await res.json();   // { city, province, notes } or null
+        if (data) {
+          setLocationMeta({
+            city: data.city || "",
+            province: data.province || "",
+            notes: data.notes || "",
+          });
+        } else {
+          setLocationMeta({ city: "", province: "", notes: "" });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load metadata", e);
+      setLocationMeta({ city: "", province: "", notes: "" });
+    }
+  };
 
   const handleScan = async () => {
     if (!selectedNetwork) {
