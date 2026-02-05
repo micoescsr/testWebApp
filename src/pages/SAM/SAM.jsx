@@ -49,7 +49,7 @@ const SAM = () => {
     setSelectedNetwork(net);
 
     try {
-      const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`); //wla pa to sa backend
+      const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`); //wla pa to sa backend
       if (res.ok) {
         const data = await res.json();   // { city, province, notes } or null
         if (data) {
@@ -63,7 +63,7 @@ const SAM = () => {
         }
       }
     } catch (e) {
-      console.error("Failed to load metadata", e);
+      console.error("Failed to load metadata", e); //dito napunta if wla pa record for pre-fill
       setLocationMeta({ city: "", province: "", notes: "" });
     }
   };
@@ -86,7 +86,7 @@ const SAM = () => {
       setLastScan(result); // store it
 
       // 2) save network + metadata + scan
-      const saveRes = await fetch("/api/selected_networks", {
+      const saveRes = await fetch("/api/rasPi/networks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -99,6 +99,7 @@ const SAM = () => {
           scan: result, // use result, not scanResult
         }),
       });
+      console.log("Save response:", saveRes);
 
       if (!saveRes.ok) {
         throw new Error("Save failed");
