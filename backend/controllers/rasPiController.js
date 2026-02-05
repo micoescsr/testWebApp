@@ -72,7 +72,7 @@ const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.t
 const { supabaseClient } = require("../config/supabaseClient");
   async function triggerScan(req, res) {
   try {
-    const { ssid, bssid, channel } = req.body;
+    const { ssid, bssid, channel,  city, province, notes, scan, encryption, num_clients } = req.body;
 
     // 1. IMMEDIATE FastAPI scan (uses bssid/channel)
     const payload = { ssid, bssid, channel };
@@ -100,12 +100,18 @@ const { supabaseClient } = require("../config/supabaseClient");
       if (!network) {
         const { data: newNet, error: insertErr } = await supabaseClient
           .from('networks')
-          .insert({ ssid, bssid, channel })
+          .insert({ ssid, bssid, channel, city, province, notes, encryption, num_clients, scan })  // Save metadata here
           .select('network_id')
           .single();
         
         if (insertErr) throw insertErr;
         network = newNet;
+      } else {
+        // optional: update metadata if user edits it
+        await supabaseClient
+          .from('networks')
+          .update({ city, province, notes })
+          .eq('network_id', network.network_id);
       }
 
       // 3. NOW safe: Insert scan with network_id
@@ -155,35 +161,69 @@ async function getNetworksList(req, res) {
   }
 };
 
-async function saveNetwork(req, res) {
+async function saveNetworkMetadataScan(req, res) {  // POST /api/rasPi/networks
   try {
-    const { ssid, bssid, channel } = req.body;
+    const { ssid, bssid, channel, city, province, notes, encryption, num_clients, scan } = req.body;
 
     if (!ssid || !bssid || channel === undefined) {
       return res.status(400).json({ status: 'ERROR', error: 'Missing ssid/bssid/channel' });
     }
 
-    const { data, error } = await supabase
+    // 1. Upsert network (create if missing, update metadata)
+    let { data: network, error: lookupErr } = await supabaseClient
       .from('networks')
-      .insert({ ssid, bssid, channel })
-      .select('network_id, *')  // Return new row
-      .single();
+      .select('network_id')
+      .eq('bssid', bssid)
+      .maybeSingle();
 
-    if (error) throw error;
+    if (lookupErr) throw lookupErr;
+
+    if (!network) {
+      // Insert new
+      const { data: newNet, error: insertErr } = await supabaseClient
+        .from('networks')
+        .insert({ ssid, bssid, channel, city, province, notes, encryption, num_clients })
+        .select('network_id, *')
+        .single();
+      if (insertErr) throw insertErr;
+      network = newNet;
+    } else {
+      // Update metadata
+      const { error: updateErr } = await supabaseClient
+        .from('networks')
+        .update({ city, province, notes, encryption, num_clients })
+        .eq('network_id', network.network_id);
+      if (updateErr) throw updateErr;
+    }
+
+    // 2. Insert scan (linked to network_id)
+    if (scan) {
+      const { error: scanErr } = await supabaseClient
+        .from('scans')
+        .insert({
+          network_id: network.network_id,
+          scan_data: scan,  // Full FastAPI result (JSONB or text)
+          scan_start: scan.scan_start || new Date().toISOString(),
+          scan_end: scan.scan_end || null,
+        });
+      if (scanErr) throw scanErr;
+    }
 
     return res.status(201).json({
       status: 'OK',
-      network: data  // Matches your FastAPI style [file:45]
+      network_id: network.network_id,
+      network: network
     });
   } catch (err) {
-    console.error('Save network error:', err);
+    console.error('Save network/metadata/scan error:', err);
     return res.status(500).json({
       status: 'ERROR',
-      error: 'Failed to save network',
+      error: 'Failed to save network data',
       detail: err.message
     });
   }
-}// Export and mount: app.post('/api/networks', saveNetwork);
+}
+
 
 
 async function insertMetadata(req, res) {
@@ -208,4 +248,4 @@ async function getAccessPointDetails(req, res) {
   }
 }
 
-module.exports = { triggerScan, getNetworksList, saveNetwork,insertMetadata, getAccessPointDetails };
+module.exports = { triggerScan, getNetworksList, saveNetworkMetadataScan,insertMetadata, getAccessPointDetails };
