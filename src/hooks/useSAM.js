@@ -139,16 +139,7 @@ export const useThreats = () => {
    VULNERABILITIES
 ========================= */
 export const useVulnerabilities = () => {
-  const [vulnerabilities, setVulnerabilities] = useState([
-    {
-      id: 1,
-      severity: "CRITICAL",
-      name: "Unencrypted Network",
-      score: "9.9",
-      detectedTime: "Nov 15, 2025",
-    },
-  ]);
-
+  const [vulnerabilities, setVulnerabilities] = useState([]);
   const [vulnDetail, setVulnDetail] = useState(null);
   const [vulnsLoading, setVulnsLoading] = useState(false);
   const [vulnDetailLoading, setVulnDetailLoading] = useState(false);
@@ -160,11 +151,18 @@ export const useVulnerabilities = () => {
         setVulnsLoading(true);
         setVulnError(null);
 
-        // TODO: uncomment when backend is ready
-        // const res = await getVulnerabilities();
-        // setVulnerabilities(res.data);
+        // if you want per‑network, pass ?bssid=...
+        const res = await fetch("/api/webApp/vulnerabilities_latest");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        // keep current mock as fallback
+        const body = await res.json();
+        if (body.status !== "OK") {
+          throw new Error(body.error || "Backend returned ERROR");
+        }
+
+        // rows are already shaped in the controller
+        setVulnerabilities(body.rows || []);
+
       } catch (err) {
         setVulnError(err.message || "Failed to load vulnerabilities");
       } finally {
@@ -174,6 +172,15 @@ export const useVulnerabilities = () => {
 
     fetchVulnerabilities();
   }, []);
+
+  /* {
+  id,             // vt_id
+  severity,       // from details or "CRITICAL"
+  name,           // vt_name (e.g. "Management Frame Protection")
+  score,          // severity_score
+  observedConfig, // vt_value (your vt_value column)
+  detectedTime,   // scan_start
+} */
 
   const fetchVulnDetail = async (vulnIdOrName) => {
     try {
@@ -217,7 +224,7 @@ export const useVulnerabilities = () => {
   };
 
   return {
-    vulnerabilities,
+    vulnerabilities, //real data from backend
     vulnsLoading,
     vulnError,
     vulnDetail,

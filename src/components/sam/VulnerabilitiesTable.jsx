@@ -2,6 +2,19 @@
 const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
   const hasVulns = Array.isArray(vulnerabilities) && vulnerabilities.length > 0;
 
+  const formatDetectedTime = (iso) => {
+    if (!iso) return "N/A";
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat("en-PH", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+  };
+
   return (
     <div className="sam-card">
       <div className="sam-card-header">
@@ -27,19 +40,25 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
           {hasVulns && (
             <tbody>
-              {vulnerabilities.map((vuln, index) => (
-                <tr key={index}>
+              {vulnerabilities.map((vuln) => (
+                <tr key={vuln.id}>
                   <td>
                     <span
-                      className={`severity ${vuln.severity.toLowerCase()}`}
+                      className={`severity ${String(
+                        vuln.severity || ""
+                      ).toLowerCase()}`}
                     >
                       {vuln.severity}
                     </span>
                   </td>
+                  {/* vt_name mapped to name in hook/controller */}
                   <td>{vuln.name}</td>
-                  <td>{vuln.score}</td>
-                  <td>{vuln.observedConfig || "N/A"}</td> {/* NEW COLUMN DATA */}
-                  <td>{vuln.detectedTime}</td>
+                  {/* severity_score mapped to score */}
+                  <td>{vuln.score ?? "N/A"}</td>
+                  {/* vt_value mapped to observedConfig */}
+                  <td>{vuln.observedConfig || "N/A"}</td>
+                  {/* scan_start mapped to detectedTime */}
+                  <td>{formatDetectedTime(vuln.detectedTime)}</td>
                   <td
                     className="view-action"
                     onClick={() => onView(vuln)}
