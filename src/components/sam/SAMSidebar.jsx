@@ -7,6 +7,8 @@ const SAMSidebar = ({
   networksLoading,   // NEW
   networksError,     // NEW
   lastScan, // NEW for scan display scan_end
+  locationMeta,
+  onChangeMeta,
 }) => {
 
    const lastScanLabel = lastScan
@@ -84,12 +86,18 @@ const SAMSidebar = ({
           <button className="edit-btn">✏️</button>
         </div>
         <div className="network-form">
-          <input type="text" placeholder="City" className="form-input" />
-          <input type="text" placeholder="Province" className="form-input" />
+          <input type="text" placeholder="City" className="form-input"
+            value={locationMeta.city}
+            onChange={(e) => onChangeMeta("city", e.target.value)} />
+          <input type="text" placeholder="Province" className="form-input" 
+            value={locationMeta.province}
+            onChange={(e) => onChangeMeta("province", e.target.value)} />
           <textarea
             placeholder="Notes (e.g. SM Mall)"
             className="form-textarea"
             rows="4"
+           value={locationMeta.notes}
+            onChange={(e) => onChangeMeta("notes", e.target.value)}
           ></textarea>
         </div>
       </div>
