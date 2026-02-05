@@ -34,16 +34,36 @@ const SAM = () => {
     networks, loading: networksLoading, 
     error: networksError 
   } = useNetworks();
-  // remove the hard-coded availableNetworks array
 
-  /* const availableNetworks = [
-    "Nacho_WiFi",
-    "TheGOODWiFi",
-    "kWsk1N1nJ4ZX",
-    "Back2HonoluluWiFi_5G",
-    "LibrengWiFi:>",
-    "Free_WiFi",
-  ]; */
+  const [locationMeta, setLocationMeta] = useState({
+    city: "",
+    province: "",
+    notes: "",
+  });
+
+  const handleMetaChange = (field, value) => {
+    setLocationMeta((prev) => ({ ...prev, [field]: value }));
+  };
+  try {
+    const res = await fetch(`/api/network-metadata?bssid=${net.bssid}`);
+    if (res.ok) {
+      const data = await res.json();   // { city, province, notes } or null
+      if (data) {
+        setLocationMeta({
+          city: data.city || "",
+          province: data.province || "",
+          notes: data.notes || "",
+        });
+      } else {
+        setLocationMeta({ city: "", province: "", notes: "" });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load metadata", e);
+    setLocationMeta({ city: "", province: "", notes: "" });
+  }
+};
+
 
   const handleScan = async () => {
     if (!selectedNetwork) {
@@ -173,13 +193,16 @@ const SAM = () => {
       {activeTab === "vulnerabilities" && (
         <SAMSidebar
           selectedNetwork={selectedNetwork}
-          onSelectNetwork={setSelectedNetwork}
+          //onSelectNetwork={setSelectedNetwork}
+          onSelectNetwork={handleSelectNetwork}
           availableNetworks={networks}
           onScan={handleScan} 
           networksLoading={networksLoading}  // optional, if you want to show spinner
           networksError={networksError}      // optional
           onSaveNetwork={saveSelectedNetwork}  // for chosen network 
           lastScan={lastScan}              // pass it down
+          locationMeta={locationMeta}            // NEW
+          onChangeMeta={handleMetaChange}        // NEW
         />
 
         
