@@ -3,12 +3,13 @@
 const express = require("express");
 const router = express.Router();
 const userRoutes = require("./userRoutes");
+const networkMetadataRoutes = require("./networkMetadataRoutes");
 //const userRoutes = require("./deviceMgmtRoutes");
 //const threatVulnResultRoutes = require("./threatVulnResultRoutes");
 //const dashboardRoutes = require("./dashboardRoutes");
 
 router.use("/users", userRoutes); 
-router.use("/network_metadata", require("./networkMetadataRoutes"));       
+router.use("/network_metadata", networkMetadataRoutes);       
 //router.use("/deviceMgmt", require("./deviceMgmtRoutes")); 
 //router.use("/threatVuln_result", require("./threatVulnResultRoutes"));  //iseparate nlng sila sa controllers service repository
 //router.use("/dashboard", require("./dashboardRoutes"));
