@@ -48,9 +48,9 @@ const SAMSidebar = ({
         <div className="network-list">
         
           {availableNetworks && availableNetworks.length > 0 ? (
-              availableNetworks.map((net) => (
+              availableNetworks.map((net, idx) => (
                 <div
-                  key={net.bssid || net.ssid} // use a stable unique field
+                  key={`${net.bssid || net.ssid}-${idx}`} //using bssid as the main identifier, but adds the index so React never sees the same key string twice, even if your data unexpectedly has duplicates or missing BSSIDs.
                   className={`network-item ${
                     selectedNetwork && selectedNetwork.bssid === net.bssid ? "active" : ""
                   }`}
