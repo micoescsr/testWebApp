@@ -14,6 +14,7 @@ const SAM = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [lastScan, setLastScan] = useState(null);   // NEW
 
   const {
     threats,
@@ -69,7 +70,9 @@ const SAM = () => {
 
     //for existing scan trigger
     try {
-      const result = await triggerScan(selectedNetwork);
+      const result = await triggerScan(selectedNetwork); // single scan object
+      setLastScan(result); // just store it
+
       alert("Scan started successfully");
       console.log(result);
     } catch (err) {
@@ -176,6 +179,7 @@ const SAM = () => {
           networksLoading={networksLoading}  // optional, if you want to show spinner
           networksError={networksError}      // optional
           onSaveNetwork={saveSelectedNetwork}  // for chosen network 
+          lastScan={lastScan}              // pass it down
         />
 
         
