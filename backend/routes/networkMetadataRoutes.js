@@ -48,5 +48,71 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get("/vulnerabilities_latest", async (req, res) => {
+  try {
+    const { bssid } = req.query; // optional filter by current network
+
+    // First, optionally resolve network_id from bssid
+    let networkId = null;
+    if (bssid) {
+      const { data: net, error: netErr } = await supabaseClient
+        .from("networks")
+        .select("network_id")
+        .eq("bssid", bssid)
+        .maybeSingle();
+      if (netErr) throw netErr;
+      networkId = net?.network_id ?? null;
+    }
+
+    // Join scans + vulnerabilities_threat (+ details for severity/score)
+    let query = supabaseClient
+      .from("vulnerabilities_threat")
+      .select(
+        `
+        vt_id,
+        vt_name,
+        vt_status,
+        vt_value,
+        scan:scans (
+          scan_id,
+          scan_start,
+          scan_end,
+          network_id
+        ),
+        detail:vulnerability_threat_details (
+          vt_code,
+          severity,
+          severity_score
+        )
+      `
+      )
+      .order("scan_id", { ascending: false }); // newest first
+
+    if (networkId) {
+      query = query.eq("scan.network_id", networkId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Shape it into table rows
+    const rows = data.map((item) => ({
+      id: item.vt_id,
+      severity: item.detail?.severity ?? "CRITICAL", // fallback if needed
+      name: item.vt_name,
+      score: item.detail?.severity_score ?? null,
+      observedConfig: item.vt_value,
+      detectedTime: item.scan?.scan_start,
+    }));
+
+    return res.json({ status: "OK", rows });
+  } catch (err) {
+    console.error("vulnerabilities_latest error:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      error: "Failed to load vulnerabilities",
+    });
+  }
+});
 
 module.exports = router;
