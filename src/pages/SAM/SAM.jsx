@@ -45,28 +45,36 @@ const SAM = () => {
     setLocationMeta((prev) => ({ ...prev, [field]: value }));
   };
 
+  //prevents the crash, clears fields for new/unknown networks, and pre-fills only for existing ones with valid JSON.
   const handleSelectNetwork = async (net) => {
-    setSelectedNetwork(net);
+  setSelectedNetwork(net);
 
-    try {
-      const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`); //wla pa to sa backend
-      if (res.ok) {
-        const data = await res.json();   // { city, province, notes } or null
-        if (data) {
-          setLocationMeta({
-            city: data.city || "",
-            province: data.province || "",
-            notes: data.notes || "",
-          });
-        } else {
-          setLocationMeta({ city: "", province: "", notes: "" });
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load metadata", e); //dito napunta if wla pa record for pre-fill
+  try {
+    const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`);
+    if (!res.ok) {  // Add this check FIRST
+      console.warn(`Metadata fetch failed: ${res.status} ${res.statusText}`);
       setLocationMeta({ city: "", province: "", notes: "" });
+      return;  // Exit early
     }
-  };
+    
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.warn('Response is not JSON:', contentType);
+      setLocationMeta({ city: "", province: "", notes: "" });
+      return;
+    }
+    
+    const data = await res.json();
+    setLocationMeta({
+      city: data.city || "",
+      province: data.province || "",
+      notes: data.notes || "",
+    });
+  } catch (e) {
+    console.error("Failed to load metadata:", e);
+    setLocationMeta({ city: "", province: "", notes: "" });
+  }
+};
 
   const handleScan = async () => {
     if (!selectedNetwork) {

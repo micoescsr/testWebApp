@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const { supabaseClient } = require("../config/supabaseClient");
 
-router.get("/network_metadata", async (req, res) => {
+/* router.get("/network_metadata", async (req, res) => {
   const { bssid } = req.query;
 
   if (!bssid) {
@@ -27,6 +27,26 @@ router.get("/network_metadata", async (req, res) => {
   }
 
   return res.json(data);
+}); */
+
+router.get('/', async (req, res) => {
+  try {
+    const { bssid } = req.query;
+    // Query your DB (Supabase/Postgres) for network by bssid
+    const { data, error } = await supabaseClient
+      .from('networks')
+      .select('city, province, notes')
+      .eq('bssid', bssid)
+      .single();
+
+    if (error || !data) {
+      return res.json(null);  // Returns null for no match (prefill clears)
+    }
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
+
 
 module.exports = router;
