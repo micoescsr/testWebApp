@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get("/vulnerabilities_latest", async (req, res) => {
+/* router.get("/vulnerabilities_latest", async (req, res) => {
   try {
     const { bssid } = req.query; // optional filter by current network
 
@@ -66,27 +66,31 @@ router.get("/vulnerabilities_latest", async (req, res) => {
 
     // Join scans + vulnerabilities_threat (+ details for severity/score)
     let query = supabaseClient
-      .from("vulnerabilities_threat")
-      .select(
-        `
-        vt_id,
-        vt_name,
-        vt_status,
-        vt_value,
-        scan:scans (
-          scan_id,
-          scan_start,
-          scan_end,
-          network_id
-        ),
-        detail:vulnerability_threat_details (
-          vt_code,
-          severity,
-          severity_score
-        )
+    .from("vulnerabilities_threat")
+    .select(
       `
+      vt_id,
+      vt_name,
+      vt_status,
+      vt_value,
+      scan:scans (
+        scan_id,
+        scan_start,
+        scan_end,
+        network_id,
+        network:networks (
+          bssid,
+          ssid
+        )
+      ),
+      detail:vulnerability_threat_details (
+        vt_code,
+        severity,
+        severity_score
       )
-      .order("scan_id", { ascending: false }); // newest first
+      `
+    )
+    .order("scan_id", { ascending: false });
 
     if (networkId) {
       query = query.eq("scan.network_id", networkId);
@@ -103,6 +107,11 @@ router.get("/vulnerabilities_latest", async (req, res) => {
       score: item.detail?.severity_score ?? null,
       observedConfig: item.vt_value,
       detectedTime: item.scan?.scan_start,
+
+          // ADD THESE
+      network_id: item.scan?.network_id,
+      bssid: item.scan?.network?.bssid,
+      ssid: item.scan?.network?.ssid,
     }));
 
     return res.json({ status: "OK", rows });
@@ -113,6 +122,6 @@ router.get("/vulnerabilities_latest", async (req, res) => {
       error: "Failed to load vulnerabilities",
     });
   }
-});
+}); */
 
 module.exports = router;
