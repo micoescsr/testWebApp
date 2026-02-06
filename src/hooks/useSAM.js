@@ -215,7 +215,8 @@ export const useVulnerabilities = (bssid) => {
       // setVulnDetail(res.data);
 
       // Mock detail fallback
-      if (vulnIdOrName === "Unencrypted Network") {
+      //wla pa ung associations here i think, ito na ung next ko, or the scanning if di pa nagana ung raspi
+      if (vulnIdOrName === "Unencrypted Network") { 
         setVulnDetail({
           severity: "CRITICAL",
           name: "Unencrypted Network",
