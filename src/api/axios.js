@@ -20,6 +20,8 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+export default api;
+
 /* api.interceptors.request.use(async (config) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
@@ -28,7 +30,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 }); */
 
-export default api;
+
 
 
 /* import axios from "axios";
