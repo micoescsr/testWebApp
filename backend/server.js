@@ -218,21 +218,45 @@ app.get("/api/detect/poll", async (req, res) => {
       }
     );
 
+    // Try to parse the JSON from FastAPI
     const data = await r.json().catch(() => null);
 
-    return res.status(r.status).json(
-      data ?? { status: "ERROR", error: "Non-JSON response from FastAPI" }
-    );
+    // If FastAPI returns successfully, pass it through
+    if (r.ok && data) {
+
+      //FOR POLLING DEBUGGING
+      // --- DEBUG LOGGING START ---
+      // Check if we actually have results in this poll cycle
+      if (data.results && data.results.length > 0) {
+        console.log("🔥 THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
+      } else {
+        // Optional: Log a 'dot' to show polling is alive without spamming text
+        process.stdout.write("."); 
+      }
+      // --- DEBUG LOGGING END ---
+
+      return res.status(200).json(data);
+    }
+
+    // If FastAPI returns an error code (4xx/5xx) or invalid JSON
+    console.error("FastAPI Poll Error:", r.status, data);
+    return res.status(200).json({
+      running: false, // Tell frontend scanning isn't active
+      results: [],
+      last_error: `FastAPI error: ${r.status}`
+    });
 
   } catch (err) {
-    return res.status(502).json({
-      status: "ERROR",
-      error: "Failed to reach FastAPI /detect/poll",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
+    console.error("Poll Proxy Exception:", err.message);
+    // Return a 'safe' structure so React doesn't crash on .map()
+    return res.status(200).json({
+      running: false,
+      results: [],
+      last_error: "Backend unavailable"
     });
   }
 });
+
 
 
 

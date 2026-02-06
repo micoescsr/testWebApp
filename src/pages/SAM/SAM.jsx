@@ -5,17 +5,21 @@ import "./SAM.css";
 import ThreatsTable from "../../components/sam/ThreatsTable";
 import VulnerabilitiesTable from "../../components/sam/VulnerabilitiesTable";
 import SAMSidebar from "../../components/sam/SAMSidebar";
-import { useThreats, useVulnerabilities } from "../../hooks/useSAM";
+import { useThreats, useVulnerabilities, useNetworks, useThreatDetection } from "../../hooks/useSAM";
 import { triggerScan } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
-import { useNetworks } from "../../hooks/useSAM"; //added from hook
 
 const SAM = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
-  const [lastScannedNetwork, setLastScannedNetwork] = useState(null); //added for vulnerability scan display
-   const [selectedNetwork, setSelectedNetwork] = useState(null);      // <-- add this
+  const [lastScannedNetwork, setLastScannedNetwork] = useState(null); 
+  const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [lastScan, setLastScan] = useState(null);   // NEW
+  const [lastScan, setLastScan] = useState(null);
+  const [locationMeta, setLocationMeta] = useState({
+    city: "",
+    province: "",
+    notes: "",
+  });
 
   const {
     threats,
@@ -29,81 +33,62 @@ const SAM = () => {
     fetchVulnDetail,
     vulnDetail,
     vulnDetailLoading,
-    reloadVulnerabilities,  // <-- ADD THIS LINE
-  } = useVulnerabilities(selectedNetwork?.bssid);  // <-- pass bssid
+    reloadVulnerabilities,
+  } = useVulnerabilities(selectedNetwork?.bssid);
 
-   const { //added for networks list
+  const {
     networks, 
     loading: networksLoading, 
     error: networksError 
   } = useNetworks();
 
+  // --- POLLING HOOK ---
+  const { 
+    detectionStatus, 
+    setDetectionStatus, 
+    detectionResults, 
+    resetDetection 
+  } = useThreatDetection();
 
-  /* const networks = [
-  {
-    ssid: "......",
-    bssid: "2E:B4:BE:DA:B7:38",
-    channel: 6,
-  } 
-]; */
-  const [locationMeta, setLocationMeta] = useState({
-    city: "",
-    province: "",
-    notes: "",
-  });
-
-  console.log("selectedNetwork", selectedNetwork);
-  console.log("raw vulnerabilities", vulnerabilities);
-
-  const filteredVulns =
-  selectedNetwork && Array.isArray(vulnerabilities)
-    ? vulnerabilities.filter(
-        (v) => v.bssid === selectedNetwork.bssid // adjust field name below
-      )
-    : []; 
-  console.log("filteredVulns", filteredVulns);
-
-  /* const filteredVulns = selectedNetwork //Explicitly filter in the component (if backend returns multiple BSSIDs)
-    ? vulnerabilities.filter(v => v.network_bssid === selectedNetwork.bssid)
-    : []; */
+  // Helper: Filter vulnerabilities locally if needed
+  const filteredVulns = selectedNetwork && Array.isArray(vulnerabilities)
+    ? vulnerabilities.filter((v) => v.bssid === selectedNetwork.bssid)
+    : [];
 
   const handleMetaChange = (field, value) => {
     setLocationMeta((prev) => ({ ...prev, [field]: value }));
   };
 
-  //prevents the crash, clears fields for new/unknown networks, and pre-fills only for existing ones with valid JSON.
   const handleSelectNetwork = async (net) => {
-  setSelectedNetwork(net);
+    setSelectedNetwork(net);
 
-  try {
-    const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`);
-    if (!res.ok) {  // Add this check FIRST
-      console.warn(`Metadata fetch failed: ${res.status} ${res.statusText}`);
+    try {
+      const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`);
+      if (!res.ok) {
+        console.warn(`Metadata fetch failed: ${res.status}`);
+        setLocationMeta({ city: "", province: "", notes: "" });
+        return;
+      }
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        setLocationMeta({ city: "", province: "", notes: "" });
+        return;
+      }
+      
+      const data = await res.json();
+      setLocationMeta({
+        city: data.city || "",
+        province: data.province || "",
+        notes: data.notes || "",
+      });
+    } catch (e) {
+      console.error("Failed to load metadata:", e);
       setLocationMeta({ city: "", province: "", notes: "" });
-      return;  // Exit early
     }
-    
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      console.warn('Response is not JSON:', contentType);
-      setLocationMeta({ city: "", province: "", notes: "" });
-      return;
-    }
-    
-    const data = await res.json();
-    setLocationMeta({
-      city: data.city || "",
-      province: data.province || "",
-      notes: data.notes || "",
-    });
-  } catch (e) {
-    console.error("Failed to load metadata:", e);
-    setLocationMeta({ city: "", province: "", notes: "" });
-  }
 
-  // ⬇️ reload vulns for this network (if it has past scans) -- Optionally reload when user changes selected network
-  await reloadVulnerabilities(net.bssid);
-};
+    await reloadVulnerabilities(net.bssid);
+  };
 
   const handleScan = async () => {
     if (!selectedNetwork) {
@@ -111,19 +96,22 @@ const SAM = () => {
       return;
     }
 
-    // required
     if (!locationMeta.city || !locationMeta.province || !locationMeta.notes) {
       alert("City, Province, and Notes are required");
       return;
     }
 
-    try {
-      // 1) trigger scan (fastapi only)
-      const result = await triggerScan(selectedNetwork); // single scan object
-      setLastScan(result); // scan object
-      setLastScannedNetwork(selectedNetwork); // for display in sidebar (freeze current network until new selection/scan)
+    // 1. STOP previous detection & set scanning state
+    resetDetection(); 
+    setDetectionStatus('SCANNING');
 
-      // 2) save network + metadata + scan
+    try {
+      // 2. Trigger Scan
+      const result = await triggerScan(selectedNetwork);
+      setLastScan(result);
+      setLastScannedNetwork(selectedNetwork);
+
+      // 3. Save Results
       const saveRes = await fetch("http://localhost:3000/api/rasPi/networks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,57 +122,27 @@ const SAM = () => {
           city: locationMeta.city,
           province: locationMeta.province,
           notes: locationMeta.notes,
-          scan: result, // use result, not scanResult
+          scan: result,
           encryption_status: selectedNetwork.encryption_status,
           num_clients: selectedNetwork.num_clients,
-
         }),
       });
-      console.log("Save response:", saveRes);
 
-      if (!saveRes.ok) {
-        throw new Error("Save failed");
-      }
+      if (!saveRes.ok) throw new Error("Save failed");
 
-      alert("Scan started successfully");
-
-    // After scan/save, refresh vulnerabilities for this network
-    await reloadVulnerabilities(selectedNetwork.bssid);
+      alert("Scan finished. Starting Threat Detection...");
+      
+      // 4. Start Detection Phase
+      setDetectionStatus('DETECTING'); 
+      await reloadVulnerabilities(selectedNetwork.bssid);
 
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
+      setDetectionStatus('IDLE');
     }
   };
 
-
-  const openThreatDetail = async (threat) => {
-    await fetchThreatDetail(threat.name); // later: use id from DB
-    setIsModalOpen(true);
-  };
-
-  const openVulnDetail = async (vuln) => {
-    await fetchVulnDetail(vuln.name); // later: use id from DB
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-  };
-
-  const currentDetail =
-    activeTab === "threats" ? threatDetail : vulnDetail;
-  const detailLoading =
-    activeTab === "threats"
-      ? threatDetailLoading
-      : vulnDetailLoading;
-
-  const tabs = [
-    { label: "Threats", value: "threats" },
-    { label: "Vulnerabilities", value: "vulnerabilities" },
-  ];
-
-    // Add this function inside SAM component, before return()
   const saveSelectedNetwork = async () => {
     if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
       alert('Select a full network first');
@@ -192,7 +150,7 @@ const SAM = () => {
     }
 
     try {
-      const res = await fetch('/api/networks', {  // Your new POST endpoint
+      const res = await fetch('/api/networks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,21 +166,56 @@ const SAM = () => {
       }
 
       alert('Network saved to DB!');
-      console.log('Saved:', await res.json());  // { status: 'OK', network: { network_id: 123 } }
     } catch (err) {
       console.error(err);
       alert(`Save failed: ${err.message}`);
     }
   };
 
+  const openThreatDetail = async (threat) => {
+    await fetchThreatDetail(threat.name);
+    setIsModalOpen(true);
+  };
+
+  const openVulnDetail = async (vuln) => {
+    await fetchVulnDetail(vuln.name);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+  };
+
+  // --- MERGE REAL-TIME THREATS ---
+  const displayThreats = detectionResults?.results?.length > 0 
+    ? detectionResults.results.map(r => ({
+        id: r.findings.evil_twin?.id || "Unknown",
+        name: r.findings.evil_twin?.value || "Threat",
+        severity: r.findings.evil_twin?.status === "DETECTED" ? "CRITICAL" : "SAFE",
+        detectedTime: r.detection_start,
+        status: r.findings.evil_twin?.status
+      }))
+    : threats;
+
+  const currentDetail = activeTab === "threats" ? threatDetail : vulnDetail;
+  const detailLoading = activeTab === "threats" ? threatDetailLoading : vulnDetailLoading;
+
+  const tabs = [
+    { label: "Threats", value: "threats" },
+    { label: "Vulnerabilities", value: "vulnerabilities" },
+  ];
+
   return (
-    <div
-      className={
-        activeTab === "vulnerabilities" ? "sam-layout" : "sam-page"
-      }
-    >
+    <div className={activeTab === "vulnerabilities" ? "sam-layout" : "sam-page"}>
       <div className="sam-main">
         <h1 className="page-title">Security Assessment Management</h1>
+
+        {/* STATUS BANNER */}
+        {detectionStatus === 'DETECTING' && (
+           <div className="status-banner detecting" style={{background: '#e6fffa', color: '#047857', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #047857'}}>
+              Scanning active... Monitoring for threats ({detectionResults?.results?.length || 0} found)
+           </div>
+        )}
 
         <div className="sam-header">
           <Tabs
@@ -234,7 +227,7 @@ const SAM = () => {
 
         {activeTab === "threats" && (
           <ThreatsTable
-            threats={threats}
+            threats={displayThreats}
             onView={openThreatDetail}
           />
         )}
@@ -242,7 +235,6 @@ const SAM = () => {
         {activeTab === "vulnerabilities" && (
           <VulnerabilitiesTable
             vulnerabilities={vulnerabilities}
-            //vulnerabilities={filteredVulns} // <-- use filtered list
             onView={openVulnDetail}
           />
         )}
@@ -251,20 +243,15 @@ const SAM = () => {
       {activeTab === "vulnerabilities" && (
         <SAMSidebar
           selectedNetwork={selectedNetwork}
-          lastScannedNetwork={lastScannedNetwork} //pass for display in sidebar (freeze current network until new selection/scan)
-          //onSelectNetwork={setSelectedNetwork}
+          lastScannedNetwork={lastScannedNetwork}
           onSelectNetwork={handleSelectNetwork}
           availableNetworks={networks}
-          onScan={handleScan} 
-          //networksLoading={networksLoading}  // optional, if you want to show spinner
-          //networksError={networksError}      // optional
-          onSaveNetwork={saveSelectedNetwork}  // for chosen network 
-          lastScan={lastScan}              // pass it down
-          locationMeta={locationMeta}            // NEW
-          onChangeMeta={handleMetaChange}        // NEW
+          onScan={handleScan}
+          onSaveNetwork={saveSelectedNetwork}
+          lastScan={lastScan}
+          locationMeta={locationMeta}
+          onChangeMeta={handleMetaChange}
         />
-
-        
       )}
 
       {isModalOpen && currentDetail && (
