@@ -258,3 +258,67 @@ export const useVulnerabilities = (bssid) => {
   };
   
 };
+
+/* =========================
+   THREAT DETECTION HOOK
+========================= */
+export const useThreatDetection = () => {
+  const [status, setStatus] = useState('IDLE'); // 'IDLE' | 'SCANNING' | 'DETECTING'
+  const [detectionResults, setDetectionResults] = useState(null);
+  const [pollIntervalId, setPollIntervalId] = useState(null);
+
+  // Start the polling loop
+  const startPolling = () => {
+    if (pollIntervalId) return; // Prevent double polling
+
+    const id = setInterval(async () => {
+      try {
+        // Poll your Express Backend
+        const res = await fetch("http://localhost:3000/api/detect/poll");
+        const data = await res.json();
+        
+        setDetectionResults(data);
+
+        // Optional: If backend says "running": false, you could auto-stop:
+        // if (data.running === false) stopPolling();
+
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 2000); // Check every 2 seconds
+
+    setPollIntervalId(id);
+  };
+
+  const stopPolling = () => {
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId);
+      setPollIntervalId(null);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopPolling();
+  }, [pollIntervalId]);
+
+  // Watch status changes
+  useEffect(() => {
+    if (status === 'DETECTING') {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  }, [status]);
+
+  return {
+    detectionStatus: status,
+    setDetectionStatus: setStatus,
+    detectionResults,
+    resetDetection: () => {
+      stopPolling();
+      setStatus('IDLE');
+      setDetectionResults(null);
+    }
+  };
+};
