@@ -1,5 +1,6 @@
 // hooks/useSAM.js
-import { useState, useEffect } from "react";
+//import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // Ensure useRef is imported
 import {
   getThreats,
   getVulnerabilities,
@@ -260,55 +261,65 @@ export const useVulnerabilities = (bssid) => {
 };
 
 /* =========================
-   THREAT DETECTION HOOK
+   THREAT DETECTION HOOK (Smart Polling)
 ========================= */
 export const useThreatDetection = () => {
   const [status, setStatus] = useState('IDLE'); // 'IDLE' | 'SCANNING' | 'DETECTING'
   const [detectionResults, setDetectionResults] = useState(null);
-  const [pollIntervalId, setPollIntervalId] = useState(null);
+  
+  // Refs track the "Live" status without causing re-renders
+  const isPollingRef = useRef(false);
+  const timeoutRef = useRef(null);
 
-  // Start the polling loop
-  const startPolling = () => {
-    if (pollIntervalId) return; // Prevent double polling
+  // The actual polling function
+  const runPoll = async () => {
+    // 1. Stop immediately if we turned it off
+    if (!isPollingRef.current) return;
 
-    const id = setInterval(async () => {
-      try {
-        // Poll your Express Backend
-        const res = await fetch("http://localhost:3000/api/detect/poll");
-        const data = await res.json();
-        
+    try {
+      // 2. Ask the waiter (Request)
+      const res = await fetch("http://localhost:3000/api/detect/poll");
+      const data = await res.json();
+      
+      // 3. Update UI only if we are still "on"
+      if (isPollingRef.current) {
         setDetectionResults(data);
-
-        // Optional: If backend says "running": false, you could auto-stop:
-        // if (data.running === false) stopPolling();
-
-      } catch (err) {
-        console.error("Polling error:", err);
       }
-    }, 2000); // Check every 2 seconds
-
-    setPollIntervalId(id);
-  };
-
-  const stopPolling = () => {
-    if (pollIntervalId) {
-      clearInterval(pollIntervalId);
-      setPollIntervalId(null);
+    } catch (err) {
+      console.error("Polling error:", err);
+    } finally {
+      // 4. WAIT for the answer, THEN schedule the next one in 2 seconds
+      // This prevents the "Traffic Jam"
+      if (isPollingRef.current) {
+        timeoutRef.current = setTimeout(runPoll, 2000); 
+      }
     }
   };
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => stopPolling();
-  }, [pollIntervalId]);
+  const startPolling = () => {
+    if (isPollingRef.current) return; // Already running
+    isPollingRef.current = true;
+    runPoll(); // Trigger the first request
+  };
 
-  // Watch status changes
+  const stopPolling = () => {
+    isPollingRef.current = false; // Kill the loop flag
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current); // Cancel any pending timer
+      timeoutRef.current = null;
+    }
+  };
+
+  // Watch status changes (Auto-start/stop)
   useEffect(() => {
     if (status === 'DETECTING') {
       startPolling();
     } else {
       stopPolling();
     }
+    
+    // Cleanup on unmount (page close)
+    return () => stopPolling();
   }, [status]);
 
   return {
