@@ -32,20 +32,20 @@ const SAM = () => {
     reloadVulnerabilities,  // <-- ADD THIS LINE
   } = useVulnerabilities(selectedNetwork?.bssid);  // <-- pass bssid
 
-   /* const { //added for networks list
+   const { //added for networks list
     networks, 
     loading: networksLoading, 
     error: networksError 
   } = useNetworks();
- */
 
-  const networks = [
+
+  /* const networks = [
   {
     ssid: "......",
     bssid: "2E:B4:BE:DA:B7:38",
     channel: 6,
-  }
-];
+  } 
+]; */
   const [locationMeta, setLocationMeta] = useState({
     city: "",
     province: "",
