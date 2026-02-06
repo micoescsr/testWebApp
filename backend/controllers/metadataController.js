@@ -28,7 +28,7 @@ async function getNetworkMetadata(req, res) {
 }
 
 // GET /api/webApp/vulnerabilities_latest?bssid=...
-async function getVulnerabilitiesLatest(req, res) {
+/* async function getVulnerabilitiesLatest(req, res) {
   try {
     const { bssid } = req.query;
 
@@ -68,11 +68,15 @@ async function getVulnerabilitiesLatest(req, res) {
       .order("scan_id", { ascending: false });
 
     if (networkId) {
+      // filter by network_id (this is correct)
       query = query.eq("scan.network_id", networkId);
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase error in getVulnerabilitiesLatest:", error);
+      throw error;
+    }
 
     const rows = data.map((item) => ({
       id: item.vt_id,
@@ -81,6 +85,7 @@ async function getVulnerabilitiesLatest(req, res) {
       score: item.detail?.vt_cvss_base_score ?? null,
       observedConfig: item.vt_value,
       detectedTime: item.scan?.scan_start,
+      network_id: item.scan?.network_id ?? null, // optional, but real
     }));
 
     return res.json({ status: "OK", rows });
@@ -91,7 +96,106 @@ async function getVulnerabilitiesLatest(req, res) {
       error: "Failed to load vulnerabilities",
     });
   }
+} */
+
+async function getVulnerabilitiesLatest(req, res) {
+  try {
+    const { bssid } = req.query;
+
+    if (!bssid) {
+      return res.status(400).json({ error: "bssid is required" });
+    }
+
+    // Step 1: resolve network_id
+    const { data: network, error: networkError } = await supabaseClient
+      .from("networks")
+      .select("network_id")
+      .eq("bssid", bssid)
+      .single();
+
+    if (networkError || !network) {
+      console.error("Network lookup failed:", networkError);
+      return res.status(500).json({ error: "Failed to resolve network" });
+    }
+
+    const networkId = network.network_id;
+
+    // Step 2: Build query (DO NOT AWAIT YET)
+    let query = supabaseClient
+      .from("vulnerabilities_threat")
+      .select(`
+        vt_id,
+        vt_name,
+        vt_status,
+        vt_value,
+        scans!inner(         
+          scan_id,
+          scan_start,
+          scan_end,
+          network_id,
+          networks(          
+            bssid,
+            ssid
+          )
+        ),
+        detail:vulnerability_threat_details(
+          vt_code,
+          vt_severity_rating,
+          vt_cvss_base_score
+        )
+      `);
+
+    // Apply Filter
+    if (networkId) {
+      // Use "scans.network_id" because we are not aliasing "scans"
+      query = query.eq("scans.network_id", networkId);
+    }
+
+    // Step 3: Execute Query
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Supabase error fetching vulnerabilities:", error);
+      throw error;
+    }
+
+    // Step 4: Map Results
+    const rows = (data || [])
+      .map((item) => {
+        // FIX: The property is now "scans" (plural) because we removed the alias
+        // Supabase might return an object or single-item array for foreign keys
+        const scanObj = Array.isArray(item.scans) ? item.scans[0] : item.scans;
+        
+        // FIX: The property inside is "networks" (plural)
+        const netObj = scanObj?.networks; 
+
+        return {
+          id: item.vt_id,
+          severity: item.detail?.vt_severity_rating ?? "N/A",
+          name: item.vt_name,
+          score: item.detail?.vt_cvss_base_score ?? null,
+          observedConfig: item.vt_value,
+          
+          // Use the variables we extracted above
+          detectedTime: scanObj?.scan_start,
+          network_id: scanObj?.network_id ?? null,
+          bssid: netObj?.bssid ?? null,
+          ssid: netObj?.ssid ?? null,
+        };
+      })
+      .sort((a, b) => new Date(b.detectedTime) - new Date(a.detectedTime));
+
+    return res.json({ status: "OK", rows });
+
+  } catch (error) {
+    console.error("getVulnerabilitiesLatest error:", error);
+    res.status(500).json({ error: error.message });
+  }
 }
+
+
+
+
 
 module.exports = {
   getNetworkMetadata,
