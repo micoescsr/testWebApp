@@ -11,7 +11,7 @@ export const createUser = (userData) => {
   return api.post("webApp/users/profiles", userData);
 };
 
-// UPDATE user
+// UPDATE user - no backend code yet
 export const updateUser = (id, userData) => {
   return api.put(`webApp/users/profiles/${id}`, userData);
 };
