@@ -1,6 +1,11 @@
 // components/sam/VulnerabilitiesTable.jsx
 const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
+  console.log("VulnerabilitiesTable props.vulnerabilities", vulnerabilities);
   const hasVulns = Array.isArray(vulnerabilities) && vulnerabilities.length > 0;
+
+  if (hasVulns) {
+    console.log("First vuln sample", vulnerabilities[0]);
+  }
 
   const formatDetectedTime = (iso) => {
     if (!iso) return "N/A";
@@ -32,7 +37,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
               <th>SEVERITY</th>
               <th>VULNERABILITY NAME</th>
               <th>SEVERITY SCORE</th>
-              <th>OBSERVED CONFIGURATION</th> {/* NEW COLUMN */}
+              <th>OBSERVED CONFIGURATION</th>
               <th>DETECTED TIME</th>
               <th>ACTION</th>
             </tr>
@@ -41,23 +46,19 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
           {hasVulns && (
             <tbody>
               {vulnerabilities.map((vuln) => (
-                <tr key={vuln.id}>
+                <tr key={vuln.id ?? vuln.name}>
                   <td>
                     <span
                       className={`severity ${String(
                         vuln.severity || ""
                       ).toLowerCase()}`}
                     >
-                      {vuln.severity}
+                      {vuln.severity ?? "N/A"}
                     </span>
                   </td>
-                  {/* vt_name mapped to name in hook/controller */}
                   <td>{vuln.name}</td>
-                  {/* severity_score mapped to score */}
                   <td>{vuln.score ?? "N/A"}</td>
-                  {/* vt_value mapped to observedConfig */}
                   <td>{vuln.observedConfig || "N/A"}</td>
-                  {/* scan_start mapped to detectedTime */}
                   <td>{formatDetectedTime(vuln.detectedTime)}</td>
                   <td
                     className="view-action"

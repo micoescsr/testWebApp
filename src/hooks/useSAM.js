@@ -138,41 +138,64 @@ export const useThreats = () => {
 /* =========================
    VULNERABILITIES
 ========================= */
-export const useVulnerabilities = () => {
+export const useVulnerabilities = (bssid) => {
   const [vulnerabilities, setVulnerabilities] = useState([]);
   const [vulnDetail, setVulnDetail] = useState(null);
   const [vulnsLoading, setVulnsLoading] = useState(false);
   const [vulnDetailLoading, setVulnDetailLoading] = useState(false);
   const [vulnError, setVulnError] = useState(null);
 
-  useEffect(() => {
-    const fetchVulnerabilities = async () => {
-      try {
-        setVulnsLoading(true);
-        setVulnError(null);
+  const loadVulnerabilities = async (targetBssid) => {
+    // if there is no selected network, show nothing
+    if (!targetBssid) {
+      setVulnerabilities([]);
+      return;
+    }
 
-        // if you want per‑network, pass ?bssid=...
-        const res = await fetch("/api/webApp/vulnerabilities_latest");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    try {
+      setVulnsLoading(true);
+      setVulnError(null);
 
-        const body = await res.json();
-        if (body.status !== "OK") {
-          throw new Error(body.error || "Backend returned ERROR");
-        }
+      /* const url = bssid
+        ? `/api/webApp/vulnerabilities_latest?bssid=${encodeURIComponent(
+            bssid
+          )}`
+        : `/api/webApp/vulnerabilities_latest`; */
 
-        // rows are already shaped in the controller
-        setVulnerabilities(body.rows || []);
+        const url = `/api/webApp/vulnerabilities_latest?bssid=${encodeURIComponent(
+        targetBssid
+      )}`;
 
-      } catch (err) {
-        setVulnError(err.message || "Failed to load vulnerabilities");
-      } finally {
-        setVulnsLoading(false);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const body = await res.json();
+      if (body.status !== "OK") {
+        throw new Error(body.error || "Backend returned ERROR");
       }
-    };
 
-    fetchVulnerabilities();
-  }, []);
+      console.log("vulns from backend", body.rows); // TEMP: see data shape
+      setVulnerabilities(body.rows || []);
 
+    } catch (err) {
+      console.error("fetchVulnerabilities error:", err);
+      setVulnError(err.message || "Failed to load vulnerabilities");
+    } finally {
+      setVulnsLoading(false);
+    }
+  };
+
+   // 🔴 REMOVE this auto-load effect so nothing shows initially
+  // useEffect(() => {
+  //   loadVulnerabilities();
+  // }, []);
+
+  // reload whenever selected bssid changes
+  useEffect(() => {
+    loadVulnerabilities(bssid);
+  }, [bssid]);  // ⬅ important: tied to selected network
+
+  // ... keep fetchVulnDetail as you have it ...
   /* {
   id,             // vt_id
   severity,       // from details or "CRITICAL"
@@ -230,6 +253,7 @@ export const useVulnerabilities = () => {
     vulnDetail,
     vulnDetailLoading,
     fetchVulnDetail,
+    reloadVulnerabilities: loadVulnerabilities, // <-- new
   };
   
 };

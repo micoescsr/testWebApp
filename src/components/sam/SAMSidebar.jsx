@@ -1,6 +1,7 @@
 // components/sam/SAMSidebar.jsx
 const SAMSidebar = ({
   selectedNetwork,
+  lastScannedNetwork, // NEW for sidebar display
   onSelectNetwork,
   availableNetworks,
   onScan,
@@ -40,8 +41,8 @@ const SAMSidebar = ({
         <div className="info-row">
           <span className="info-label">Current Network</span>
           <span className="info-value">
-            {selectedNetwork
-              ? selectedNetwork.ssid || "(hidden)"
+            {lastScannedNetwork 
+              ? lastScannedNetwork.ssid || "(hidden)"
               : "N/A"}
               
             {/* with bssid 

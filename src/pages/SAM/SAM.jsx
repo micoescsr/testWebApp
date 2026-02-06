@@ -12,7 +12,8 @@ import { useNetworks } from "../../hooks/useSAM"; //added from hook
 
 const SAM = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
-  const [selectedNetwork, setSelectedNetwork] = useState(null);
+  const [lastScannedNetwork, setLastScannedNetwork] = useState(null); //added for vulnerability scan display
+   const [selectedNetwork, setSelectedNetwork] = useState(null);      // <-- add this
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [lastScan, setLastScan] = useState(null);   // NEW
 
@@ -28,18 +29,43 @@ const SAM = () => {
     fetchVulnDetail,
     vulnDetail,
     vulnDetailLoading,
-  } = useVulnerabilities();
+    reloadVulnerabilities,  // <-- ADD THIS LINE
+  } = useVulnerabilities(selectedNetwork?.bssid);  // <-- pass bssid
 
-   const { //added for networks list
-    networks, loading: networksLoading, 
+   /* const { //added for networks list
+    networks, 
+    loading: networksLoading, 
     error: networksError 
   } = useNetworks();
+ */
 
+  const networks = [
+  {
+    ssid: "......",
+    bssid: "2E:B4:BE:DA:B7:38",
+    channel: 6,
+  }
+];
   const [locationMeta, setLocationMeta] = useState({
     city: "",
     province: "",
     notes: "",
   });
+
+  console.log("selectedNetwork", selectedNetwork);
+  console.log("raw vulnerabilities", vulnerabilities);
+
+  const filteredVulns =
+  selectedNetwork && Array.isArray(vulnerabilities)
+    ? vulnerabilities.filter(
+        (v) => v.bssid === selectedNetwork.bssid // adjust field name below
+      )
+    : []; 
+  console.log("filteredVulns", filteredVulns);
+
+  /* const filteredVulns = selectedNetwork //Explicitly filter in the component (if backend returns multiple BSSIDs)
+    ? vulnerabilities.filter(v => v.network_bssid === selectedNetwork.bssid)
+    : []; */
 
   const handleMetaChange = (field, value) => {
     setLocationMeta((prev) => ({ ...prev, [field]: value }));
@@ -74,6 +100,9 @@ const SAM = () => {
     console.error("Failed to load metadata:", e);
     setLocationMeta({ city: "", province: "", notes: "" });
   }
+
+  // ⬇️ reload vulns for this network (if it has past scans) -- Optionally reload when user changes selected network
+  await reloadVulnerabilities(net.bssid);
 };
 
   const handleScan = async () => {
@@ -91,7 +120,8 @@ const SAM = () => {
     try {
       // 1) trigger scan (fastapi only)
       const result = await triggerScan(selectedNetwork); // single scan object
-      setLastScan(result); // store it
+      setLastScan(result); // scan object
+      setLastScannedNetwork(selectedNetwork); // for display in sidebar (freeze current network until new selection/scan)
 
       // 2) save network + metadata + scan
       const saveRes = await fetch("http://localhost:3000/api/rasPi/networks", {
@@ -117,6 +147,10 @@ const SAM = () => {
       }
 
       alert("Scan started successfully");
+
+    // After scan/save, refresh vulnerabilities for this network
+    await reloadVulnerabilities(selectedNetwork.bssid);
+
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
@@ -208,6 +242,7 @@ const SAM = () => {
         {activeTab === "vulnerabilities" && (
           <VulnerabilitiesTable
             vulnerabilities={vulnerabilities}
+            //vulnerabilities={filteredVulns} // <-- use filtered list
             onView={openVulnDetail}
           />
         )}
@@ -216,12 +251,13 @@ const SAM = () => {
       {activeTab === "vulnerabilities" && (
         <SAMSidebar
           selectedNetwork={selectedNetwork}
+          lastScannedNetwork={lastScannedNetwork} //pass for display in sidebar (freeze current network until new selection/scan)
           //onSelectNetwork={setSelectedNetwork}
           onSelectNetwork={handleSelectNetwork}
           availableNetworks={networks}
           onScan={handleScan} 
-          networksLoading={networksLoading}  // optional, if you want to show spinner
-          networksError={networksError}      // optional
+          //networksLoading={networksLoading}  // optional, if you want to show spinner
+          //networksError={networksError}      // optional
           onSaveNetwork={saveSelectedNetwork}  // for chosen network 
           lastScan={lastScan}              // pass it down
           locationMeta={locationMeta}            // NEW
