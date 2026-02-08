@@ -15,11 +15,12 @@ const DeviceManagement = () => {
 
   const { 
     accessPoint, 
+    apEnabled,
     loading, 
     error, 
     isEmpty, 
     refetch, 
-    handleToggleAccessPoint 
+    handleToggleAccessPoint,
   } = useDevice();
 
   const tabs = [

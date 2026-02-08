@@ -1,14 +1,13 @@
 // components/device/AccessPointPanel.jsx
-const AccessPointPanel = ({ 
-  accessPoint, 
-  loading, 
-  error, 
-  isEmpty, 
-  onRetry, 
-  onToggle 
+const AccessPointPanel = ({
+  accessPoint,
+  loading,
+  error,
+  isEmpty,
+  onRetry,
+  onToggle,
 }) => (
   <div className="right-panel">
-    {/* Toggle always visible - disable during loading */}
     <div className="side-card">
       <h3>Device Access Point</h3>
       <div className="toggle-row">
@@ -25,7 +24,6 @@ const AccessPointPanel = ({
       </div>
     </div>
 
-    {/* Info shows conditional states */}
     <div className="side-card">
       <h3>Access Point Info</h3>
 
@@ -44,35 +42,51 @@ const AccessPointPanel = ({
         </div>
       )}
 
-      {isEmpty && (
+      {/* AP disabled */}
+      {!loading && !error && !isEmpty && accessPoint.enabled === false && (
         <div className="state-message empty-state">
-          <p>No access point configured</p>
-          <small>Toggle above to enable</small>
+          <p>Access point is currently disabled.</p>
+          <small>
+            Please enable the device access point to view AP information.
+          </small>
         </div>
       )}
 
-      {!loading && !error && !isEmpty && accessPoint && (
-        <>
-          <div className="info-row">
-            <span>Current Network</span>
-            <span>{accessPoint.currentNetwork ?? "N/A"}</span>
-          </div>
-          <div className="info-row">
-            <span>Access Point Network</span>
-            <span>{accessPoint.accessPointNetwork ?? "N/A"}</span>
-          </div>
-          <div className="info-row">
-            <span>Access Point Status</span>
-            <span>{accessPoint.status ?? "N/A"}</span>
-          </div>
-          <div className="info-row">
-            <span>Connected Clients</span>
-            <span>{accessPoint.connectedClients ?? "N/A"}</span>
-          </div>
-        </>
+      {/* AP enabled but no config (404) */}
+      {!loading && !error && isEmpty && (
+        <div className="state-message empty-state">
+          <p>No access point is configured.</p>
+          <small>Configure an access point on the device or try again.</small>
+        </div>
       )}
+
+      {/* AP enabled + data */}
+      {!loading &&
+        !error &&
+        !isEmpty &&
+        accessPoint.enabled === true && (
+          <>
+            <div className="info-row">
+              <span>Current Network</span>
+              <span>{accessPoint.currentNetwork ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Access Point Network</span>
+              <span>{accessPoint.accessPointNetwork ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Access Point Status</span>
+              <span>{accessPoint.status ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Connected Clients</span>
+              <span>{accessPoint.connectedClients ?? "N/A"}</span>
+            </div>
+          </>
+        )}
     </div>
   </div>
 );
+
 
 export default AccessPointPanel;
