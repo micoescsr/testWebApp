@@ -4,6 +4,8 @@ import "./DeviceManagement.css";
 import Tabs from "../../components/common/Tabs/Tabs";
 import { useDevice } from "../../hooks/useDevice";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
+// Add ErrorBoundary import if you created it
+import ErrorBoundary from "../../components/common/ErrorBoundary";
 
 const DeviceManagement = () => {
   const [activeTab, setActiveTab] = useState("announcement");
@@ -11,8 +13,14 @@ const DeviceManagement = () => {
   const [savedContent, setSavedContent] = useState("");
   const [draftContent, setDraftContent] = useState("");
 
-  const { accessPoint, loading, error, handleToggleAccessPoint } =
-    useDevice();
+  const { 
+    accessPoint, 
+    loading, 
+    error, 
+    isEmpty, 
+    refetch, 
+    handleToggleAccessPoint 
+  } = useDevice();
 
   const tabs = [
     { label: "Announcement", value: "announcement" },
@@ -48,12 +56,11 @@ const DeviceManagement = () => {
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="device-content">
-        {/* LEFT: editor */}
+        {/* LEFT: editor - always works */}
         <div className="left-panel">
           <div className="editor-section">
             <div className="section-header">
               <h2 className="section-title">{sectionTitle}</h2>
-
               {!isEditing && (
                 <button className="edit-icon" onClick={startEdit}>
                   Edit
@@ -92,13 +99,17 @@ const DeviceManagement = () => {
           </div>
         </div>
 
-        {/* RIGHT: extracted to AccessPointPanel */}
-        <AccessPointPanel
-          accessPoint={accessPoint}
-          loading={loading}
-          error={error}
-          onToggle={handleToggleAccessPoint}
-        />
+        {/* RIGHT: device panel with all states */}
+        {/* <ErrorBoundary fallback={<div>Panel error - reload page</div>}> */}
+          <AccessPointPanel
+            accessPoint={accessPoint}
+            loading={loading}
+            error={error}
+            isEmpty={isEmpty}
+            onRetry={refetch}
+            onToggle={handleToggleAccessPoint}
+          />
+        {/* </ErrorBoundary> */}
       </div>
     </div>
   );
