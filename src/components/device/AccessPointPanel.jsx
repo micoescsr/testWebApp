@@ -1,6 +1,14 @@
 // components/device/AccessPointPanel.jsx
-const AccessPointPanel = ({ accessPoint, loading, error, onToggle }) => (
+const AccessPointPanel = ({ 
+  accessPoint, 
+  loading, 
+  error, 
+  isEmpty, 
+  onRetry, 
+  onToggle 
+}) => (
   <div className="right-panel">
+    {/* Toggle always visible - disable during loading */}
     <div className="side-card">
       <h3>Device Access Point</h3>
       <div className="toggle-row">
@@ -9,7 +17,7 @@ const AccessPointPanel = ({ accessPoint, loading, error, onToggle }) => (
           <input
             type="checkbox"
             checked={accessPoint?.enabled ?? false}
-            disabled={loading || !accessPoint}
+            disabled={loading}
             onChange={onToggle}
           />
           <span className="slider"></span>
@@ -17,29 +25,49 @@ const AccessPointPanel = ({ accessPoint, loading, error, onToggle }) => (
       </div>
     </div>
 
+    {/* Info shows conditional states */}
     <div className="side-card">
       <h3>Access Point Info</h3>
 
-      {loading && <p>Loading...</p>}
-      {error && <p className="error-text">{error}</p>}
+      {loading && (
+        <div className="state-message loading-state">
+          <p>Loading...</p>
+        </div>
+      )}
 
-      {!loading && !error && accessPoint && (
+      {error && (
+        <div className="state-message error-state">
+          <p>{error}</p>
+          <button onClick={onRetry} disabled={loading}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {isEmpty && (
+        <div className="state-message empty-state">
+          <p>No access point configured</p>
+          <small>Toggle above to enable</small>
+        </div>
+      )}
+
+      {!loading && !error && !isEmpty && accessPoint && (
         <>
           <div className="info-row">
             <span>Current Network</span>
-            <span>{accessPoint.currentNetwork}</span>
+            <span>{accessPoint.currentNetwork ?? "N/A"}</span>
           </div>
           <div className="info-row">
             <span>Access Point Network</span>
-            <span>{accessPoint.accessPointNetwork}</span>
+            <span>{accessPoint.accessPointNetwork ?? "N/A"}</span>
           </div>
           <div className="info-row">
             <span>Access Point Status</span>
-            <span>{accessPoint.status}</span>
+            <span>{accessPoint.status ?? "N/A"}</span>
           </div>
           <div className="info-row">
             <span>Connected Clients</span>
-            <span>{accessPoint.connectedClients}</span>
+            <span>{accessPoint.connectedClients ?? "N/A"}</span>
           </div>
         </>
       )}
