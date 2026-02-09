@@ -32,7 +32,7 @@ const AccountsAudit = () => {
   error: auditError,
 } = useAuditLogs();
 
-  // ✅ Guard uses hook values, but does not call hooks inside condition
+  // Guard uses hook values, but does not call hooks inside condition
   // While loading profile, show nothing or a small loader
   if (profileLoading) {
     return <p>Loading...</p>;
@@ -85,7 +85,7 @@ const AccountsAudit = () => {
       username: pendingUser.username,
       email: pendingUser.email,
       role: pendingUser.role,
-      status: pendingUser.status,        // ← include status for edit path
+      status: pendingUser.status,        
     });
     await fetchUsers(); // refresh list after update
   }
@@ -102,17 +102,14 @@ const AccountsAudit = () => {
   if (returnToUserModal) {
     setShowUserModal(true);
   }
-
   setReturnToUserModal(false);
 };
-
 
 const cancelUserForm = () => {
   setShowUserModal(false);
   setModalMode("add");
   setSelectedUser(null);
 };
-
 
   return (
     <div className="accounts-audit">
@@ -153,8 +150,6 @@ const cancelUserForm = () => {
         </>
       )}
 
-
-
       {/* USER MODAL */}
       <AccountsAuditModal
         isOpen={showUserModal}
@@ -168,8 +163,7 @@ const cancelUserForm = () => {
           onSubmit={(data) => {
             console.log("SAVE USER:", data);
             const withId = { ...data, id: selectedUser?.id };
-            setPendingUser(withId);  // keep the id  
-            //openConfirmModal(modalMode, data);    // then open confirm, pass data  // data contains firstName, lastName, role, status
+            setPendingUser(withId);  
             openConfirmModal(modalMode, withId);    // then open confirm, pass data  // data contains firstName, lastName, role, status
           }}
           onDelete={() => {
@@ -177,7 +171,6 @@ const cancelUserForm = () => {
             openConfirmModal("delete");
           }}
         />
-
       </AccountsAuditModal>
 
 
