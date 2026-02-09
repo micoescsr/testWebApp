@@ -17,8 +17,25 @@ const getCurrentUserRole = async (userId) => {
   return data.role;
 };
 
+
+// NEW: return current user's profile
+async function getCurrentProfile(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+
+    const profile = await userRepository.findProfileById(currentUser.id);
+    res.json(profile);
+  } catch (error) {
+    console.error("getCurrentProfile error:", error);
+    res.status(500).json({ error: "Failed to fetch current profile" });
+  }
+}
+
 // Define functions FIRST
-async function createUser(req, res) {
+/* async function createUser(req, res) {
   try {
      console.log("createUser body:", req.body);     // <- log payload
     const currentUser = req.user;
@@ -54,7 +71,7 @@ async function createUser(req, res) {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-}
+} */
 
 async function getAllUsers(req, res) {
   try {
@@ -110,8 +127,9 @@ async function deleteUser(req, res) {
 
 // Export ALL at bottom (Node sees defined functions)
 module.exports = { 
-  createUser, 
+  //createUser, 
   getAllUsers, 
   updateUser, 
-  deleteUser 
+  deleteUser,
+  getCurrentProfile, // NEW
 };

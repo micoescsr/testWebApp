@@ -33,9 +33,8 @@ app.use(
 
 app.use(express.json());
 
-//app.use('/api/auth', authRoutes);  // → /api/auth/sa/login
-// 1) Public auth routes (no JWT/status required)
-app.use("/api/auth", authRoutes);    // /api/auth/login
+// 1) Public auth routes (no JWT / status)
+app.use("/api/auth", authRoutes); // /api/auth/login
 
 // 2) Everything else under /api requires JWT + active profile
 app.use("/api", authJWT, requireActiveProfile);
@@ -45,7 +44,6 @@ app.use("/api/webApp", webAppRoutes);
 app.use("/api/rasPi", rasPiRoutes);
 app.use("/api/rasPi_scan", scanRoutes);
 //app.use("/api/captivePortal", captivePortalRoutes);
-
 
 // Your create-user route
 app.post('/admin/create-user', async (req, res) => {
