@@ -2,10 +2,14 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Sidebar.css";
+import { useProfile } from "../hooks/useProfile";
+
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const { profile } = useProfile(); // get current user profile
+  const role = profile?.role;
 
   const handleLogout = () => {
     // TODO later: clear auth token here
@@ -20,10 +24,20 @@ const Sidebar = () => {
       label: "Security Assessment Management",
     },
     { path: "/device-management", icon: "📱", label: "Device Management" },
-    { path: "/accounts-audit", icon: "📁", label: "Accounts & Audit" },
+    { path: "/accounts-audit", icon: "📁", label: "Accounts & Audit", superadminOnly: true },
     { path: "/history", icon: "📊", label: "History" },
     { path: "/profile", icon: "👤", label: "Profile" },
   ];
+
+    /* // While profile is loading, render nothing or a skeleton
+  if (profileLoading) {
+    return null; // or a placeholder sidebar
+  } */
+  
+  // Filter based on role: only superadmin sees Accounts & Audit
+  const visibleMenuItems = menuItems.filter(
+    (item) => !item.superadminOnly || role === "superadmin"
+  );
 
   const toggleMenu = () => setIsOpen((prev) => !prev);
   const closeMenu = () => setIsOpen(false);
@@ -37,7 +51,7 @@ const Sidebar = () => {
         </div>
 
         <nav className="sidebar-nav">
-          {menuItems.map((item) => (
+          {visibleMenuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -76,7 +90,7 @@ const Sidebar = () => {
 
       <div className={`mobile-drawer ${isOpen ? "open" : ""}`}>
         <nav className="mobile-nav">
-          {menuItems.map((item) => (
+          {visibleMenuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -97,7 +111,6 @@ const Sidebar = () => {
         </button>
       </div>
 
-      {/* Optional dark overlay when menu open */}
       {isOpen && <div className="mobile-overlay" onClick={closeMenu} />}
     </>
   );

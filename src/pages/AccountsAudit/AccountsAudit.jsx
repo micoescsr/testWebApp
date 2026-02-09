@@ -9,22 +9,21 @@ import AuditLogsTable from "../../components/accounts/AuditLogsTable";
 import useUsers from "../../hooks/useUsers";
 import useAuditLogs from "../../hooks/useAuditLogs";
 import { updateUser } from "../../api/userApi";
-
+import { useNavigate } from "react-router-dom";
+import { useProfile } from "../../hooks/useProfile";
 
 const AccountsAudit = () => {
   const [activeTab, setActiveTab] = useState("accounts");
-
   const [showUserModal, setShowUserModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [returnToUserModal, setReturnToUserModal] = useState(false);
 
-
   const [modalMode, setModalMode] = useState("add");
   const [selectedUser, setSelectedUser] = useState(null);
+  const [pendingUser, setPendingUser] = useState(null);
 
-  //const { users, loading, error } = useUsers();
-  const [pendingUser, setPendingUser] = useState(null); //new state
-   // ← HERE: use the hook
+  const navigate = useNavigate();
+  const { profile, profileLoading } = useProfile();
   const { users, loading, error, fetchUsers } = useUsers();
 
   const {
@@ -33,72 +32,23 @@ const AccountsAudit = () => {
   error: auditError,
 } = useAuditLogs();
 
-/*   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null); */
+  // ✅ Guard uses hook values, but does not call hooks inside condition
+  // While loading profile, show nothing or a small loader
+  if (profileLoading) {
+    return <p>Loading...</p>;
+  }
+
+  // If not logged in or not superadmin, block this page
+  if (!profile || profile.role !== "superadmin") {
+    navigate("/dashboard"); // or "/profile" if you prefer
+    return null;
+  }
+
 
   const tabs = [
     { label: "Accounts", value: "accounts" },
     { label: "Audit Logs", value: "logs" },
   ];
-
-  // ============================
-  // FETCH USERS (AXIOS → BACKEND)
-  // ============================
-  // align it with view concept in mvc, modularize the below useEffect => fetchUsers
-/*   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setLoading(true);
-
-        const res = await api.get("/users/user_account");
-
-        const usersArray = res.data.data || res.data.users || res.data;
-
-        if (!Array.isArray(usersArray)) {
-          throw new Error("Users data is not an array");
-        }
-
-        const formattedUsers = usersArray.map((u) => ({
-          id: u.id,
-          name: `${u.first_name} ${u.last_name}`,
-          username: u.username,
-          email: u.email,
-          role: u.role,
-        }));
-
-        setUsers(formattedUsers);
-      } catch (err) {
-        console.error("Fetch users error:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUsers();
-  }, []);
- */
-
-
- /*  const auditLogs = [
-    {
-      user: "JCruz",
-      event: "LOGIN",
-      date: "11/14/2025",
-      time: "10:10 AM",
-      module: "LOGIN",
-      status: "FAILED",
-    },
-    {
-      user: "CDalisay",
-      event: "EDIT USER",
-      date: "11/14/2025",
-      time: "10:15 AM",
-      module: "ACCOUNTS",
-      status: "SUCCESS",
-    },
-  ]; */
 
   const openAddUser = () => {
     setModalMode("add");
@@ -124,32 +74,9 @@ const AccountsAudit = () => {
     setShowConfirmModal(true);
   };
 
-  /* const confirmAction = () => {
-    console.log("Confirmed:", modalMode, selectedUser);
-
-    if (modalMode === "delete") {
-      // Perform delete action
-    }
-
-    setShowConfirmModal(false);
-    setShowUserModal(false);
-  }; */
 
   const confirmAction = async () => {
   console.log("Confirmed: add", pendingUser);
-
-  /* if (modalMode === "add" && pendingUser) {
-    await addUser({
-      first_name: pendingUser.firstName,
-      last_name: pendingUser.lastName,
-      username: pendingUser.username,
-      email: pendingUser.email,
-      role: pendingUser.role,
-      status: pendingUser.status,    // ← include status for add path
-      // password: pendingUser.password, // only if you actually use it
-    });
-    await fetchUsers(); // refresh list after adding
-  } */
 
    if (modalMode === "edit" && pendingUser) {
     await updateUser(pendingUser.id, {    // ← call your API here
