@@ -1,17 +1,22 @@
 // pages/SAM.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Tabs from "../../components/common/Tabs/Tabs";
 import "./SAM.css";
 import ThreatsTable from "../../components/sam/ThreatsTable";
 import VulnerabilitiesTable from "../../components/sam/VulnerabilitiesTable";
 import SAMSidebar from "../../components/sam/SAMSidebar";
-import { useThreats, useVulnerabilities, useNetworks, useThreatDetection } from "../../hooks/useSAM";
+import {
+  useThreats,
+  useVulnerabilities,
+  useNetworks,
+  useThreatDetection,
+} from "../../hooks/useSAM";
 import { triggerScan } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 
 const SAM = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
-  const [lastScannedNetwork, setLastScannedNetwork] = useState(null); 
+  const [lastScannedNetwork, setLastScannedNetwork] = useState(null);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [lastScan, setLastScan] = useState(null);
@@ -37,23 +42,34 @@ const SAM = () => {
   } = useVulnerabilities(selectedNetwork?.bssid);
 
   const {
-    networks, 
-    loading: networksLoading, 
-    error: networksError 
+    networks,
+    loading: networksLoading,
+    error: networksError,
   } = useNetworks();
 
   // --- POLLING HOOK ---
-  const { 
-    detectionStatus, 
-    setDetectionStatus, 
-    detectionResults, 
-    resetDetection 
+  const {
+    detectionStatus,
+    setDetectionStatus,
+    detectionResults,
+    liveThreats,
+    resetDetection,
   } = useThreatDetection();
 
+  // 🔹 TEMP: force detection on page load
+  useEffect(() => {
+    setDetectionStatus("DETECTING");
+  }, [setDetectionStatus]);
+
+  // If there are live threats from polling, show those; otherwise fallback to DB threats
+  const displayThreats =
+    liveThreats && liveThreats.length > 0 ? liveThreats : threats;
+
   // Helper: Filter vulnerabilities locally if needed
-  const filteredVulns = selectedNetwork && Array.isArray(vulnerabilities)
-    ? vulnerabilities.filter((v) => v.bssid === selectedNetwork.bssid)
-    : [];
+  const filteredVulns =
+    selectedNetwork && Array.isArray(vulnerabilities)
+      ? vulnerabilities.filter((v) => v.bssid === selectedNetwork.bssid)
+      : [];
 
   const handleMetaChange = (field, value) => {
     setLocationMeta((prev) => ({ ...prev, [field]: value }));
@@ -69,13 +85,13 @@ const SAM = () => {
         setLocationMeta({ city: "", province: "", notes: "" });
         return;
       }
-      
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
         setLocationMeta({ city: "", province: "", notes: "" });
         return;
       }
-      
+
       const data = await res.json();
       setLocationMeta({
         city: data.city || "",
@@ -102,8 +118,8 @@ const SAM = () => {
     }
 
     // 1. STOP previous detection & set scanning state
-    resetDetection(); 
-    setDetectionStatus('SCANNING');
+    resetDetection();
+    setDetectionStatus("SCANNING");
 
     try {
       // 2. Trigger Scan
@@ -131,33 +147,32 @@ const SAM = () => {
       if (!saveRes.ok) throw new Error("Save failed");
 
       alert("Scan finished. Starting Threat Detection...");
-      
-      // 4. Start Detection Phase
-      setDetectionStatus('DETECTING'); 
-      await reloadVulnerabilities(selectedNetwork.bssid);
 
+      // 4. Start Detection Phase
+      setDetectionStatus("DETECTING");
+      await reloadVulnerabilities(selectedNetwork.bssid);
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
-      setDetectionStatus('IDLE');
+      setDetectionStatus("IDLE");
     }
   };
 
   const saveSelectedNetwork = async () => {
     if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
-      alert('Select a full network first');
+      alert("Select a full network first");
       return;
     }
 
     try {
-      const res = await fetch('/api/networks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/networks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ssid: selectedNetwork.ssid,
           bssid: selectedNetwork.bssid,
-          channel: selectedNetwork.channel
-        })
+          channel: selectedNetwork.channel,
+        }),
       });
 
       if (!res.ok) {
@@ -165,7 +180,7 @@ const SAM = () => {
         throw new Error(err.error || `HTTP ${res.status}`);
       }
 
-      alert('Network saved to DB!');
+      alert("Network saved to DB!");
     } catch (err) {
       console.error(err);
       alert(`Save failed: ${err.message}`);
@@ -186,19 +201,9 @@ const SAM = () => {
     setIsModalOpen(false);
   };
 
-  // --- MERGE REAL-TIME THREATS ---
-  const displayThreats = detectionResults?.results?.length > 0 
-    ? detectionResults.results.map(r => ({
-        id: r.findings.evil_twin?.id || "Unknown",
-        name: r.findings.evil_twin?.value || "Threat",
-        severity: r.findings.evil_twin?.status === "DETECTED" ? "CRITICAL" : "SAFE",
-        detectedTime: r.detection_start,
-        status: r.findings.evil_twin?.status
-      }))
-    : threats;
-
   const currentDetail = activeTab === "threats" ? threatDetail : vulnDetail;
-  const detailLoading = activeTab === "threats" ? threatDetailLoading : vulnDetailLoading;
+  const detailLoading =
+    activeTab === "threats" ? threatDetailLoading : vulnDetailLoading;
 
   const tabs = [
     { label: "Threats", value: "threats" },
@@ -211,25 +216,29 @@ const SAM = () => {
         <h1 className="page-title">Security Assessment Management</h1>
 
         {/* STATUS BANNER */}
-        {detectionStatus === 'DETECTING' && (
-           <div className="status-banner detecting" style={{background: '#e6fffa', color: '#047857', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #047857'}}>
-              Scanning active... Monitoring for threats ({detectionResults?.results?.length || 0} found)
-           </div>
+        {detectionStatus === "DETECTING" && (
+          <div
+            className="status-banner detecting"
+            style={{
+              background: "#e6fffa",
+              color: "#047857",
+              padding: "10px",
+              marginBottom: "10px",
+              borderRadius: "4px",
+              border: "1px solid #047857",
+            }}
+          >
+            Scanning active... Monitoring for threats (
+            {detectionResults?.results?.length || 0} found)
+          </div>
         )}
 
         <div className="sam-header">
-          <Tabs
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-          />
+          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
 
         {activeTab === "threats" && (
-          <ThreatsTable
-            threats={displayThreats}
-            onView={openThreatDetail}
-          />
+          <ThreatsTable threats={displayThreats} onView={openThreatDetail} />
         )}
 
         {activeTab === "vulnerabilities" && (
