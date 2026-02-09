@@ -8,9 +8,12 @@ const FASTAPI_BASE = "http://mothership.tail781e52.ts.net:8000"; //ADDED 06:13 P
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
-const captivePortalRoutes = require("./routes/captivePortalRoutes");
+//const captivePortalRoutes = require("./routes/captivePortalRoutes");
 const scanRoutes = require('./routes/scanRoutes');
 const authRoutes = require('./routes/authRoutes');
+
+const { authJWT } = require("./middleware/authMiddleware");
+const { requireActiveProfile } = require("./middleware/statusMiddleware");
 
 const app = express();
 const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
@@ -29,11 +32,19 @@ app.use(
 );
 
 app.use(express.json());
-app.use("/api/webApp", webAppRoutes); 
-app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
-app.use('/api/rasPi_scan', scanRoutes);
-app.use('/api/auth', authRoutes);  // → /api/auth/sa/login
 
+//app.use('/api/auth', authRoutes);  // → /api/auth/sa/login
+// 1) Public auth routes (no JWT/status required)
+app.use("/api/auth", authRoutes);    // /api/auth/login
+
+// 2) Everything else under /api requires JWT + active profile
+app.use("/api", authJWT, requireActiveProfile);
+
+// 3) Protected sub-routers
+app.use("/api/webApp", webAppRoutes);
+app.use("/api/rasPi", rasPiRoutes);
+app.use("/api/rasPi_scan", scanRoutes);
+//app.use("/api/captivePortal", captivePortalRoutes);
 
 
 // Your create-user route

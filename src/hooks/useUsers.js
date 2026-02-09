@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import {
   getUserAccounts,
-  createUser,
-  // updateUser,
+  //createUser,
+  updateUser,
   // deleteUser,
 } from "../api/userApi";
 
@@ -35,6 +35,7 @@ const useUsers = () => {
         username: u.username,
         email: u.email,
         role: u.role,
+        status: u.status || "active",  // ← add this
       }));
 
       setUsers(formattedUsers);
