@@ -1,6 +1,8 @@
+// Login.jsx
 import "./Login.css";
 import { useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import api from "../../api/axios";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -13,19 +15,43 @@ const Login = () => {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (authError) {
+      setError(authError.message);
       setLoading(false);
       return;
     }
 
-    // Login successful — session is now stored by Supabase
-    window.location.href = "/dashboard";
+    try {
+      // Call /api/webApp/users/profiles/me
+      const res = await api.get("webApp/users/profiles/me");
+      const profile = res.data;
+
+      // If middleware blocked it, axios will throw (403), caught below
+
+      if (profile.status !== "active") {
+        await supabase.auth.signOut();
+        setError(
+          "Your account is on hold or inactive. Please contact the administrator."
+        );
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/dashboard";
+    } catch (err) {
+      // 403 from requireActiveProfile
+      console.error("Profile check failed:", err);
+      await supabase.auth.signOut();
+      setError(
+        "Your account is on hold or inactive. Please contact the administrator."
+      );
+      setLoading(false);
+    }
   };
 
   return (
