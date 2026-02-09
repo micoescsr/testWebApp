@@ -75,7 +75,7 @@ async function updateUser(req, res) {
     }
 
     const id = req.params.id;
-    const updates = req.body;
+    const updates = req.body;  // may contain { first_name, last_name, username, role, status }
 
     const updated = await userRepository.updateProfile(id, updates);
     res.json(updated);
@@ -83,6 +83,7 @@ async function updateUser(req, res) {
     res.status(500).json({ error: "Failed to update user" });
   }
 }
+
 
 async function deleteUser(req, res) {
   try {

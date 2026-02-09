@@ -1,7 +1,7 @@
 // repositories/userRepository.js
 const { supabaseClient } = require("../config/supabaseClient");
 
-// simple entity shape (optional but nice)
+// simple entity shape
 function mapRowToProfile(row) {
   return {
     id: row.id,
@@ -10,7 +10,19 @@ function mapRowToProfile(row) {
     username: row.username,
     email: row.email,
     role: row.role,
+    status: row.status || "active",  // ← add this
   };
+}
+
+
+async function findAllProfiles(limit = 50) {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("*")
+    .limit(limit);
+
+  if (error) throw error;
+  return data.map(mapRowToProfile);
 }
 
 async function findAllProfiles(limit = 50) {
@@ -23,8 +35,6 @@ async function findAllProfiles(limit = 50) {
   return data.map(mapRowToProfile);
 }
 
-
-// GET by id
 async function findProfileById(id) {
   const { data, error } = await supabaseClient
     .from("profiles")
@@ -36,7 +46,6 @@ async function findProfileById(id) {
   return mapRowToProfile(data);
 }
 
-// CREATE row in profiles
 async function insertProfile(user) {
   const { data, error } = await supabaseClient
     .from("profiles")
@@ -48,7 +57,6 @@ async function insertProfile(user) {
   return mapRowToProfile(data);
 }
 
-// UPDATE
 async function updateProfile(id, updates) {
   const { data, error } = await supabaseClient
     .from("profiles")
@@ -61,18 +69,13 @@ async function updateProfile(id, updates) {
   return mapRowToProfile(data);
 }
 
-async function deleteProfile(id) {
-  const { error } = await supabaseClient.from("profiles").delete().eq("id", id);
-  if (error) throw error;
-  return true;
-}
+
 
 module.exports = {
   findAllProfiles,
   findProfileById,
   insertProfile,
-  updateProfile,
-  deleteProfile,
+  updateProfile
 };
 
 //added for auth routes

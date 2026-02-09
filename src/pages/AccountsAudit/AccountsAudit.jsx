@@ -1,3 +1,4 @@
+//AccountsAudit.jsx
 import { useState } from "react";
 import Tabs from "../../components/common/Tabs/Tabs";
 import AccountsAuditModal from "../../components/modals/AccountsAuditModal/AccountsAuditModal";
@@ -7,6 +8,7 @@ import AccountsTable from "../../components/accounts/AccountsTable";
 import AuditLogsTable from "../../components/accounts/AuditLogsTable";
 import useUsers from "../../hooks/useUsers";
 import useAuditLogs from "../../hooks/useAuditLogs";
+import { updateUser } from "../../api/userApi";
 
 
 const AccountsAudit = () => {
@@ -23,7 +25,7 @@ const AccountsAudit = () => {
   //const { users, loading, error } = useUsers();
   const [pendingUser, setPendingUser] = useState(null); //new state
    // ← HERE: use the hook
-  const { users, loading, error, addUser } = useUsers();
+  const { users, loading, error, fetchUsers } = useUsers();
 
   const {
   logs: auditLogs,
@@ -136,15 +138,29 @@ const AccountsAudit = () => {
   const confirmAction = async () => {
   console.log("Confirmed: add", pendingUser);
 
-  if (modalMode === "add" && pendingUser) {
+  /* if (modalMode === "add" && pendingUser) {
     await addUser({
       first_name: pendingUser.firstName,
       last_name: pendingUser.lastName,
       username: pendingUser.username,
       email: pendingUser.email,
       role: pendingUser.role,
-      password: pendingUser.password,
+      status: pendingUser.status,    // ← include status for add path
+      // password: pendingUser.password, // only if you actually use it
     });
+    await fetchUsers(); // refresh list after adding
+  } */
+
+   if (modalMode === "edit" && pendingUser) {
+    await updateUser(pendingUser.id, {    // ← call your API here
+      first_name: pendingUser.firstName,
+      last_name: pendingUser.lastName,
+      username: pendingUser.username,
+      email: pendingUser.email,
+      role: pendingUser.role,
+      status: pendingUser.status,        // ← include status for edit path
+    });
+    await fetchUsers(); // refresh list after update
   }
 
   setShowConfirmModal(false);
@@ -224,8 +240,10 @@ const cancelUserForm = () => {
             onCancel={cancelUserForm}
           onSubmit={(data) => {
             console.log("SAVE USER:", data);
-            setPendingUser(data);           // ← store form data
-            openConfirmModal(modalMode, data);    // then open confirm, pass data 
+            const withId = { ...data, id: selectedUser?.id };
+            setPendingUser(withId);  // keep the id  
+            //openConfirmModal(modalMode, data);    // then open confirm, pass data  // data contains firstName, lastName, role, status
+            openConfirmModal(modalMode, withId);    // then open confirm, pass data  // data contains firstName, lastName, role, status
           }}
           onDelete={() => {
             setSelectedUser(selectedUser);

@@ -11,7 +11,7 @@ exports.login = async (req, res) => {
   res.json({ token: session.access_token, user: session.user });
 };
 
-// Superadmin creates user (your modal)
+/* // Superadmin creates user (your modal)
 exports.createUser = async (req, res) => {
   // req.user from middleware = logged-in superadmin
   const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', req.user.id).single();
@@ -24,4 +24,4 @@ exports.createUser = async (req, res) => {
   });
   if (error) return res.status(400).json({ error });
   res.json({ message: 'User created', userId: authUser.user.id });
-};
+}; */
