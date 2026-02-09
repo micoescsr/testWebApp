@@ -1,5 +1,7 @@
 // hooks/useProfile.js
 import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
+import api from "../api/axios";
 
 export const useProfile = () => {
   const [profile, setProfile] = useState(null);
@@ -15,15 +17,26 @@ export const useProfile = () => {
         setProfileLoading(true);
         setProfileError(null);
 
-        // mock data only; no HTTP
-        await new Promise((r) => setTimeout(r, 300));
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          setProfile(null);
+          return;
+        }
+
+        const res = await api.get("webApp/users/profiles/me");
+        const p = res.data;
+
         setProfile({
-          email: "pgil@gmail.com",
-          firstName: "Pedro",
-          lastName: "Gil",
-          username: "Admin001",
+          id: p.id,
+          email: p.email,
+          firstName: p.first_name,
+          lastName: p.last_name,
+          username: p.username,
+          role: p.role,
+          status: p.status,
         });
       } catch (err) {
+        console.error("loadProfile error:", err);
         setProfileError("Failed to load profile");
       } finally {
         setProfileLoading(false);
@@ -33,6 +46,7 @@ export const useProfile = () => {
     loadProfile();
   }, []);
 
+  //NOT FUNCTIONAL YET , KE PHAU IUUPDATE ITO
   const resetPassword = async ({ currentPassword, newPassword }) => {
     try {
       setPasswordLoading(true);
