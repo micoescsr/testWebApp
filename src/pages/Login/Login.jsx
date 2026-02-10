@@ -3,6 +3,7 @@ import "./Login.css";
 import { useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import api from "../../api/axios";
+import { Link } from "react-router-dom";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -82,6 +83,11 @@ const Login = () => {
               required
             />
           </div>
+
+                    {/* Forgot password link here */}
+          <p className="forgot-password-text">
+            <Link to="/forgot-password">Forgot your password?</Link>
+          </p>
 
           {error && <p className="error-text">{error}</p>}
 
