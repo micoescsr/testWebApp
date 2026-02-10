@@ -56,10 +56,6 @@ const SAM = () => {
     resetDetection,
   } = useThreatDetection();
 
-  // 🔹 TEMP: force detection on page load
-  useEffect(() => {
-    setDetectionStatus("DETECTING");
-  }, [setDetectionStatus]);
 
   // If there are live threats from polling, show those; otherwise fallback to DB threats
   const displayThreats =
