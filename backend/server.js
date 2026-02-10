@@ -14,6 +14,7 @@ const authRoutes = require('./routes/authRoutes');
 
 const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
+const { supabaseClient } = require("./config/supabaseClient");
 
 const app = express();
 const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
@@ -37,7 +38,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes); // /api/auth/login
 
 // 2) Everything else under /api requires JWT + active profile
-app.use("/api", authJWT, requireActiveProfile);
+//app.use("/api", authJWT, requireActiveProfile);
 
 // 3) Protected sub-routers
 app.use("/api/webApp", webAppRoutes);
@@ -215,7 +216,7 @@ app.use('/api/rasPi_scan', scanRoutes);
  * Forwards request to FastAPI GET /detect/poll
  * Optional query: ?max_items=50
  */
-app.get("/api/detect/poll", async (req, res) => {
+/* app.get("/api/detect/poll", async (req, res) => {
   const maxItems = Number(req.query.max_items ?? 50);
 
   try {
@@ -264,10 +265,310 @@ app.get("/api/detect/poll", async (req, res) => {
       last_error: "Backend unavailable"
     });
   }
+}); */
+
+app.get("/api/detect/poll", async (req, res) => {
+  const maxItems = Number(req.query.max_items ?? 50);
+
+  try {
+    /* const r = await fetch(`${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    const data = await r.json().catch(() => null);
+
+    if (r.ok && data) {
+      // 🔹 USE the helper here
+      const defsByCode = await loadThreatDefinitions(supabaseAdmin);
+      const threatRows = await mapPollResultsToThreatRows(
+        data.results || [],
+        defsByCode
+      );
+
+      return res.status(200).json({
+        ...data,
+        threatRows,        // <-- now actually used
+      });
+    } */
+
+      // 🔹 MOCKED data – replace with your real sample
+  const fakeData = {
+    running: true,
+    target_bssid: "2c:55:d3:11:69:55",
+    last_error: null,
+    results: [
+      {
+        bssid: "2c:55:d3:11:69:55",
+        status: "FOUND",
+        findings: {
+          evil_twin: {
+            id: "WFVT-007",
+            status: "DETECTED",
+            value: "suspected evil twin",
+            details: {
+              first_seen_epoch: 1769869852.82147,
+              last_seen_epoch: 1769869866.93297,
+              duration_sec: 14.1,
+            },
+          },
+        },
+        detection_start: "2026-01-31 14:31:06.922",
+        detection_end: "2026-01-31 14:31:06.933",
+      },
+      // add more fake results if you want multiple occurrences
+    ],
+  };
+
+  // write to DB
+  await persistThreatRows(fakeData.threatRows, fakeData.target_bssid);
+  
+    return res.status(200).json({
+      /* running: false,
+      results: [],
+      threatRows: [],
+      last_error: `FastAPI error: ${r.status}`, */
+      fakeData,
+    });
+  } catch (err) {
+    return res.status(200).json({
+      running: false,
+      results: [],
+      threatRows: [],
+      last_error: "Backend unavailable",
+    });
+  }
 });
 
+async function mapPollResultsToThreatRows(results, supabase) {
+  if (!Array.isArray(results)) return [];
 
+  const grouped = new Map();
 
+  for (const r of results) {
+    const evil = r?.findings?.evil_twin;
+    if (!evil || evil.status !== "DETECTED") continue;
+
+    const vtCode = evil.id; // "WFVT-007"
+
+    // 1) Lookup metadata from vulnerability_threat_details by vt_code
+    const { data: detail, error } = await supabase
+      .from("vulnerability_threat_details")
+      .select("vt_name, vt_cvss_base_score, vt_severity_rating, vt_kind")
+      .eq("vt_code", vtCode)
+      .maybeSingle();
+
+    if (error || !detail) {
+      console.warn("Missing vt details for code", vtCode, error);
+      continue;
+    }
+
+    const vtName = detail.vt_name;                // dynamic name
+    const score = detail.vt_cvss_base_score;      // dynamic CVSS
+    const severity = detail.vt_severity_rating;   // e.g. "CRITICAL"
+    const kind = detail.vt_kind;                  // "THREAT" / "VULNERABILITY"
+
+    const firstSeen = evil.details?.first_seen_epoch;
+    const lastSeen = evil.details?.last_seen_epoch;
+
+    const key = vtCode;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: vtCode,
+        vtCode,
+        name: vtName,
+        severity,   // from DB
+        detectedTime: firstSeen
+          ? new Date(firstSeen * 1000).toISOString()
+          : r.detection_start,
+        score,
+        occurrences: 1,
+        kind,
+        raw: [r],
+      });
+    } else {
+      const agg = grouped.get(key);
+      agg.occurrences += 1;
+      if (lastSeen) {
+        agg.detectedTime = new Date(lastSeen * 1000).toISOString();
+      }
+      agg.raw.push(r);
+    }
+  }
+
+  return Array.from(grouped.values());
+}
+
+async function loadThreatDefinitions(supabase) {
+  const { data, error } = await supabase
+    .from("vulnerability_threat_details")
+    .select("vt_code, vt_name, vt_cvss_base_score, vt_severity_rating, vt_kind");
+
+  if (error) throw error;
+  const map = new Map();
+  for (const d of data) {
+    map.set(d.vt_code, d);
+  }
+  return map;
+}
+
+function mapPollResultsToThreatRows(results, defsByCode) {
+  const grouped = new Map();
+
+  for (const r of results) {
+    const evil = r?.findings?.evil_twin;
+    if (!evil || evil.status !== "DETECTED") continue;
+
+    const vtCode = evil.id;
+    const detail = defsByCode.get(vtCode);
+    if (!detail) continue;
+
+    const key = vtCode;
+    const firstSeen = evil.details?.first_seen_epoch;
+    const lastSeen = evil.details?.last_seen_epoch;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: vtCode,
+        vtCode,
+        name: detail.vt_name,
+        severity: detail.vt_severity_rating,
+        detectedTime: firstSeen
+          ? new Date(firstSeen * 1000).toISOString()
+          : r.detection_start,
+        score: detail.vt_cvss_base_score,
+        occurrences: 1,
+        kind: detail.vt_kind,
+        raw: [r],
+      });
+    } else {
+      const agg = grouped.get(key);
+      agg.occurrences += 1;
+      if (lastSeen) {
+        agg.detectedTime = new Date(lastSeen * 1000).toISOString();
+      }
+      agg.raw.push(r);
+    }
+  }
+
+  return Array.from(grouped.values());
+}
+
+// Example using supabase-js on the server
+
+app.get('/api/history/vulnerabilities', async (req, res) => {
+  try {
+    // 1) Get all scans (you can add WHERE user_id = ... later)
+    const { data: scans, error: scansError } = await supabaseClient
+      .from('scans')
+      .select('scan_id, created_at, scan_data')
+      .order('created_at', { ascending: false });
+
+    if (scansError) throw scansError;
+
+    // 2) Get all findings for those scans where vt_kind = 'vulnerability'
+    const scanIds = scans.map(s => s.scan_id);
+    if (scanIds.length === 0) return res.json([]);
+
+    const { data: findings, error: findingsError } = await supabaseClient
+      .from('vulnerabilities_threat')
+      .select('scan_id, vt_name, vt_kind, severity_score')
+      .in('scan_id', scanIds);
+
+    if (findingsError) throw findingsError;
+
+    // 3) Group findings by scan_id
+    const byScan = new Map();
+    for (const f of findings) {
+      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
+      byScan.get(f.scan_id).push(f);
+    }
+
+    // 4) Map to frontend shape
+    const result = scans.map(scan => {
+      const items = byScan.get(scan.scan_id) || [];
+
+      // Example: assume scan_data has ssid or network name
+      const ssid =
+        scan.scan_data?.ssid ||
+        scan.scan_data?.network_name ||
+        `Scan ${scan.scan_id}`;
+
+      return {
+        id: scan.scan_id,
+        datetime: scan.created_at,          // you can format this client-side
+        ssid,
+        summary: items.length,              // number of vulns in this scan
+        details: items.map(i => ({
+          severity: 'UNKNOWN',              // or derive from vt_value / vt_status
+          name: i.vt_name || i.vt_kind,
+          score: i.severity_score ?? 0,
+        })),
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch vulnerability history' });
+  }
+});
+
+app.get('/api/history/threats', async (req, res) => {
+  try {
+    const { data: scans, error: scansError } = await supabaseClient
+      .from('scans')
+      .select('scan_id, created_at, scan_data')
+      .order('created_at', { ascending: false });
+
+    if (scansError) throw scansError;
+
+    const scanIds = scans.map(s => s.scan_id);
+    if (scanIds.length === 0) return res.json([]);
+
+    const { data: findings, error: findingsError } = await supabaseClient
+      .from('vulnerabilities_threat')
+      .select('scan_id, vt_name, vt_kind, severity_score')
+      .in('scan_id', scanIds);
+
+    if (findingsError) throw findingsError;
+
+    const byScan = new Map();
+    for (const f of findings) {
+      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
+      byScan.get(f.scan_id).push(f);
+    }
+
+    const result = scans.map(scan => {
+      const items = byScan.get(scan.scan_id) || [];
+
+      const ssid =
+        scan.scan_data?.ssid ||
+        scan.scan_data?.network_name ||
+        `Scan ${scan.scan_id}`;
+
+      return {
+        id: scan.scan_id,
+        datetime: scan.created_at,
+        ssid,
+        summary: items.length,
+        threats: items.map(i => ({
+          severity: 'UNKNOWN',
+          name: i.vt_name || i.vt_kind,
+          score: i.severity_score ?? 0,
+          occurrences: 1,
+          window: '', // fill if you have timing data
+        })),
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch threat history' });
+  }
+});
 
 
 const PORT = 3000;
