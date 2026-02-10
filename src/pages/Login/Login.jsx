@@ -84,7 +84,7 @@ const Login = () => {
             />
           </div>
 
-                    {/* Forgot password link here */}
+          {/* ADDED Forgot password link here */}
           <p className="forgot-password-text">
             <Link to="/forgot-password">Forgot your password?</Link>
           </p>
