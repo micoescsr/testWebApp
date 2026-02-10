@@ -8,6 +8,8 @@ import History from "./pages/History/History";
 import Profile from "./pages/Profile/Profile";
 import Login from "./pages/Login/Login";
 import "./App.css";
+import ForgotPassword from "./pages/Auth/ForgotPassword";
+import ResetPassword from "./pages/Auth/ResetPassword";
 
 function App() {
   return (
@@ -18,6 +20,8 @@ function App() {
 
         {/* Login screen without sidebar */}
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Everything else with sidebar */}
         <Route
