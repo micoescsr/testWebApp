@@ -17,12 +17,15 @@ export const useProfile = () => {
         setProfileLoading(true);
         setProfileError(null);
 
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session?.user) {
           setProfile(null);
           return;
         }
 
+        // Get profile data from your backend
         const res = await api.get("webApp/users/profiles/me");
         const p = res.data;
 
@@ -46,19 +49,48 @@ export const useProfile = () => {
     loadProfile();
   }, []);
 
-  //NOT FUNCTIONAL YET , KE PHAU IUUPDATE ITO
+  // Standard "change password while logged in"
   const resetPassword = async ({ currentPassword, newPassword }) => {
     try {
       setPasswordLoading(true);
       setPasswordError(null);
 
-      // mock success
-      await new Promise((r) => setTimeout(r, 300));
-      console.log("Mock reset password", { currentPassword, newPassword });
+      if (!profile?.email) {
+        throw new Error("No email found for current user");
+      }
+
+      // 1) Verify current password by signing in again.[web:48][web:66]
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: profile.email,
+          password: currentPassword,
+        });
+
+      if (signInError || !signInData?.user) {
+        const msg = "Current password is incorrect";
+        setPasswordError(msg);
+        return { success: false, error: { message: msg } };
+      }
+
+      // 2) Update password using Supabase Auth.[web:19][web:75]
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        console.error("updateUser error:", updateError);
+        const msg =
+          updateError.message || "Failed to update password. Please try again.";
+        setPasswordError(msg);
+        return { success: false, error: { message: msg } };
+      }
+
       return { success: true };
     } catch (err) {
-      setPasswordError("Failed to reset password");
-      return { success: false, error: err };
+      console.error("resetPassword exception:", err);
+      const msg = err.message || "Failed to reset password";
+      setPasswordError(msg);
+      return { success: false, error: { message: msg } };
     } finally {
       setPasswordLoading(false);
     }
