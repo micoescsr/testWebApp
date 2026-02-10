@@ -14,6 +14,7 @@ const authRoutes = require('./routes/authRoutes');
 
 const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
+const { supabaseClient } = require("./config/supabaseClient");
 
 const app = express();
 const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
@@ -454,6 +455,120 @@ function mapPollResultsToThreatRows(results, defsByCode) {
   return Array.from(grouped.values());
 }
 
+// Example using supabase-js on the server
+
+app.get('/api/history/vulnerabilities', async (req, res) => {
+  try {
+    // 1) Get all scans (you can add WHERE user_id = ... later)
+    const { data: scans, error: scansError } = await supabaseClient
+      .from('scans')
+      .select('scan_id, created_at, scan_data')
+      .order('created_at', { ascending: false });
+
+    if (scansError) throw scansError;
+
+    // 2) Get all findings for those scans where vt_kind = 'vulnerability'
+    const scanIds = scans.map(s => s.scan_id);
+    if (scanIds.length === 0) return res.json([]);
+
+    const { data: findings, error: findingsError } = await supabaseClient
+      .from('vulnerabilities_threat')
+      .select('scan_id, vt_name, vt_kind, severity_score')
+      .in('scan_id', scanIds);
+
+    if (findingsError) throw findingsError;
+
+    // 3) Group findings by scan_id
+    const byScan = new Map();
+    for (const f of findings) {
+      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
+      byScan.get(f.scan_id).push(f);
+    }
+
+    // 4) Map to frontend shape
+    const result = scans.map(scan => {
+      const items = byScan.get(scan.scan_id) || [];
+
+      // Example: assume scan_data has ssid or network name
+      const ssid =
+        scan.scan_data?.ssid ||
+        scan.scan_data?.network_name ||
+        `Scan ${scan.scan_id}`;
+
+      return {
+        id: scan.scan_id,
+        datetime: scan.created_at,          // you can format this client-side
+        ssid,
+        summary: items.length,              // number of vulns in this scan
+        details: items.map(i => ({
+          severity: 'UNKNOWN',              // or derive from vt_value / vt_status
+          name: i.vt_name || i.vt_kind,
+          score: i.severity_score ?? 0,
+        })),
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch vulnerability history' });
+  }
+});
+
+app.get('/api/history/threats', async (req, res) => {
+  try {
+    const { data: scans, error: scansError } = await supabaseClient
+      .from('scans')
+      .select('scan_id, created_at, scan_data')
+      .order('created_at', { ascending: false });
+
+    if (scansError) throw scansError;
+
+    const scanIds = scans.map(s => s.scan_id);
+    if (scanIds.length === 0) return res.json([]);
+
+    const { data: findings, error: findingsError } = await supabaseClient
+      .from('vulnerabilities_threat')
+      .select('scan_id, vt_name, vt_kind, severity_score')
+      .in('scan_id', scanIds);
+
+    if (findingsError) throw findingsError;
+
+    const byScan = new Map();
+    for (const f of findings) {
+      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
+      byScan.get(f.scan_id).push(f);
+    }
+
+    const result = scans.map(scan => {
+      const items = byScan.get(scan.scan_id) || [];
+
+      const ssid =
+        scan.scan_data?.ssid ||
+        scan.scan_data?.network_name ||
+        `Scan ${scan.scan_id}`;
+
+      return {
+        id: scan.scan_id,
+        datetime: scan.created_at,
+        ssid,
+        summary: items.length,
+        threats: items.map(i => ({
+          severity: 'UNKNOWN',
+          name: i.vt_name || i.vt_kind,
+          score: i.severity_score ?? 0,
+          occurrences: 1,
+          window: '', // fill if you have timing data
+        })),
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch threat history' });
+  }
+});
 
 
 const PORT = 3000;
