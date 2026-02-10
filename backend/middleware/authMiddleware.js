@@ -1,33 +1,17 @@
 // middleware/authMiddleware.js
-const { jwtVerify } = require('jose'); // npm install jose
-
-// Optional: cache the secret as a Uint8Array
-const encoder = new TextEncoder();
-const JWT_SECRET = encoder.encode(process.env.SUPABASE_JWT_SECRET); 
-// In Supabase dashboard: Settings -> API -> "JWT secret" [NOT the anon/service key]
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_API_KEY);
 
 exports.authJWT = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token' });
-    }
-
-    // Verify the JWT locally with jose (no network request)
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    // payload will contain fields like sub, role, email, etc. for Supabase JWTs [web:55]
-
-    // Attach user info to request for later controllers
-    req.user = payload;
-    next();
-  } catch (err) {
-    console.error('JWT verification error:', err.message);
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'No token' });
+  
+  const { data/* : { user } */, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return res.status(401).json({ error: 'Invalid token' });
+  
+  //req.user = user;  // Ready for controllers!
+  req.user = data.user;  // authenticated supabase user (pass token string)
+  next();
 };
 
 

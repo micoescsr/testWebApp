@@ -56,10 +56,6 @@ const SAMSidebar = ({
             {lastScanLabel || "N/A"}
           </span>
         </div>
-        <div className="info-row">
-          <span className="info-label">Scheduled Scan</span>
-          <span className="info-value">N/A</span>
-        </div>
       </div>
 
       <div className="sidebar-section">

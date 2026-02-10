@@ -263,7 +263,8 @@ export const useVulnerabilities = (bssid) => {
 /* =========================
    THREAT DETECTION HOOK (Smart Polling)
 ========================= */
-export const useThreatDetection = () => {
+/* export const useThreatDetection = () => {
+
   const [status, setStatus] = useState('IDLE'); // 'IDLE' | 'SCANNING' | 'DETECTING'
   const [detectionResults, setDetectionResults] = useState(null);
   
@@ -284,6 +285,7 @@ export const useThreatDetection = () => {
       // 3. Update UI only if we are still "on"
       if (isPollingRef.current) {
         setDetectionResults(data);
+        setLiveThreats(data.threatRows || []);  // <-- use backend mapping
       }
     } catch (err) {
       console.error("Polling error:", err);
@@ -331,5 +333,76 @@ export const useThreatDetection = () => {
       setStatus('IDLE');
       setDetectionResults(null);
     }
+  };
+}; */
+
+/* =========================
+   THREAT DETECTION HOOK (Smart Polling)
+========================= */
+export const useThreatDetection = () => {
+  const [status, setStatus] = useState("IDLE"); // 'IDLE' | 'SCANNING' | 'DETECTING'
+  const [detectionResults, setDetectionResults] = useState(null);
+  const [liveThreats, setLiveThreats] = useState([]); // <-- ADD THIS
+
+  // Refs track the "Live" status without causing re-renders
+  const isPollingRef = useRef(false);
+  const timeoutRef = useRef(null);
+
+  // The actual polling function
+  const runPoll = async () => {
+    if (!isPollingRef.current) return;
+
+    try {
+      const res = await fetch("http://localhost:3000/api/detect/poll");
+      const data = await res.json();
+
+      if (isPollingRef.current) {
+        setDetectionResults(data);
+        setLiveThreats(data.threatRows || []); // <-- use backend mapping
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
+    } finally {
+      if (isPollingRef.current) {
+        timeoutRef.current = setTimeout(runPoll, 2000);
+      }
+    }
+  };
+
+  const startPolling = () => {
+    if (isPollingRef.current) return; // Already running
+    isPollingRef.current = true;
+    runPoll();
+  };
+
+  const stopPolling = () => {
+    isPollingRef.current = false;
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (status === "DETECTING") {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+
+    return () => stopPolling();
+  }, [status]);
+
+  return {
+    detectionStatus: status,
+    setDetectionStatus: setStatus,
+    detectionResults,
+    liveThreats, // <-- RETURN IT
+    resetDetection: () => {
+      stopPolling();
+      setStatus("IDLE");
+      setDetectionResults(null);
+      setLiveThreats([]); // clear live threats
+    },
   };
 };
