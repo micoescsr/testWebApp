@@ -1,0 +1,142 @@
+/* src/pages/Auth/Auth.css */
+
+/* Full-page background shared with login */
+.auth-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 80% 20%, #0044cc, #020617);
+}
+
+/* Card */
+.auth-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 32px 40px;
+  width: 380px;
+  max-width: 95%;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  text-align: left;
+}
+
+/* Titles and subtitles */
+.auth-title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  text-align: center;
+}
+
+.auth-subtitle {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: #6b7280;
+  text-align: center;
+}
+
+/* Form */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-form .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #111827;
+}
+
+.auth-form .form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #d1e4ff;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.auth-form .form-group input:focus {
+  border-color: #2f7df6;
+  box-shadow: 0 0 0 3px rgba(47, 125, 246, 0.2);
+}
+
+/* Primary button */
+.auth-button {
+  margin-top: 4px;
+  width: 100%;
+  padding: 11px 0;
+  border-radius: 8px;
+  border: none;
+  background-color: #2f7df6;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.05s, box-shadow 0.1s;
+}
+
+.auth-button:hover {
+  background-color: #2463c9;
+  box-shadow: 0 10px 30px rgba(47, 125, 246, 0.35);
+}
+
+.auth-button:active {
+  transform: translateY(1px);
+}
+
+/* Ghost / secondary button */
+.auth-button-secondary {
+  margin-top: 16px;
+  width: 100%;
+  padding: 10px 0;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.auth-button-secondary:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* Messages */
+.success-text {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #16a34a;
+}
+
+.error-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+/* Small helper link below forms */
+.auth-helper-text {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #6b7280;
+  text-align: center;
+}
+
+.auth-helper-text a {
+  color: #2f7df6;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.auth-helper-text a:hover {
+  text-decoration: underline;
+}
