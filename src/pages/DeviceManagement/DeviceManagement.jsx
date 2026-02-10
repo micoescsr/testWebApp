@@ -3,9 +3,8 @@ import { useState } from "react";
 import "./DeviceManagement.css";
 import Tabs from "../../components/common/Tabs/Tabs";
 import { useDevice } from "../../hooks/useDevice";
+import { useProfile } from "../../hooks/useProfile";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
-// Add ErrorBoundary import if you created it
-import ErrorBoundary from "../../components/common/ErrorBoundary";
 
 const DeviceManagement = () => {
   const [activeTab, setActiveTab] = useState("announcement");
@@ -13,27 +12,43 @@ const DeviceManagement = () => {
   const [savedContent, setSavedContent] = useState("");
   const [draftContent, setDraftContent] = useState("");
 
-  const { 
-    accessPoint, 
+  const { profile, profileLoading } = useProfile();
+  const role = (profile?.role || "").toLowerCase();
+
+  const {
+    accessPoint,
     apEnabled,
-    loading, 
-    error, 
-    isEmpty, 
-    refetch, 
+    loading,
+    error,
+    isEmpty,
+    refetch,
     handleToggleAccessPoint,
   } = useDevice();
 
+  if (profileLoading) {
+    return <p>Loading...</p>;
+  }
+
+  // Everyone sees both tabs
   const tabs = [
     { label: "Announcement", value: "announcement" },
     { label: "Terms and Conditions", value: "terms" },
   ];
 
+  const safeActiveTab = activeTab; // no hiding
+
+  // Only superadmin can edit Terms; everyone can edit Announcement
+  const canEdit =
+    safeActiveTab === "announcement" ||
+    (safeActiveTab === "terms" && role === "superadmin");
+
   const sectionTitle =
-    activeTab === "announcement"
+    safeActiveTab === "announcement"
       ? "Captive Portal Announcement"
       : "Terms and Conditions";
 
   const startEdit = () => {
+    if (!canEdit) return;
     setDraftContent(savedContent);
     setIsEditing(true);
   };
@@ -54,15 +69,22 @@ const DeviceManagement = () => {
     <div className="device-page">
       <h1 className="page-title">Device</h1>
 
-      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+      <Tabs
+        tabs={tabs}
+        activeTab={safeActiveTab}
+        onTabChange={(value) => {
+          setActiveTab(value);
+          setIsEditing(false); // reset editing when switching tabs
+        }}
+      />
 
       <div className="device-content">
-        {/* LEFT: editor - always works */}
+        {/* LEFT: editor */}
         <div className="left-panel">
           <div className="editor-section">
             <div className="section-header">
               <h2 className="section-title">{sectionTitle}</h2>
-              {!isEditing && (
+              {canEdit && !isEditing && (
                 <button className="edit-icon" onClick={startEdit}>
                   Edit
                 </button>
@@ -73,8 +95,12 @@ const DeviceManagement = () => {
               className="announcement-box"
               value={isEditing ? draftContent : savedContent}
               onChange={(e) => setDraftContent(e.target.value)}
-              readOnly={!isEditing}
-              placeholder="Enter text"
+              readOnly={!isEditing || !canEdit}
+              placeholder={
+                safeActiveTab === "terms"
+                  ? "View terms and conditions (superadmin can edit)."
+                  : "Enter announcement text"
+              }
             />
 
             <div className="footer-row">
@@ -86,7 +112,7 @@ const DeviceManagement = () => {
                 </div>
               </div>
 
-              {isEditing && hasChanges && (
+              {canEdit && isEditing && hasChanges && (
                 <div className="editor-actions">
                   <button className="discard-btn" onClick={discardChanges}>
                     Discard
@@ -100,17 +126,15 @@ const DeviceManagement = () => {
           </div>
         </div>
 
-        {/* RIGHT: device panel with all states */}
-        {/* <ErrorBoundary fallback={<div>Panel error - reload page</div>}> */}
-          <AccessPointPanel
-            accessPoint={accessPoint}
-            loading={loading}
-            error={error}
-            isEmpty={isEmpty}
-            onRetry={refetch}
-            onToggle={handleToggleAccessPoint}
-          />
-        {/* </ErrorBoundary> */}
+        {/* RIGHT: device panel */}
+        <AccessPointPanel
+          accessPoint={accessPoint}
+          loading={loading}
+          error={error}
+          isEmpty={isEmpty}
+          onRetry={refetch}
+          onToggle={handleToggleAccessPoint}
+        />
       </div>
     </div>
   );
