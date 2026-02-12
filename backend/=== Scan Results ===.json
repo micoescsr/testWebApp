@@ -1,0 +1,28 @@
+// === Scan Results ===
+{
+  "ssid": "HUAWEI-ai9b",
+  "bssid": "2c:55:d3:11:69:55",
+  "channel": "9",
+  "num_clients": 3,
+  "encryption_type": "WPA2 WPA2-PSK TKIP AES-CCMP",
+  "status": "FOUND",
+  "findings": {
+    "encryption": {
+      "id": "WFVT-002",
+      "status": "DETECTED",
+      "value": "WPA2 WPA2-PSK TKIP AES-CCMP"
+    },
+    "wps": {
+      "id": "WFVT-004",
+      "status": "DETECTED",
+      "value": "Enabled"
+    },
+    "mfp": {
+      "id": "WFVT-005",
+      "status": "DETECTED",
+      "value": "Disabled"
+    }
+  },
+  "scan_start": "2026-01-26 07:34:33.546",
+  "scan_end": "2026-01-26 07:34:34.404"
+}
