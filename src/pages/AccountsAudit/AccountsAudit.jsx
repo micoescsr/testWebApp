@@ -117,7 +117,9 @@ const cancelUserForm = () => {
 
       <div className="top-bar">
         <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-        <input type="text" placeholder="Search" className="search-input" />
+        {activeTab === "logs" && (
+          <input type="text" placeholder="Search" className="search-input" />
+        )}
       </div>
 
       {activeTab === "accounts" && (
