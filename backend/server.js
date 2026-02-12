@@ -5,6 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const FASTAPI_BASE = "http://mothership.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
 //const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
+const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
@@ -69,6 +70,7 @@ app.post('/admin/create-user', async (req, res) => {
   await supabase.from('profiles').update({ role, username }).eq('id', authUser.user.id);
   res.json({ message: 'User created', userId: authUser.user.id });
 });
+
 
 
 // ADDED 06:10 PM - 01/29/2026
@@ -340,6 +342,19 @@ app.get("/api/detect/poll", async (req, res) => {
   }
 });
 
+// ADDED 03:23 PM - FEB 11
+async function getCurrentUserRole(userId) {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (error) throw error;
+  return data.role;
+}
+// ADDED 03:23 PM - FEB 11 --- END
+
 async function mapPollResultsToThreatRows(results, supabase) {
   if (!Array.isArray(results)) return [];
 
@@ -569,6 +584,92 @@ app.get('/api/history/threats', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch threat history' });
   }
 });
+
+// ADDED 03:23 PM - FEB 11
+// POST /api/webApp/users/profiles/:id/activate-with-temp
+// Superadmin only: sets profile active, generates temp password, updates auth.users, returns temp once.
+app.post(
+  "/api/webApp/users/profiles/:id/activate-with-temp",
+  authJWT,
+  async (req, res) => {
+    try {
+      const currentUser = req.user;
+      if (!currentUser || !currentUser.id) {
+        return res.status(401).json({ error: "No authenticated user" });
+      }
+
+      const currentRole = await getCurrentUserRole(currentUser.id);
+      if (currentRole !== "superadmin") {
+        return res.status(403).json({ error: "Superadmin only" });
+      }
+
+      const id = req.params.id;
+      const { first_name, last_name, username, email, role } = req.body;
+
+console.log("activate-with-temp payload:", {
+  id,
+  first_name,
+  last_name,
+  username,
+  email,
+  role,
+});
+
+      // 1) Update profiles
+      const { data: updatedProfile, error: profileError } =
+        await supabaseClient
+          .from("profiles")
+          .update({
+            first_name,
+            last_name,
+            username,
+            email,
+            role,
+            status: "active",
+            must_change_password: true,
+            temp_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+      if (profileError) {
+        console.error("activate-with-temp profileError:", profileError);
+        return res.status(400).json({ error: profileError.message });
+      }
+
+      // 2) Generate secure random temp password
+      const tempPassword = crypto.randomBytes(32).toString("base64url");
+
+      // 3) Update auth user
+      const { error: authError } =
+        await supabaseClient.auth.admin.updateUserById(id, {
+          email,
+          password: tempPassword,
+        });
+
+      if (authError) {
+        console.error("activate-with-temp authError:", authError);
+        return res.status(400).json({ error: authError.message });
+      }
+
+      // 4) Success
+      return res.json({
+        profile: updatedProfile,
+        tempPassword,
+      });
+    } catch (err) {
+      console.error("activate-with-temp error:", err);
+      return res
+        .status(500)
+        .json({ error: "Failed to activate user with temp" });
+    }
+  }
+);
+// ADDED 03:23 PM - FEB 11 --- END
+
+
+
 
 
 const PORT = 3000;
