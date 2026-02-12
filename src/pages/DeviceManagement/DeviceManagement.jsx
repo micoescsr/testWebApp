@@ -1,16 +1,32 @@
 // pages/DeviceManagement.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./DeviceManagement.css";
 import Tabs from "../../components/common/Tabs/Tabs";
 import { useDevice } from "../../hooks/useDevice";
 import { useProfile } from "../../hooks/useProfile";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
+import {
+  getAnnouncement,
+  publishAnnouncement,
+  getTerms,
+  publishTerms,
+} from "../../api/deviceApi";
 
 const DeviceManagement = () => {
   const [activeTab, setActiveTab] = useState("announcement");
   const [isEditing, setIsEditing] = useState(false);
-  const [savedContent, setSavedContent] = useState("");
-  const [draftContent, setDraftContent] = useState("");
+
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [announcementCreatedAt, setAnnouncementCreatedAt] = useState(null);
+
+  const [termsContent, setTermsContent] = useState("");
+  const [termsDraft, setTermsDraft] = useState("");
+  const [termsVersion, setTermsVersion] = useState("");
+  const [termsCreatedAt, setTermsCreatedAt] = useState(null);
+
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState(null);
 
   const { profile, profileLoading } = useProfile();
   const role = (profile?.role || "").toLowerCase();
@@ -25,19 +41,13 @@ const DeviceManagement = () => {
     handleToggleAccessPoint,
   } = useDevice();
 
-  if (profileLoading) {
-    return <p>Loading...</p>;
-  }
-
-  // Everyone sees both tabs
   const tabs = [
     { label: "Announcement", value: "announcement" },
     { label: "Terms and Conditions", value: "terms" },
   ];
 
-  const safeActiveTab = activeTab; // no hiding
+  const safeActiveTab = activeTab;
 
-  // Only superadmin can edit Terms; everyone can edit Announcement
   const canEdit =
     safeActiveTab === "announcement" ||
     (safeActiveTab === "terms" && role === "superadmin");
@@ -47,23 +57,111 @@ const DeviceManagement = () => {
       ? "Captive Portal Announcement"
       : "Terms and Conditions";
 
+  useEffect(() => {
+    const fetchContent = async () => {
+      try {
+        setContentLoading(true);
+        setContentError(null);
+
+        const [annRes, termsRes] = await Promise.all([
+          getAnnouncement(),
+          getTerms(),
+        ]);
+
+        const ann = annRes?.data || {};
+        setAnnouncementContent(ann.announcement_content || "");
+        setAnnouncementDraft(ann.announcement_content || "");
+        setAnnouncementCreatedAt(ann.created_at || null);
+
+        const tc = termsRes?.data || {};
+        setTermsContent(tc.content || "");
+        setTermsDraft(tc.content || "");
+        setTermsVersion(tc.version || "");
+        setTermsCreatedAt(tc.created_at || null);
+      } catch (err) {
+        console.error("fetchContent error:", err);
+        setContentError("Failed to load content.");
+      } finally {
+        setContentLoading(false);
+      }
+    };
+
+    fetchContent();
+  }, []);
+
+  if (profileLoading) {
+    return <p>Loading...</p>;
+  }
+
+  const currentContent =
+    safeActiveTab === "announcement" ? announcementContent : termsContent;
+  const currentDraft =
+    safeActiveTab === "announcement" ? announcementDraft : termsDraft;
+  const currentCreatedAt =
+    safeActiveTab === "announcement" ? announcementCreatedAt : termsCreatedAt;
+
+  const setCurrentDraft = (value) => {
+    if (safeActiveTab === "announcement") {
+      setAnnouncementDraft(value);
+    } else {
+      setTermsDraft(value);
+    }
+  };
+
+  const hasChanges = currentDraft !== currentContent;
+
   const startEdit = () => {
     if (!canEdit) return;
-    setDraftContent(savedContent);
+    setCurrentDraft(currentContent);
     setIsEditing(true);
   };
 
   const discardChanges = () => {
-    setDraftContent(savedContent);
+    setCurrentDraft(currentContent);
     setIsEditing(false);
   };
 
-  const publishChanges = () => {
-    setSavedContent(draftContent);
-    setIsEditing(false);
+  const publishChanges = async () => {
+    if (!canEdit) return;
+
+    try {
+      setContentLoading(true);
+      setContentError(null);
+
+      if (safeActiveTab === "announcement") {
+        const res = await publishAnnouncement(currentDraft);
+        const ann = res.data;
+        setAnnouncementContent(ann.announcement_content || "");
+        setAnnouncementDraft(ann.announcement_content || "");
+        setAnnouncementCreatedAt(ann.created_at);
+      } else {
+        const nextVersion =
+          termsVersion && termsVersion.startsWith("v")
+            ? `v${parseInt(termsVersion.slice(1) || "1", 10) + 1}`
+            : "v1";
+
+        const res = await publishTerms(currentDraft, nextVersion);
+        const tc = res.data;
+        setTermsContent(tc.content || "");
+        setTermsDraft(tc.content || "");
+        setTermsVersion(tc.version || "");
+        setTermsCreatedAt(tc.created_at);
+      }
+
+      setIsEditing(false);
+    } catch (err) {
+      console.error(err);
+      setContentError("Failed to publish changes.");
+    } finally {
+      setContentLoading(false);
+    }
   };
 
-  const hasChanges = draftContent !== savedContent;
+  const formatDate = (iso) => {
+    if (!iso) return "-- --";
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  };
 
   return (
     <div className="device-page">
@@ -74,27 +172,34 @@ const DeviceManagement = () => {
         activeTab={safeActiveTab}
         onTabChange={(value) => {
           setActiveTab(value);
-          setIsEditing(false); // reset editing when switching tabs
+          setIsEditing(false);
         }}
       />
 
       <div className="device-content">
-        {/* LEFT: editor */}
         <div className="left-panel">
           <div className="editor-section">
             <div className="section-header">
               <h2 className="section-title">{sectionTitle}</h2>
               {canEdit && !isEditing && (
-                <button className="edit-icon" onClick={startEdit}>
+                <button
+                  className="edit-icon"
+                  onClick={startEdit}
+                  disabled={contentLoading}
+                >
                   Edit
                 </button>
               )}
             </div>
 
+            {contentError && (
+              <div className="error-text">{contentError}</div>
+            )}
+
             <textarea
               className="announcement-box"
-              value={isEditing ? draftContent : savedContent}
-              onChange={(e) => setDraftContent(e.target.value)}
+              value={isEditing ? currentDraft : currentContent}
+              onChange={(e) => setCurrentDraft(e.target.value)}
               readOnly={!isEditing || !canEdit}
               placeholder={
                 safeActiveTab === "terms"
@@ -107,18 +212,29 @@ const DeviceManagement = () => {
               <div className="published-on">
                 <span>Published On</span>
                 <div className="date-boxes">
-                  <span>-- --</span>
-                  <span>--</span>
+                  <span>{formatDate(currentCreatedAt)}</span>
                 </div>
               </div>
 
+              {safeActiveTab === "terms" && termsVersion && (
+                <div className="tc-version">Version: {termsVersion}</div>
+              )}
+
               {canEdit && isEditing && hasChanges && (
                 <div className="editor-actions">
-                  <button className="discard-btn" onClick={discardChanges}>
+                  <button
+                    className="discard-btn"
+                    onClick={discardChanges}
+                    disabled={contentLoading}
+                  >
                     Discard
                   </button>
-                  <button className="publish-btn" onClick={publishChanges}>
-                    Publish
+                  <button
+                    className="publish-btn"
+                    onClick={publishChanges}
+                    disabled={contentLoading}
+                  >
+                    {contentLoading ? "Publishing..." : "Publish"}
                   </button>
                 </div>
               )}
@@ -126,7 +242,6 @@ const DeviceManagement = () => {
           </div>
         </div>
 
-        {/* RIGHT: device panel */}
         <AccessPointPanel
           accessPoint={accessPoint}
           loading={loading}
