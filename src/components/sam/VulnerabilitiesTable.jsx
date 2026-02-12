@@ -46,7 +46,8 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
           {hasVulns && (
             <tbody>
               {vulnerabilities.map((vuln) => (
-                <tr key={vuln.id ?? vuln.name}>
+                //<tr key={vuln.id ?? vuln.name}>
+                <tr key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}>
                   <td>
                     <span
                       className={`severity ${String(

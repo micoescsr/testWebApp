@@ -176,7 +176,28 @@ export const useVulnerabilities = (bssid) => {
       }
 
       console.log("vulns from backend", body.rows); // TEMP: see data shape
-      setVulnerabilities(body.rows || []);
+      //setVulnerabilities(body.rows || []);
+
+      const deriveSeverity = (score) => {
+        const n = Number(score);
+        if (!Number.isFinite(n)) return "N/A";
+        if (n >= 9) return "CRITICAL";
+        if (n >= 7) return "HIGH";
+        if (n >= 4) return "MEDIUM";
+        return "LOW";
+      };
+
+      const mapped = (body.rows || []).map((r) => ({
+        id: r.vt_id ?? r.id,
+        name: r.vt_name ?? r.name,
+        score: r.severity_score ?? r.score,
+        observedConfig: r.vt_value ?? r.observedConfig,
+        detectedTime: r.scan_start ?? r.detectedTime,
+        bssid: r.bssid,
+        severity: r.severity ?? deriveSeverity(r.severity_score),
+      }));
+
+      setVulnerabilities(mapped);
 
     } catch (err) {
       console.error("fetchVulnerabilities error:", err);
@@ -210,43 +231,27 @@ export const useVulnerabilities = (bssid) => {
     try {
       setVulnDetailLoading(true);
       setVulnError(null);
-
-      // TODO: uncomment when detail endpoint is ready
-      // const res = await getVulnerabilityDetail(vulnIdOrName);
-      // setVulnDetail(res.data);
-
-      // Mock detail fallback
-      //wla pa ung associations here i think, ito na ung next ko, or the scanning if di pa nagana ung raspi
-      if (vulnIdOrName === "Unencrypted Network") { 
-        setVulnDetail({
-          severity: "CRITICAL",
-          name: "Unencrypted Network",
-          cvss: "9.9",
-          cvssVector: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/L:I/A:L",
-          description:
-            "An unencrypted network (open Wi-Fi) transmits traffic in cleartext because no WPA/WPA2/WPA3 encryption is used, allowing anyone in radio range to intercept or tamper with data.",
-          recommendations: {
-            nist: [
-              "Use strong encryption and authentication for wireless communication...",
-              "Separate WLAN networks by use case (e.g., guest/public vs internal/trusted)...",
-              "Monitor the wireless infrastructure: perform periodic audits, detect unauthorized APs...",
-            ],
-            owasp: [
-              "Implement WPA3 encryption where possible, falling back to WPA2 with strong passwords...",
-              "Use certificate-based authentication (802.1X) for enterprise environments...",
-              "Regularly update router firmware and disable WPS...",
-            ],
-          },
-        });
-      } else {
-        setVulnDetail(null);
-      }
-    } catch (err) {
-      setVulnError(err.message || "Failed to load vulnerability detail");
-    } finally {
-      setVulnDetailLoading(false);
-    }
-  };
+      
+      // ✅ SAFE FALLBACK (WORKS NOW)
+    setVulnDetail({
+      severity: vulnRow?.severity ?? "N/A",
+      name: vulnRow?.name ?? "Unknown Vulnerability",
+      cvss: vulnRow?.score ?? "N/A",
+      cvssVector: vulnRow?.cvssVector ?? "N/A",
+      description:
+        vulnRow?.description ??
+        "Detailed information for this vulnerability is not yet available.",
+      recommendations: vulnRow?.recommendations ?? { nist: [], owasp: [] },
+      observedConfig: vulnRow?.observedConfig ?? "N/A",
+      detectedTime: vulnRow?.detectedTime ?? null,
+    });
+  } catch (err) {
+    console.error("fetchVulnDetail error:", err);
+    setVulnError(err.message || "Failed to load vulnerability detail");
+  } finally {
+    setVulnDetailLoading(false);
+  }
+};
 
   return {
     vulnerabilities, //real data from backend
@@ -260,81 +265,6 @@ export const useVulnerabilities = (bssid) => {
   
 };
 
-/* =========================
-   THREAT DETECTION HOOK (Smart Polling)
-========================= */
-/* export const useThreatDetection = () => {
-
-  const [status, setStatus] = useState('IDLE'); // 'IDLE' | 'SCANNING' | 'DETECTING'
-  const [detectionResults, setDetectionResults] = useState(null);
-  
-  // Refs track the "Live" status without causing re-renders
-  const isPollingRef = useRef(false);
-  const timeoutRef = useRef(null);
-
-  // The actual polling function
-  const runPoll = async () => {
-    // 1. Stop immediately if we turned it off
-    if (!isPollingRef.current) return;
-
-    try {
-      // 2. Ask the waiter (Request)
-      const res = await fetch("http://localhost:3000/api/detect/poll");
-      const data = await res.json();
-      
-      // 3. Update UI only if we are still "on"
-      if (isPollingRef.current) {
-        setDetectionResults(data);
-        setLiveThreats(data.threatRows || []);  // <-- use backend mapping
-      }
-    } catch (err) {
-      console.error("Polling error:", err);
-    } finally {
-      // 4. WAIT for the answer, THEN schedule the next one in 2 seconds
-      // This prevents the "Traffic Jam"
-      if (isPollingRef.current) {
-        timeoutRef.current = setTimeout(runPoll, 2000); 
-      }
-    }
-  };
-
-  const startPolling = () => {
-    if (isPollingRef.current) return; // Already running
-    isPollingRef.current = true;
-    runPoll(); // Trigger the first request
-  };
-
-  const stopPolling = () => {
-    isPollingRef.current = false; // Kill the loop flag
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current); // Cancel any pending timer
-      timeoutRef.current = null;
-    }
-  };
-
-  // Watch status changes (Auto-start/stop)
-  useEffect(() => {
-    if (status === 'DETECTING') {
-      startPolling();
-    } else {
-      stopPolling();
-    }
-    
-    // Cleanup on unmount (page close)
-    return () => stopPolling();
-  }, [status]);
-
-  return {
-    detectionStatus: status,
-    setDetectionStatus: setStatus,
-    detectionResults,
-    resetDetection: () => {
-      stopPolling();
-      setStatus('IDLE');
-      setDetectionResults(null);
-    }
-  };
-}; */
 
 /* =========================
    THREAT DETECTION HOOK (Smart Polling)
