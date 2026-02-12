@@ -1,4 +1,6 @@
 // components/sam/SAMSidebar.jsx
+import { useState, useMemo } from "react";
+
 const SAMSidebar = ({
   selectedNetwork,
   lastScannedNetwork, // NEW for sidebar display
@@ -33,7 +35,19 @@ const SAMSidebar = ({
 
   const lastScanLabel = formatLastScan(lastScan);
 
+  // --- Network search filter ---
+  const [networkSearch, setNetworkSearch] = useState("");
 
+  const filteredNetworks = useMemo(() => {
+    if (!availableNetworks) return [];
+    if (!networkSearch.trim()) return availableNetworks;
+    const q = networkSearch.toLowerCase();
+    return availableNetworks.filter(
+      (net) =>
+        (net.ssid && net.ssid.toLowerCase().includes(q)) ||
+        (net.bssid && net.bssid.toLowerCase().includes(q))
+    );
+  }, [availableNetworks, networkSearch]);
 
   return (
     <div className="sam-sidebar">
@@ -64,10 +78,18 @@ const SAMSidebar = ({
           {networksLoading && <div className="info-value">Loading...</div>}
           {networksError && <div className="info-value error">{networksError}</div>}
         {!networksLoading && !networksError && (
+          <>
+            <input
+              type="text"
+              className="network-search"
+              placeholder="Search networks..."
+              value={networkSearch}
+              onChange={(e) => setNetworkSearch(e.target.value)}
+            />
         <div className="network-list">
         
-          {availableNetworks && availableNetworks.length > 0 ? (
-              availableNetworks.map((net, idx) => (
+          {filteredNetworks.length > 0 ? (
+              filteredNetworks.map((net, idx) => (
                 <div
                   key={`${net.bssid || net.ssid}-${idx}`} //using bssid as the main identifier, but adds the index so React never sees the same key string twice, even if your data unexpectedly has duplicates or missing BSSIDs.
                   className={`network-item ${
@@ -80,9 +102,12 @@ const SAMSidebar = ({
                 </div>
               ))
             ) : (
-              <div className="network-item">No networks found</div>
+              <div className="network-item">
+                {networkSearch ? "No matching networks" : "No networks found"}
+              </div>
             )}
           </div>
+          </>
         )}
 
       {/*         <div className="network-list">

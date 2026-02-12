@@ -215,6 +215,27 @@
   font-size: 16px;
 }
 
+.network-search {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.network-search:focus {
+  border-color: #2563eb;
+}
+
+.network-search::placeholder {
+  color: #9ca3af;
+}
+
 .network-list {
   max-height: 240px;
   overflow-y: auto;
