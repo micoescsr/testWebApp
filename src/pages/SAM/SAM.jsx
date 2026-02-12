@@ -61,6 +61,9 @@ const SAM = () => {
   const displayThreats =
     liveThreats && liveThreats.length > 0 ? liveThreats : threats;
 
+    console.log("liveThreats:", liveThreats);
+    console.log("displayThreats:", displayThreats);
+
   // Helper: Filter vulnerabilities locally if needed
   const filteredVulns =
     selectedNetwork && Array.isArray(vulnerabilities)
@@ -188,9 +191,10 @@ const SAM = () => {
     setIsModalOpen(true);
   };
 
-  const openVulnDetail = async (vuln) => {
-    await fetchVulnDetail(vuln.name);
+  const openVulnDetail = /* async  */(vuln) => {
+    //await fetchVulnDetail(vuln.name);
     setIsModalOpen(true);
+    fetchVulnDetail(vuln); // pass whole row
   };
 
   const closeModal = () => {
@@ -259,11 +263,11 @@ const SAM = () => {
         />
       )}
 
-      {isModalOpen && currentDetail && (
+      {isModalOpen && (
         <FindingDetailModal
           onClose={closeModal}
           vulnerability={currentDetail}
-          loading={detailLoading}
+          loading={detailLoading || !currentDetail}
         />
       )}
     </div>
