@@ -58,7 +58,6 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-card">
-        {/* <p className="login-welcome">Welcome back!</p> */}
         <h1 className="login-title">Login to your account</h1>
 
         <form className="login-form" onSubmit={handleSubmit}>
