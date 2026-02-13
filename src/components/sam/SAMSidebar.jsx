@@ -86,43 +86,39 @@ const SAMSidebar = ({
               value={networkSearch}
               onChange={(e) => setNetworkSearch(e.target.value)}
             />
-        <div className="network-list">
-        
-          {filteredNetworks.length > 0 ? (
-              filteredNetworks.map((net, idx) => (
-                <div
-                  key={`${net.bssid || net.ssid}-${idx}`} //using bssid as the main identifier, but adds the index so React never sees the same key string twice, even if your data unexpectedly has duplicates or missing BSSIDs.
-                  className={`network-item ${
-                    selectedNetwork && selectedNetwork.bssid === net.bssid ? "active" : ""
-                  }`}
-                  onClick={() => onSelectNetwork(net)}
-                >
-                  {net.ssid || "(hidden)"} 
-                  {/* {net.ssid || "(hidden)"} ({net.bssid}) --with bssid */}
+              <div className="network-list">
+        {filteredNetworks.length > 0 ? (
+          filteredNetworks.map((net, idx) => (
+            <div
+              key={`${net.bssid || net.ssid}-${idx}`}
+              className={`network-item cursor-pointer p-3 border-b border-gray-200 hover:bg-gray-50 transition-colors ${
+                selectedNetwork && selectedNetwork.bssid === net.bssid ? "bg-blue-50 border-blue-200" : ""
+              }`}
+              onClick={() => onSelectNetwork(net)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{net.ssid || "(hidden)"}</div>
                 </div>
-              ))
-            ) : (
-              <div className="network-item">
-                {networkSearch ? "No matching networks" : "No networks found"}
+                <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+                  <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    Ch: {net.channel}
+                  </div>
+                  <div className="text-xs text-gray-500 font-mono bg-green-100 px-2 py-1 rounded truncate max-w-[120px]">
+                    {net.bssid}
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
+          ))
+        ) : (
+          <div className="network-item py-4 text-center text-gray-500">
+            {networkSearch ? "No matching networks" : "No networks found"}
           </div>
+        )}
+      </div>
           </>
         )}
-
-      {/*         <div className="network-list">
-          {availableNetworks.map((network, index) => (
-            <div
-              key={index}
-              className={`network-item ${
-                selectedNetwork === network ? "active" : ""
-              }`}
-              onClick={() => onSelectNetwork(network)}
-            >
-              {network}
-            </div>
-          ))}
-        </div> */}
       </div>
 
       <div className="sidebar-section">
