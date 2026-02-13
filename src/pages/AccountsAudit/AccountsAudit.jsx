@@ -75,31 +75,9 @@ const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
     setShowConfirmModal(true);
   };
 
-
-/*   const confirmAction = async () => {
-  console.log("Confirmed: add", pendingUser);
-
-   if (modalMode === "edit" && pendingUser) {
-    await updateUser(pendingUser.id, {    // ← call your API here
-      first_name: pendingUser.firstName,
-      last_name: pendingUser.lastName,
-      username: pendingUser.username,
-      email: pendingUser.email,
-      role: pendingUser.role,
-      status: pendingUser.status,        
-    });
-    await fetchUsers(); // refresh list after update
-  }
-
-  setShowConfirmModal(false);
-  setShowUserModal(false);
-  setPendingUser(null);
-  setSelectedUser(null);
-  }; */
-
-   // ADDED 3:34 PMFEB 11
-const confirmAction = async () => {
-  console.log("Confirmed:", modalMode, pendingUser);
+// EDITED 08:52 PM FEB 13 2026
+ const confirmAction = async () => {
+  console.log("Confirmed:", modalMode, { pendingUser, selectedUser });
 
   try {
     if (modalMode === "edit" && pendingUser) {
@@ -112,13 +90,30 @@ const confirmAction = async () => {
         status: pendingUser.status,
       };
 
+      // Normalize statuses (in case UI uses labels like "Active (Can Login)")
+      const oldStatusRaw = selectedUser?.status || "";
+      const newStatusRaw = pendingUser.status || "";
+
+      const normalizeStatus = (s) => s.toLowerCase().trim();
+      const oldStatus = normalizeStatus(oldStatusRaw);
+      const newStatus = normalizeStatus(newStatusRaw);
+
+      const wasActive = oldStatus === "active";
+      const isNowActive = newStatus === "active";
+
+      // Only generate temp password when slot moves from non-active → active
+      const shouldActivateWithTemp = !wasActive && isNowActive;
+
+      console.log("Status change:", { oldStatus, newStatus, shouldActivateWithTemp });
+
       let tempPassword = null;
 
-      if (pendingUser.status === "active") {
+      if (shouldActivateWithTemp) {
         const res = await activateUserWithTemp(pendingUser.id, payload);
         console.log("activateUserWithTemp response:", res);
         tempPassword = res.data?.tempPassword;
       } else {
+        // Just a normal edit, keep existing password
         await updateUser(pendingUser.id, payload);
       }
 
@@ -131,12 +126,13 @@ const confirmAction = async () => {
         });
         setShowTempModal(true);
       } else {
-        toast.success("User updated");
+        // optional: toast or silent
+        // toast.success("User updated");
       }
     }
   } catch (err) {
-    console.error("Confirm action error:", err);
-    toast.error("Failed to save user changes");
+    console.error("Confirm action error:", err.response?.data || err);
+    // toast.error(err.response?.data?.error || "Failed to save user changes");
   }
 
   setShowConfirmModal(false);
@@ -144,8 +140,7 @@ const confirmAction = async () => {
   setPendingUser(null);
   setSelectedUser(null);
 };
-
- // ADDED 3:34 PMFEB 11
+// EDITED 08:52 PM FEB 13 2026
 
   const cancelConfirm = () => {
   setShowConfirmModal(false);
