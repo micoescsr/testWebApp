@@ -428,18 +428,23 @@ app.get('/api/history/threats', async (req, res) => {
 });
 
 
+// Replace your server.js announcement/terms routes - DYNAMIC network_id support
+
 //======================================
 
-// For now, assume single network_id (you can swap this for dynamic per user)
-const NETWORK_ID = process.env.DEFAULT_NETWORK_ID;
-
-// Get current announcement (latest active for network)
+// Get current announcement (latest active for SPECIFIC network)
 app.get("/api/announcement", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW: from ?network_id=uuid
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .select("*")
-      .eq("network_id", NETWORK_ID)
+      .eq("network_id", network_id)      // 👈 DYNAMIC: use query param
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -460,13 +465,19 @@ app.get("/api/announcement", async (req, res) => {
   }
 });
 
-// Get announcement history for this network
+// Get announcement history for SPECIFIC network
 app.get("/api/announcement/history", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .select("*")
-      .eq("network_id", NETWORK_ID)
+      .eq("network_id", network_id)      // 👈 DYNAMIC
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -478,17 +489,27 @@ app.get("/api/announcement/history", async (req, res) => {
   }
 });
 
-// Publish new announcement (creates a new version)
+// Publish new announcement (for SPECIFIC network)
 app.post("/api/announcement", async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, network_id } = req.body;  // 👈 NEW: network_id from body
+
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id required in body" });
+    }
+
+    // Deactivate previous announcements for this network
+    await supabaseClient
+      .from("captive_portal_announcements")
+      .update({ is_active: false })
+      .eq("network_id", network_id);
 
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .insert({
         announcement_content: content ?? "",
         is_active: true,
-        network_id: NETWORK_ID,
+        network_id: network_id,            // 👈 DYNAMIC - no more NETWORK_ID
       })
       .select()
       .single();
@@ -502,12 +523,19 @@ app.post("/api/announcement", async (req, res) => {
   }
 });
 
-// Get current terms (latest active)
+// 👈 FIXED: Terms now also per-network (matches your FK schema)
 app.get("/api/terms", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("terms_conditions")
       .select("*")
+      .eq("network_id", network_id)      // 👈 Assuming you add this column
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -529,12 +557,18 @@ app.get("/api/terms", async (req, res) => {
   }
 });
 
-// Get terms history
 app.get("/api/terms/history", async (req, res) => {
   try {
+    const { network_id } = req.query;
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("terms_conditions")
       .select("*")
+      .eq("network_id", network_id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -546,10 +580,19 @@ app.get("/api/terms/history", async (req, res) => {
   }
 });
 
-// Publish new terms version
 app.post("/api/terms", async (req, res) => {
   try {
-    const { content, version } = req.body;
+    const { content, version, network_id } = req.body;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id required in body" });
+    }
+
+    // Deactivate previous terms for this network
+    await supabaseClient
+      .from("terms_conditions")
+      .update({ is_active: false })
+      .eq("network_id", network_id);
 
     const { data, error } = await supabaseClient
       .from("terms_conditions")
@@ -557,6 +600,7 @@ app.post("/api/terms", async (req, res) => {
         content: content ?? "",
         version: version ?? "v1",
         is_active: true,
+        network_id: network_id,            // 👈 DYNAMIC
       })
       .select()
       .single();
@@ -569,6 +613,74 @@ app.post("/api/terms", async (req, res) => {
     res.status(500).json({ message: "Failed to publish terms" });
   }
 });
+
+// 👈 NEW: Add /enable-ap endpoint
+app.post("/api/enable-ap", async (req, res) => {
+  try {
+    const { network_id, ssid, bssid, channel, encryption_type, ap_password } = req.body;
+    
+    if (!network_id || !ssid || !bssid || !channel || !encryption_type) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Upsert network (your scan data)
+    const { data: network, error: upsertError } = await supabaseClient
+      .from('networks')
+      .upsert({ 
+        network_id, ssid, bssid, channel, encryption_status: encryption_type 
+      }, { onConflict: 'network_id' })
+      .select('network_id')
+      .single();
+    
+    if (upsertError) throw upsertError;
+
+    // Forward to FastAPI
+    const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
+    const fastapiRes = await fetch(`${FASTAPI_BASE}/api/enable-captive-portal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    
+    const fastapiData = await fastapiRes.json();
+    
+    if (!fastapiRes.ok) throw new Error(fastapiData.detail || 'FastAPI error');
+    
+    res.json({ 
+      status: 'success', 
+      network_id,
+      fastapi: fastapiData 
+    });
+  } catch (err) {
+    console.error('enable-ap error:', err);
+    res.status(500).json({ error: 'AP enable failed', detail: err.message });
+  }
+});
+
+app.get("/api/networks/:networkId", async (req, res) => {
+  try {
+    const { networkId } = req.params;
+    const { data, error } = await supabaseClient
+      .from("networks")
+      .select("ssid, bssid, channel, encryption_status")
+      .eq("network_id", networkId)
+      .single();
+
+    if (error) throw error;
+    res.json({
+      ssid: data.ssid,
+      bssid: data.bssid,
+      channel: data.channel,
+      encryption_type: data.encryption_status,
+    });
+  } catch (err) {
+    console.error("network config error:", err);
+    res.status(500).json({ message: "Failed to load network config" });
+  }
+});
+
+
+//========================================
 
 
 
