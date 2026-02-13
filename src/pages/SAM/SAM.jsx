@@ -53,16 +53,15 @@ const SAM = () => {
     setDetectionStatus,
     detectionResults,
     liveThreats,
+    displayThreats,
     resetDetection,
   } = useThreatDetection();
 
-
-  // If there are live threats from polling, show those; otherwise fallback to DB threats
-  const displayThreats =
-    liveThreats && liveThreats.length > 0 ? liveThreats : threats;
-
     console.log("liveThreats:", liveThreats);
     console.log("displayThreats:", displayThreats);
+  // If there are live threats from polling, show those; otherwise fallback to DB threats
+  /* const displayThreats =
+    liveThreats && liveThreats.length > 0 ? liveThreats : threats; */
 
   // Helper: Filter vulnerabilities locally if needed
   const filteredVulns =
