@@ -1,4 +1,4 @@
-// pages/DeviceManagement.jsx
+// pages/DeviceManagement.jsx - FIXED with network_id + AP config display/input
 import { useState, useEffect } from "react";
 import "./DeviceManagement.css";
 import Tabs from "../../components/common/Tabs/Tabs";
@@ -13,8 +13,18 @@ import {
 } from "../../api/deviceApi";
 
 const DeviceManagement = () => {
+  const [networkId, setNetworkId] = useState(null);
   const [activeTab, setActiveTab] = useState("announcement");
   const [isEditing, setIsEditing] = useState(false);
+
+  // 👈 NEW: Scan config state (displayed in AccessPointPanel)
+  const [networkConfig, setNetworkConfig] = useState({
+    ssid: "",
+    bssid: "",
+    channel: "",
+    encryption_type: "",
+  });
+  const [apPassword, setApPassword] = useState("");  // 👈 NEW: user input
 
   const [announcementContent, setAnnouncementContent] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
@@ -26,6 +36,7 @@ const DeviceManagement = () => {
   const [termsCreatedAt, setTermsCreatedAt] = useState(null);
 
   const [contentLoading, setContentLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);  // 👈 NEW
   const [contentError, setContentError] = useState(null);
 
   const { profile, profileLoading } = useProfile();
@@ -57,6 +68,33 @@ const DeviceManagement = () => {
       ? "Captive Portal Announcement"
       : "Terms and Conditions";
 
+   useEffect(() => {
+    const storedId = localStorage.getItem("lastNetworkId");
+    setNetworkId(storedId);
+  }, []);
+
+
+  // 👈 NEW: Load scan config from Supabase networks table
+  useEffect(() => {
+    if (!networkId) return;
+
+    const fetchNetworkConfig = async () => {
+      try {
+        setConfigLoading(true);
+        const res = await fetch(`/api/networks/${networkId}`);
+        const data = await res.json();
+        setNetworkConfig(data);
+      } catch (err) {
+        console.error("fetchNetworkConfig error:", err);
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
+    fetchNetworkConfig();
+  }, [networkId]);
+
+  // 👈 Existing announcement/terms useEffect
   useEffect(() => {
     const fetchContent = async () => {
       try {
@@ -64,8 +102,8 @@ const DeviceManagement = () => {
         setContentError(null);
 
         const [annRes, termsRes] = await Promise.all([
-          getAnnouncement(),
-          getTerms(),
+          getAnnouncement(networkId),  // 👈 Pass networkId
+          getTerms(networkId),         // 👈 Pass networkId
         ]);
 
         const ann = annRes?.data || {};
@@ -87,10 +125,15 @@ const DeviceManagement = () => {
     };
 
     fetchContent();
-  }, []);
+  }, [networkId]);  // 👈 Depend on networkId
 
-  if (profileLoading) {
-    return <p>Loading...</p>;
+  if (profileLoading || configLoading) {
+    return <p>Loading device config...</p>;
+  }
+
+    // guard if none
+  if (!networkId) {
+    return <p>No network selected. Run a scan first.</p>;
   }
 
   const currentContent =
@@ -129,7 +172,7 @@ const DeviceManagement = () => {
       setContentError(null);
 
       if (safeActiveTab === "announcement") {
-        const res = await publishAnnouncement(currentDraft);
+        const res = await publishAnnouncement(currentDraft, networkId);  // 👈 Pass networkId
         const ann = res.data;
         setAnnouncementContent(ann.announcement_content || "");
         setAnnouncementDraft(ann.announcement_content || "");
@@ -140,7 +183,7 @@ const DeviceManagement = () => {
             ? `v${parseInt(termsVersion.slice(1) || "1", 10) + 1}`
             : "v1";
 
-        const res = await publishTerms(currentDraft, nextVersion);
+        const res = await publishTerms(currentDraft, nextVersion, networkId);  // 👈 Pass networkId
         const tc = res.data;
         setTermsContent(tc.content || "");
         setTermsDraft(tc.content || "");
@@ -163,9 +206,28 @@ const DeviceManagement = () => {
     return d.toLocaleDateString();
   };
 
+  const onToggleAP = () => {
+    if (!apEnabled && networkConfig.encryption_type !== 'Open' && !apPassword) {
+      return alert('Enter AP password for encrypted network');
+    }
+
+
+    const payload = {
+      network_id: networkId,
+      ssid: networkConfig.ssid,
+      bssid: networkConfig.bssid,
+      channel: networkConfig.channel,
+      encryption_type: networkConfig.encryption_type,
+      ...(networkConfig.encryption_type !== 'Open' && { ap_password: apPassword }),
+    };
+
+    // Call your existing toggle OR new enableAP endpoint
+    handleToggleAccessPoint(payload);  // Keep optimistic UI
+  };
+
   return (
     <div className="device-page">
-      <h1 className="page-title">Device</h1>
+      <h1 className="page-title">Device - {networkConfig.ssid}</h1>  {/* 👈 Show SSID */}
 
       <Tabs
         tabs={tabs}
@@ -178,6 +240,7 @@ const DeviceManagement = () => {
 
       <div className="device-content">
         <div className="left-panel">
+          {/* 👈 Existing announcement/terms editor */}
           <div className="editor-section">
             <div className="section-header">
               <h2 className="section-title">{sectionTitle}</h2>
@@ -242,13 +305,17 @@ const DeviceManagement = () => {
           </div>
         </div>
 
+        {/* 👈 UPDATED: Pass network config + password handling */}
         <AccessPointPanel
           accessPoint={accessPoint}
+          networkConfig={networkConfig}  // 👈 NEW
+          apPassword={apPassword}
+          setApPassword={setApPassword}  // 👈 NEW
           loading={loading}
           error={error}
           isEmpty={isEmpty}
           onRetry={refetch}
-          onToggle={handleToggleAccessPoint}
+          onToggle={onToggleAP}  // 👈 Now sends full payload
         />
       </div>
     </div>

@@ -15,6 +15,7 @@ async function triggerScan(req, res) {
     }
 
     const payload = { ssid, bssid, channel };
+    console.log("triggerScan payload:", payload);
     const r = await fetch(`${FASTAPI_BASE}/scan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -37,6 +38,7 @@ async function getNetworksList(req, res) {
     });
 
     const data = await r.json();
+    console.log("getNetworksList response:", data);
     return res.status(r.status).json(data);
 
   } catch (err) {

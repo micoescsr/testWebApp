@@ -38,18 +38,13 @@ const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
   error: auditError,
 } = useAuditLogs();
 
-  // Guard uses hook values, but does not call hooks inside condition
-  // While loading profile, show nothing or a small loader
-  if (profileLoading) {
-    return <p>Loading...</p>;
-  }
-
-  // If not logged in or not superadmin, block this page
-  if (!profile || profile.role !== "superadmin") {
-    navigate("/dashboard"); // or "/profile" if you prefer
+  // If not loading and not superadmin, redirect
+  if (!profileLoading && (!profile || profile.role !== "superadmin")) {
+    navigate("/dashboard");
     return null;
   }
 
+  const isPageLoading = profileLoading || loading;
 
   const tabs = [
     { label: "Accounts", value: "accounts" },
@@ -173,15 +168,21 @@ const cancelUserForm = () => {
 
       <div className="top-bar">
         <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-        <input type="text" placeholder="Search" className="search-input" />
+        {activeTab === "logs" && (
+          <input type="text" placeholder="Search" className="search-input" />
+        )}
       </div>
 
       {activeTab === "accounts" && (
         <>
-          {loading && <p>Loading users...</p>}
-          {error && <p className="error-text">{error}</p>}
+          {isPageLoading && (
+            <div className="table-container">
+              <p style={{ padding: "24px", textAlign: "center" }}>Loading users...</p>
+            </div>
+          )}
+          {!isPageLoading && error && <p className="error-text">{error}</p>}
 
-          {!loading && !error && (
+          {!isPageLoading && !error && (
             <AccountsTable
               users={users}
               onEdit={openEditUser}
@@ -197,10 +198,14 @@ const cancelUserForm = () => {
 
       {activeTab === "logs" && (
         <>
-          {auditLoading && <p>Loading audit logs...</p>}
-          {auditError && <p className="error-text">{auditError}</p>}
+          {(profileLoading || auditLoading) && (
+            <div className="table-container">
+              <p style={{ padding: "24px", textAlign: "center" }}>Loading audit logs...</p>
+            </div>
+          )}
+          {!profileLoading && !auditLoading && auditError && <p className="error-text">{auditError}</p>}
 
-          {!auditLoading && !auditError && (
+          {!profileLoading && !auditLoading && !auditError && (
             <AuditLogsTable logs={auditLogs} />
           )}
         </>
