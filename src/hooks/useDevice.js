@@ -1,6 +1,7 @@
-// hooks/useDevice.js
+// hooks/useDevice.js - FIXED to accept config payload for AP enable
 import { useState, useEffect, useCallback } from "react";
 import { getNetworks, toggleAccessPoint } from "../api/rasPiApi";
+import axios from "axios";  // 👈 NEW: for /enable-ap calls
 
 export const useDevice = () => {
   // toggle state of AP itself
@@ -47,19 +48,19 @@ export const useDevice = () => {
       const status = err?.response?.status;
 
       if (status === 404) {
-    setIsEmpty(true);
-    // keep accessPoint as-is (enabled) or set a minimal enabled object
-    setAccessPoint((prev) => ({
-      currentNetwork: "N/A",
-      accessPointNetwork: "N/A",
-      status: "Active",
-      connectedClients: "N/A",
-      enabled: true,
-    }));
-    setError(null);
-  } else if (status >= 500 && status < 600) {
-    setError("Unable to connect to the device network. Please try again.");
-    // do NOT setAccessPoint(null) here
+        setIsEmpty(true);
+        // keep accessPoint as-is (enabled) or set a minimal enabled object
+        setAccessPoint((prev) => ({
+          currentNetwork: "N/A",
+          accessPointNetwork: "N/A",
+          status: "Active",
+          connectedClients: "N/A",
+          enabled: true,
+        }));
+        setError(null);
+      } else if (status >= 500 && status < 600) {
+        setError("Unable to connect to the device network. Please try again.");
+        // do NOT setAccessPoint(null) here
       } else {
         setError("Access point info is currently unavailable.");
         setAccessPoint(null);
@@ -83,40 +84,52 @@ export const useDevice = () => {
     }
   }, [apEnabled, fetchAccessPoint]);
 
-  const handleToggleAccessPoint = async () => {
-  const nextState = !apEnabled;
+  // 👈 FIXED: Accept optional configPayload for full AP enable
+  const handleToggleAccessPoint = async (configPayload = null) => {
+    const nextState = !apEnabled;
 
-  // 1) Optimistically flip the local toggle
-  setApEnabled(nextState);
+    // 1) Optimistically flip the local toggle
+    setApEnabled(nextState);
 
-  // 2) Immediately reflect that in accessPoint so the UI moves
-  setAccessPoint((prev) => ({
-    currentNetwork: prev?.currentNetwork ?? "N/A",
-    accessPointNetwork: prev?.accessPointNetwork ?? "N/A",
-    status: nextState ? "Active" : "Disabled",
-    connectedClients: prev?.connectedClients ?? "N/A",
-    enabled: nextState,
-  }));
+    // 2) Immediately reflect that in accessPoint so the UI moves
+    setAccessPoint((prev) => ({
+      currentNetwork: prev?.currentNetwork ?? "N/A",
+      accessPointNetwork: prev?.accessPointNetwork ?? "N/A",
+      status: nextState ? "Active" : "Disabled",
+      connectedClients: prev?.connectedClients ?? "N/A",
+      enabled: nextState,
+    }));
 
-  try {
-    setLoading(true);
-    setError(null);
+    try {
+      setLoading(true);
+      setError(null);
 
-    const res = await toggleAccessPoint(nextState);
-    console.log("Toggle AP response data:", res.data);
+      // 👈 NEW: If enabling WITH config, send full payload to /enable-ap
+      if (nextState && configPayload) {
+        console.log('Enabling AP with config:', configPayload);
+        const enableRes = await axios.post('/api/enable-ap', configPayload);
+        console.log('AP enable response:', enableRes.data);
+        
+        // Also call original toggle if needed (for basic on/off)
+        await toggleAccessPoint(true);
+      } else {
+        // Original toggle logic (basic enable/disable)
+        const res = await toggleAccessPoint(nextState);
+        console.log("Toggle AP response data:", res.data);
+      }
 
-    // 3) If enabling, try to load real info (may 500, that’s fine)
-    if (nextState) {
-      await fetchAccessPoint();
+      // 3) If enabling, try to load real info (may 500, that's fine)
+      if (nextState) {
+        await fetchAccessPoint();
+      }
+    } catch (err) {
+      console.error("Toggle AP failed:", err);
+      setError("Failed to contact the device. Access point state may be stale.");
+      // IMPORTANT: do NOT revert apEnabled here, we keep the UI as-is
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error("Toggle AP failed:", err);
-    setError("Failed to contact the device. Access point state may be stale.");
-    // IMPORTANT: do NOT revert apEnabled here, we keep the UI as-is
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // when disabled, we still want to show a disabled panel (not "empty")
   const effectiveAccessPoint =
@@ -131,6 +144,6 @@ export const useDevice = () => {
     error,
     isEmpty,
     refetch: fetchAccessPoint,
-    handleToggleAccessPoint,
+    handleToggleAccessPoint,  // 👈 Now accepts configPayload
   };
 };

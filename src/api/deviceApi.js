@@ -1,4 +1,4 @@
-// src/api/deviceApi.js
+// src/api/deviceApi.js - UPDATED with network_id + enable-ap
 import axios from "axios";
 
 const api = axios.create({
@@ -6,15 +6,26 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// Announcement (per-network, versioned)
-export const getAnnouncement = () => api.get("/announcement");
-export const getAnnouncementHistory = () =>
-  api.get("/announcement/history");
-export const publishAnnouncement = (content) =>
-  api.post("/announcement", { content });
+// Announcement (per-network, versioned) 👈 FIXED: accepts networkId
+export const getAnnouncement = (networkId) => 
+  api.get(`/announcement?network_id=${networkId}`);
+export const getAnnouncementHistory = (networkId) =>
+  api.get(`/announcement/history?network_id=${networkId}`);
+export const publishAnnouncement = (content, networkId) =>
+  api.post("/announcement", { content, network_id: networkId });
 
-// Terms & Conditions (global, versioned)
-export const getTerms = () => api.get("/terms");
-export const getTermsHistory = () => api.get("/terms/history");
-export const publishTerms = (content, version) =>
-  api.post("/terms", { content, version });
+// Terms & Conditions (per-network, versioned) 👈 FIXED: accepts networkId
+export const getTerms = (networkId) => 
+  api.get(`/terms?network_id=${networkId}`);
+export const getTermsHistory = (networkId) => 
+  api.get(`/terms/history?network_id=${networkId}`);
+export const publishTerms = (content, version, networkId) =>
+  api.post("/terms", { content, version, network_id: networkId });
+
+// 👈 NEW: Access Point Enable (full config)
+export const enableAccessPoint = (payload) =>
+  api.post("/enable-ap", payload);
+
+// 👈 NEW: Get current AP status (for polling)
+export const getAccessPointStatus = () => 
+  api.get("/ap-status");

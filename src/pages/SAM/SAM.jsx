@@ -144,8 +144,15 @@ const SAM = () => {
 
       if (!saveRes.ok) throw new Error("Save failed");
 
-      alert("Scan finished. Starting Threat Detection...");
+        // 👈 NEW: Get network_id from response + navigate!
+      const saveData = await saveRes.json();
+      const networkId = saveData.network_id;  // From Supabase upsert
 
+       // ✅ Store for later use by DeviceManagement
+      localStorage.setItem("lastNetworkId", networkId);
+
+      alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
+      
       // 4. Start Detection Phase
       setDetectionStatus("DETECTING");
       await reloadVulnerabilities(selectedNetwork.bssid);
