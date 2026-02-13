@@ -170,6 +170,13 @@
   padding: 20px;
 }
 
+.network-list {
+  max-height: 300px; /* Limit sidebar height */
+  overflow-y: auto;
+}
+.network-item {
+  /* Handled by Tailwind classes above */
+}
 .info-row {
   display: flex;
   justify-content: space-between;
