@@ -79,13 +79,53 @@ const SAMSidebar = ({
           {networksError && <div className="info-value error">{networksError}</div>}
         {!networksLoading && !networksError && (
           <>
-            <input
-              type="text"
-              className="network-search"
-              placeholder="Search networks..."
-              value={networkSearch}
-              onChange={(e) => setNetworkSearch(e.target.value)}
-            />
+            <div className="network-search-wrapper">
+              <svg
+                className="search-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                className="network-search"
+                placeholder="Search networks..."
+                value={networkSearch}
+                onChange={(e) => setNetworkSearch(e.target.value)}
+              />
+              {networkSearch && (
+                <button
+                  className="clear-search-btn"
+                  onClick={() => setNetworkSearch("")}
+                  type="button"
+                  aria-label="Clear search"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
               <div className="network-list">
         {filteredNetworks.length > 0 ? (
           filteredNetworks.map((net, idx) => (
