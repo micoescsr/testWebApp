@@ -1,5 +1,6 @@
 // hooks/useSeverityTableControls.js
 import { useMemo, useState } from "react";
+import { usePagination } from "./usePagination";
 
 const severityOrder = {
   none: 1,
@@ -13,6 +14,7 @@ export const useSeverityTableControls = ({
   data = [],
   defaultSortField = "severity",
   searchFields = ["name"],
+  itemsPerPage = 10,
 }) => {
   const [globalSearch, setGlobalSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState([]);
@@ -21,7 +23,7 @@ export const useSeverityTableControls = ({
   const rows = useMemo(() => {
     let result = Array.isArray(data) ? [...data] : [];
 
-    // search
+    // global search
     if (globalSearch.trim()) {
       const q = globalSearch.toLowerCase();
       result = result.filter((row) =>
@@ -65,12 +67,16 @@ export const useSeverityTableControls = ({
     return result;
   }, [data, globalSearch, severityFilter, sortBy, searchFields]);
 
+  // paginate filtered + sorted rows
+  const pagination = usePagination(rows, itemsPerPage);
+
   const toggleSort = (field) => {
     setSortBy((prev) =>
       prev.field === field
         ? { field, dir: prev.dir === "asc" ? "desc" : "asc" }
         : { field, dir: "desc" }
     );
+    pagination.resetPage();
   };
 
   const toggleSeverity = (sev) => {
@@ -78,16 +84,20 @@ export const useSeverityTableControls = ({
     setSeverityFilter((prev) =>
       prev.includes(val) ? prev.filter((s) => s !== val) : [...prev, val]
     );
+    pagination.resetPage();
   };
 
   const clearFilters = () => {
     setSeverityFilter([]);
     setGlobalSearch("");
     setSortBy({ field: defaultSortField, dir: "desc" });
+    pagination.resetPage();
   };
 
   return {
+    // full filtered/sorted list (for counts)
     rows,
+    // controls
     globalSearch,
     setGlobalSearch,
     severityFilter,
@@ -95,5 +105,11 @@ export const useSeverityTableControls = ({
     clearFilters,
     sortBy,
     toggleSort,
+    // pagination
+    page: pagination.page,
+    totalPages: pagination.totalPages,
+    currentRows: pagination.currentItems, // use in <tbody>
+    goNext: pagination.goNext,
+    goPrev: pagination.goPrev,
   };
 };
