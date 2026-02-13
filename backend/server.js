@@ -48,87 +48,7 @@ app.use("/api/rasPi_scan", scanRoutes);
 //app.use("/api/captivePortal", captivePortalRoutes);
 
 
-
-// ADDED 06:10 PM - 01/29/2026
-/**
- * Proxy: GET /api/networks
- * Forwards request to FastAPI GET /networks
- */
-app.get("/api/rasPi/networks_list_original", async (req, res) => {
-  try {
-    const r = await fetch(`${FASTAPI_BASE}/networks`, { //dpt aligned sa endpoint ni kerby which is naka /network lng
-      method: "GET",
-      headers: { "Accept": "application/json" },
-    });
-
-    const data = await r.json();
-    return res.status(r.status).json(data);
-
-  } catch (err) {
-    return res.status(502).json({
-      status: "ERROR",
-      error: "Failed to reach FastAPI /networks",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
-    });
-  }
-});
-// ADDED 06:10 PM - 01/29/2026
-
-/**
- * Proxy: POST /api/scan
- * Forwards request to FastAPI POST /scan
- */
-app.post("/api/scan_original", async (req, res) => {
-  try {
-
-  //uncomment if from react na galing
-    /* const { ssid, bssid, channel } = req.body;
-    console.log("req.body:", req.body);
-
-    // Basic validation
-    if (!ssid || !bssid || channel === undefined) {
-      return res.status(400).json({
-        dispatch_status: "ERROR",
-        error: "Missing required fields",
-        detail: "ssid, bssid, channel, and signal are required",
-      });
-    } */
-
-    // Payload expected by dispatcher.py
-    const payload = {
-      signal: "enable",   // REQUIRED
-      //hardcoded ko muna to test
-      ssid: "Test_SSID_From_Server",
-      bssid: "00:11:22:33:44:55",
-      channel: 6,
-      /* ssid,
-      bssid,
-      channel */
-    };
-
-    const r = await fetch(`${FASTAPI_BASE}/scan`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await r.json();
-    return res.status(r.status).json(data);
-    
-
-  } catch (err) {
-    return res.status(502).json({
-      dispatch_status: "ERROR",
-      error: "Failed to reach FastAPI /scan",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
-    });
-  }
-});
+app.use('/api/rasPi_scan', scanRoutes);
 
 app.get("/api/device/status", async (req, res) => {
   try {
@@ -153,160 +73,6 @@ app.get("/api/device/status", async (req, res) => {
     });
   }
 });
-
-
-app.get("/", (req, res) => {
-  res.type("html").send(`
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Networks Test</title></head>
-<body>
-  <h1>/networks test</h1>
-  <button id="btn">Fetch networks</button>
-  <pre id="out"></pre>
-
-  <script>
-    async function load() {
-      const out = document.getElementById("out");
-      out.textContent = "Loading...";
-      try {
-        const r = await fetch("/api/networks");
-        const data = await r.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (e) {
-        out.textContent = "Error: " + e;
-      }
-    }
-    document.getElementById("btn").addEventListener("click", load);
-    // auto-load once:
-    load();
-  </script>
-</body>
-</html>
-  `);
-});
-
-
-app.use('/api/rasPi_scan', scanRoutes);
-
-/**
- * Proxy: GET /api/detect/poll
- * Forwards request to FastAPI GET /detect/poll
- * Optional query: ?max_items=50
- */
-/* app.get("/api/detect/poll", async (req, res) => {
-  const maxItems = Number(req.query.max_items ?? 50);
-
-  try {
-    const r = await fetch(
-      `${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`,
-      {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-      }
-    );
-
-    // Try to parse the JSON from FastAPI
-    const data = await r.json().catch(() => null);
-
-    // If FastAPI returns successfully, pass it through
-    if (r.ok && data) {
-
-      //FOR POLLING DEBUGGING
-      // --- DEBUG LOGGING START ---
-      // Check if we actually have results in this poll cycle
-      if (data.results && data.results.length > 0) {
-        console.log("🔥 THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
-      } else {
-        // Optional: Log a 'dot' to show polling is alive without spamming text
-        process.stdout.write("."); 
-      }
-      // --- DEBUG LOGGING END ---
-
-      return res.status(200).json(data);
-    }
-
-    // If FastAPI returns an error code (4xx/5xx) or invalid JSON
-    console.error("FastAPI Poll Error:", r.status, data);
-    return res.status(200).json({
-      running: false, // Tell frontend scanning isn't active
-      results: [],
-      last_error: `FastAPI error: ${r.status}`
-    });
-
-  } catch (err) {
-    console.error("Poll Proxy Exception:", err.message);
-    // Return a 'safe' structure so React doesn't crash on .map()
-    return res.status(200).json({
-      running: false,
-      results: [],
-      last_error: "Backend unavailable"
-    });
-  }
-}); */
-
-/* app.get("/api/detect/poll", async (req, res) => {
-  const maxItems = Number(req.query.max_items ?? 50);
-
-  try {
-    const r = await fetch(`${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
-
-    const data = await r.json().catch(() => null);
-
-    if (r.ok && data) {
-      // --- POLLING DEBUG LOGS ---
-      if (data.results && data.results.length > 0) {
-        console.log(
-          "🔥 THREAT DETECTED [Express]:",
-          JSON.stringify(data.results, null, 2)
-        );
-      } else {
-        process.stdout.write("."); // shows polling is alive
-      }
-      // --- END DEBUG LOGS ---
-
-      const defsByCode = await loadThreatDefinitions(supabaseClient);
-      const threatRows = await mapPollResultsToThreatRows(
-        data.results || [],
-        defsByCode
-      );
-
-       // optional: log grouped rows too
-      console.log(
-        "Mapped threatRows:",
-        JSON.stringify(threatRows, null, 2)
-      );
-
-
-      // ✅ write to DB using the computed rows
-      await persistThreatRows(threatRows, data.target_bssid, supabaseClient);
-
-      return res.status(200).json({
-        ...data,
-        threatRows,
-      });
-    }
-
-    // ❌ don't touch data.threatRows here; data may be null
-    return res.status(200).json({
-      running: false,
-      results: [],
-      threatRows: [],
-      last_error: `FastAPI error: ${r.status}`,
-    });
-  } catch (err) {
-    console.error("Poll Proxy Exception:", err.message);
-    return res.status(200).json({
-      running: false,
-      results: [],
-      threatRows: [],
-      last_error: "Backend unavailable",
-    });
-  }
-});  */
 
 app.get("/api/detect/poll", async (req, res) => {
   const maxItems = Number(req.query.max_items ?? 50);
@@ -440,7 +206,7 @@ function mapPollResultsToThreatRows(results, defsByCode) {
   for (const r of results || []) {
     for (const key of findingKeys) {
       const f = r?.findings?.[key];
-      if (!f || f.status !== "DETECTED") continue;
+      if (!f) continue;                     // allow DETECTED or CLEARED
 
       const vtCode = f.id;           // e.g. WFVT-006, WFVT-007
       const detail = defsByCode.get(vtCode);
@@ -456,20 +222,31 @@ function mapPollResultsToThreatRows(results, defsByCode) {
           name: detail.vt_name,
           severity: detail.vt_severity_rating,
           score: detail.vt_cvss_base_score,
-          status: f.status,
+          status: f.status,         //DETECTED or CLEARED
           occurrences: 1,
           detectedTime: firstSeen
             ? new Date(firstSeen * 1000).toISOString()
             : r.detection_cycle_start,
+          // sessions array for expanded rows
+          sessions: [{
+            firstSeen,
+            lastSeen,
+            state: f.status,         // DETECTED or CLEARED
+          }],
           raw: [r],
         });
       } else {
         const agg = grouped.get(mapKey);
         agg.occurrences += 1;
-        agg.status = f.status;
+        agg.status = f.status; //latest state (CLEARED should override)
         if (lastSeen) {
           agg.detectedTime = new Date(lastSeen * 1000).toISOString();
         }
+       agg.sessions.push({
+          firstSeen,
+          lastSeen,
+          state: f.status,
+        });
         agg.raw.push(r);
       }
     }
@@ -519,6 +296,11 @@ async function findLatestScanIdForBssid(targetBssid, supabaseClient) {
 }
 
 async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
+
+  console.log("persistThreatRows called with", {
+    targetBssid,
+    count: Array.isArray(threatRows) ? threatRows.length : "not array",
+  });
   if (!Array.isArray(threatRows) || threatRows.length === 0) return;
 
   // Normalize BSSID to match networks.bssid format (your table uses uppercase with colons)
@@ -570,9 +352,7 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 }
 
 
-
-
-// Example using supabase-js on the server
+//========================================
 
 app.get('/api/history/vulnerabilities', async (req, res) => {
   try {
@@ -688,18 +468,23 @@ app.get('/api/history/threats', async (req, res) => {
 });
 
 
-//-----------------------
+// Replace your server.js announcement/terms routes - DYNAMIC network_id support
 
-// For now, assume single network_id (you can swap this for dynamic per user)
-const NETWORK_ID = process.env.DEFAULT_NETWORK_ID;
+//======================================
 
-// Get current announcement (latest active for network)
+// Get current announcement (latest active for SPECIFIC network)
 app.get("/api/announcement", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW: from ?network_id=uuid
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .select("*")
-      .eq("network_id", NETWORK_ID)
+      .eq("network_id", network_id)      // 👈 DYNAMIC: use query param
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -720,13 +505,19 @@ app.get("/api/announcement", async (req, res) => {
   }
 });
 
-// Get announcement history for this network
+// Get announcement history for SPECIFIC network
 app.get("/api/announcement/history", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .select("*")
-      .eq("network_id", NETWORK_ID)
+      .eq("network_id", network_id)      // 👈 DYNAMIC
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -738,17 +529,27 @@ app.get("/api/announcement/history", async (req, res) => {
   }
 });
 
-// Publish new announcement (creates a new version)
+// Publish new announcement (for SPECIFIC network)
 app.post("/api/announcement", async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, network_id } = req.body;  // 👈 NEW: network_id from body
+
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id required in body" });
+    }
+
+    // Deactivate previous announcements for this network
+    await supabaseClient
+      .from("captive_portal_announcements")
+      .update({ is_active: false })
+      .eq("network_id", network_id);
 
     const { data, error } = await supabaseClient
       .from("captive_portal_announcements")
       .insert({
         announcement_content: content ?? "",
         is_active: true,
-        network_id: NETWORK_ID,
+        network_id: network_id,            // 👈 DYNAMIC - no more NETWORK_ID
       })
       .select()
       .single();
@@ -762,12 +563,19 @@ app.post("/api/announcement", async (req, res) => {
   }
 });
 
-// Get current terms (latest active)
+// 👈 FIXED: Terms now also per-network (matches your FK schema)
 app.get("/api/terms", async (req, res) => {
   try {
+    const { network_id } = req.query;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("terms_conditions")
       .select("*")
+      .eq("network_id", network_id)      // 👈 Assuming you add this column
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -789,12 +597,18 @@ app.get("/api/terms", async (req, res) => {
   }
 });
 
-// Get terms history
 app.get("/api/terms/history", async (req, res) => {
   try {
+    const { network_id } = req.query;
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id query param required" });
+    }
+
     const { data, error } = await supabaseClient
       .from("terms_conditions")
       .select("*")
+      .eq("network_id", network_id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -806,10 +620,19 @@ app.get("/api/terms/history", async (req, res) => {
   }
 });
 
-// Publish new terms version
 app.post("/api/terms", async (req, res) => {
   try {
-    const { content, version } = req.body;
+    const { content, version, network_id } = req.body;  // 👈 NEW
+    
+    if (!network_id) {
+      return res.status(400).json({ error: "network_id required in body" });
+    }
+
+    // Deactivate previous terms for this network
+    await supabaseClient
+      .from("terms_conditions")
+      .update({ is_active: false })
+      .eq("network_id", network_id);
 
     const { data, error } = await supabaseClient
       .from("terms_conditions")
@@ -817,6 +640,7 @@ app.post("/api/terms", async (req, res) => {
         content: content ?? "",
         version: version ?? "v1",
         is_active: true,
+        network_id: network_id,            // 👈 DYNAMIC
       })
       .select()
       .single();
@@ -829,6 +653,74 @@ app.post("/api/terms", async (req, res) => {
     res.status(500).json({ message: "Failed to publish terms" });
   }
 });
+
+// 👈 NEW: Add /enable-ap endpoint
+app.post("/api/enable-ap", async (req, res) => {
+  try {
+    const { network_id, ssid, bssid, channel, encryption_type, ap_password } = req.body;
+    
+    if (!network_id || !ssid || !bssid || !channel || !encryption_type) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Upsert network (your scan data)
+    const { data: network, error: upsertError } = await supabaseClient
+      .from('networks')
+      .upsert({ 
+        network_id, ssid, bssid, channel, encryption_status: encryption_type 
+      }, { onConflict: 'network_id' })
+      .select('network_id')
+      .single();
+    
+    if (upsertError) throw upsertError;
+
+    // Forward to FastAPI
+    const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
+    const fastapiRes = await fetch(`${FASTAPI_BASE}/api/enable-captive-portal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    
+    const fastapiData = await fastapiRes.json();
+    
+    if (!fastapiRes.ok) throw new Error(fastapiData.detail || 'FastAPI error');
+    
+    res.json({ 
+      status: 'success', 
+      network_id,
+      fastapi: fastapiData 
+    });
+  } catch (err) {
+    console.error('enable-ap error:', err);
+    res.status(500).json({ error: 'AP enable failed', detail: err.message });
+  }
+});
+
+app.get("/api/networks/:networkId", async (req, res) => {
+  try {
+    const { networkId } = req.params;
+    const { data, error } = await supabaseClient
+      .from("networks")
+      .select("ssid, bssid, channel, encryption_status")
+      .eq("network_id", networkId)
+      .single();
+
+    if (error) throw error;
+    res.json({
+      ssid: data.ssid,
+      bssid: data.bssid,
+      channel: data.channel,
+      encryption_type: data.encryption_status,
+    });
+  } catch (err) {
+    console.error("network config error:", err);
+    res.status(500).json({ message: "Failed to load network config" });
+  }
+});
+
+
+//========================================
 
 
 

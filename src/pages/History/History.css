@@ -20,6 +20,61 @@
   margin-bottom: 20px;
 }
 
+/* Search bar */
+.history-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  max-width: 420px;
+}
+
+.history-search-icon {
+  position: absolute;
+  left: 12px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.history-search-input {
+  width: 100%;
+  padding: 10px 38px 10px 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background-color: #fff;
+  transition: border-color 0.2s;
+}
+
+.history-search-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.history-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.history-search-clear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.history-search-clear:hover {
+  color: #1f2937;
+  background-color: #f3f4f6;
+}
+
 .history-tabs {
   margin-bottom: 20px;
 }
@@ -51,6 +106,82 @@
   background-color: #fff;
   cursor: pointer;
   font-size: 13px;
+  transition: border-color 0.2s, background-color 0.2s;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-btn:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+/* Sort dropdown */
+.sort-dropdown-wrapper {
+  position: relative;
+}
+
+.sort-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 270px;
+  background-color: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 4px 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sort-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  user-select: none;
+}
+
+.sort-dropdown-item:hover {
+  background-color: #f3f4f6;
+}
+
+.sort-dropdown-item.selected {
+  color: #2563eb;
+  font-weight: 600;
+  background-color: #eff6ff;
+}
+
+.sort-dropdown-checkbox {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sort-dropdown-label {
+  flex: 1;
+}
+
+.sort-order-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #2563eb;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .history-table {

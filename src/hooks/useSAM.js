@@ -272,7 +272,12 @@ export const useVulnerabilities = (bssid) => {
 export const useThreatDetection = () => {
   const [status, setStatus] = useState("IDLE"); // 'IDLE' | 'SCANNING' | 'DETECTING'
   const [detectionResults, setDetectionResults] = useState(null);
-  const [liveThreats, setLiveThreats] = useState([]); // <-- ADD THIS
+  
+  // 1) live snapshot from the latest poll
+  const [liveThreats, setLiveThreats] = useState([]);
+
+  // 2) sticky/latest-known threats (what you show in UI)
+  const [displayThreats, setDisplayThreats] = useState([]);
 
   // Refs track the "Live" status without causing re-renders
   const isPollingRef = useRef(false);
@@ -280,24 +285,32 @@ export const useThreatDetection = () => {
 
   // The actual polling function
   const runPoll = async () => {
-    if (!isPollingRef.current) return;
+  if (!isPollingRef.current) return;
 
-    try {
-      const res = await fetch("http://localhost:3000/api/detect/poll");
-      const data = await res.json();
+  try {
+    const res = await fetch("http://localhost:3000/api/detect/poll");
+    const data = await res.json();
 
-      if (isPollingRef.current) {
-        setDetectionResults(data);
-        setLiveThreats(data.threatRows || []); // <-- use backend mapping
-      }
-    } catch (err) {
-      console.error("Polling error:", err);
-    } finally {
-      if (isPollingRef.current) {
-        timeoutRef.current = setTimeout(runPoll, 2000);
+    if (isPollingRef.current) {
+      const threatRows = data.threatRows || [];
+
+      setDetectionResults(data);
+      setLiveThreats(threatRows);      // live snapshot
+
+      // only update sticky state when we *have* threats
+      if (threatRows.length > 0) {
+        setDisplayThreats(threatRows); // last non-empty
       }
     }
-  };
+  } catch (err) {
+    console.error("Polling error:", err);
+  } finally {
+    if (isPollingRef.current) {
+      timeoutRef.current = setTimeout(runPoll, 2000);
+    }
+  }
+};
+
 
   const startPolling = () => {
     if (isPollingRef.current) return; // Already running
@@ -327,12 +340,14 @@ export const useThreatDetection = () => {
     detectionStatus: status,
     setDetectionStatus: setStatus,
     detectionResults,
-    liveThreats, // <-- RETURN IT
+    liveThreats,      // “raw” current poll
+    displayThreats,   // “sticky” for UI
     resetDetection: () => {
       stopPolling();
       setStatus("IDLE");
       setDetectionResults(null);
       setLiveThreats([]); // clear live threats
+      setDisplayThreats([]); // clear sticky threats
     },
   };
 };
