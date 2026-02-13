@@ -1,5 +1,6 @@
 // components/sam/VulnerabilitiesTable.jsx
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
+import Pagination from "../../components/common/Pagination/Pagination";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -9,6 +10,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
   const {
     rows,
+    currentRows,
     globalSearch,
     setGlobalSearch,
     severityFilter,
@@ -16,10 +18,15 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
     clearFilters,
     sortBy,
     toggleSort,
+    page,
+    totalPages,
+    goNext,
+    goPrev,
   } = useSeverityTableControls({
     data: vulnerabilities,
     defaultSortField: "severity",
     searchFields: ["name", "observedConfig"],
+    itemsPerPage: 10,
   });
 
   const formatDetectedTime = (iso) => {
@@ -103,8 +110,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
           {hasVulns && (
             <tbody>
-              {vulnerabilities.map((vuln) => (
-                //<tr key={vuln.id ?? vuln.name}>
+              {currentRows.map((vuln) => (
                 <tr key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}>
                   <td>
                     <span
@@ -134,6 +140,13 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
             detecting threats / scanning vulnerabilities.
           </div>
         )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
 
         <div className="sam-actions">
           <button className="export-btn">📎 Export</button>

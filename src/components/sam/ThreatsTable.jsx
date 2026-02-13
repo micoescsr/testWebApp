@@ -1,6 +1,7 @@
 // components/sam/ThreatsTable.jsx
 import React, { useState } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
+import Pagination from "../../components/common/Pagination/Pagination";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -25,6 +26,7 @@ const ThreatsTable = ({ threats = [], onView }) => {
 
   const {
     rows,
+    currentRows,
     globalSearch,
     setGlobalSearch,
     severityFilter,
@@ -32,15 +34,19 @@ const ThreatsTable = ({ threats = [], onView }) => {
     clearFilters,
     sortBy,
     toggleSort,
+    page,
+    totalPages,
+    goNext,
+    goPrev,
   } = useSeverityTableControls({
     data: threats,
     defaultSortField: "severity",
     searchFields: ["name"],
+    itemsPerPage: 10,
   });
 
   const activeCount = rows.length;
   const totalCount = threats.length;
-
 
   return (
     <div className="sam-card">
@@ -95,17 +101,16 @@ const ThreatsTable = ({ threats = [], onView }) => {
                 SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
               </th>
               <th>OCCURRENCES</th>
-              <th></th> {/* expand arrow */}
+              <th></th>
               <th>ACTION</th>
             </tr>
           </thead>
           {hasThreats && (
             <tbody>
-              {threats.map((t) => {
+              {currentRows.map((t) => {
                 const isExpanded = expandedIds.has(t.id);
                 return (
                   <React.Fragment key={t.id}>
-                    {/* summary row */}
                     <tr>
                       <td>
                         <span
@@ -117,9 +122,9 @@ const ThreatsTable = ({ threats = [], onView }) => {
                         </span>
                       </td>
                       <td>{t.name}</td>
-                      <td>{t.status}</td>
-                      <td>{t.score}</td>
-                      <td>{t.occurrences}</td>
+                      <td>{formatDateTime(t.detectedTime)}</td>
+                      <td>{t.score ?? "N/A"}</td>
+                      <td>{t.occurrences ?? 0}</td>
                       <td
                         className="expand-cell"
                         onClick={() => toggleExpand(t.id)}
@@ -135,12 +140,11 @@ const ThreatsTable = ({ threats = [], onView }) => {
                       </td>
                     </tr>
 
-                    {/* expanded rows: one per session */}
                     {isExpanded &&
                       Array.isArray(t.sessions) &&
                       t.sessions.map((s, idx) => (
                         <tr key={`${t.id}-session-${idx}`} className="session-row">
-                          <td /> {/* empty to align */}
+                          <td />
                           <td colSpan={3}>
                             {formatTime(s.firstSeen)} –{" "}
                             {s.lastSeen ? formatTime(s.lastSeen) : "—"}
@@ -162,6 +166,14 @@ const ThreatsTable = ({ threats = [], onView }) => {
             Nothing to analyze. Connect to a Wi‑Fi network to start detecting threats.
           </div>
         )}
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPrev={goPrev}
+          onNext={goNext}
+        />
+
       </div>
     </div>
   );
