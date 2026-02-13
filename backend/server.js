@@ -159,32 +159,6 @@ async function getCurrentUserRole(userId) {
 }
 // ADDED 03:23 PM - FEB 11 --- END
 
-// ADDED 03:23 PM - FEB 11
-async function getCurrentUserRole(userId) {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .single();
-
-  if (error) throw error;
-  return data.role;
-}
-// ADDED 03:23 PM - FEB 11 --- END
-
-// ADDED 03:23 PM - FEB 11
-async function getCurrentUserRole(userId) {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .single();
-
-  if (error) throw error;
-  return data.role;
-}
-// ADDED 03:23 PM - FEB 11 --- END
-
 
 async function loadThreatDefinitions(supabaseClient) {
   const { data, error } = await supabaseClient
