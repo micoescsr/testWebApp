@@ -8,9 +8,11 @@ import AccountsTable from "../../components/accounts/AccountsTable";
 import AuditLogsTable from "../../components/accounts/AuditLogsTable";
 import useUsers from "../../hooks/useUsers";
 import useAuditLogs from "../../hooks/useAuditLogs";
-import { updateUser } from "../../api/userApi";
+//import { updateUser } from "../../api/userApi";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
+import { updateUser, activateUserWithTemp } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
+
 
 const AccountsAudit = () => {
   const [activeTab, setActiveTab] = useState("accounts");
@@ -25,6 +27,10 @@ const AccountsAudit = () => {
   const navigate = useNavigate();
   const { profile, profileLoading } = useProfile();
   const { users, loading, error, fetchUsers } = useUsers();
+
+  const [showTempModal, setShowTempModal] = useState(false);
+const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
+
 
   const {
   logs: auditLogs,
@@ -75,7 +81,7 @@ const AccountsAudit = () => {
   };
 
 
-  const confirmAction = async () => {
+/*   const confirmAction = async () => {
   console.log("Confirmed: add", pendingUser);
 
    if (modalMode === "edit" && pendingUser) {
@@ -94,7 +100,57 @@ const AccountsAudit = () => {
   setShowUserModal(false);
   setPendingUser(null);
   setSelectedUser(null);
-  };
+  }; */
+
+   // ADDED 3:34 PMFEB 11
+const confirmAction = async () => {
+  console.log("Confirmed:", modalMode, pendingUser);
+
+  try {
+    if (modalMode === "edit" && pendingUser) {
+      const payload = {
+        first_name: pendingUser.firstName,
+        last_name: pendingUser.lastName,
+        username: pendingUser.username,
+        email: pendingUser.email,
+        role: pendingUser.role,
+        status: pendingUser.status,
+      };
+
+      let tempPassword = null;
+
+      if (pendingUser.status === "active") {
+        const res = await activateUserWithTemp(pendingUser.id, payload);
+        console.log("activateUserWithTemp response:", res);
+        tempPassword = res.data?.tempPassword;
+      } else {
+        await updateUser(pendingUser.id, payload);
+      }
+
+      await fetchUsers();
+
+      if (tempPassword) {
+        setTempPasswordInfo({
+          email: pendingUser.email,
+          tempPassword,
+        });
+        setShowTempModal(true);
+      } else {
+        toast.success("User updated");
+      }
+    }
+  } catch (err) {
+    console.error("Confirm action error:", err);
+    toast.error("Failed to save user changes");
+  }
+
+  setShowConfirmModal(false);
+  setShowUserModal(false);
+  setPendingUser(null);
+  setSelectedUser(null);
+};
+
+ // ADDED 3:34 PMFEB 11
 
   const cancelConfirm = () => {
   setShowConfirmModal(false);
@@ -198,6 +254,52 @@ const cancelUserForm = () => {
             "This action cannot be undone. Do you really want to delete this account?"}
         </p>
       </AccountsAuditModal>
+
+      {/* TEMP PASSWORD MODAL */}
+<AccountsAuditModal
+  isOpen={showTempModal}
+  title="Temporary Password"
+  onClose={() => setShowTempModal(false)}
+  footer={
+    <button
+      className="confirm-btn"
+      onClick={() => setShowTempModal(false)}
+    >
+      Close
+    </button>
+  }
+>
+  {tempPasswordInfo && (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <p>
+        Give this temporary password to{" "}
+        <strong>{tempPasswordInfo.email}</strong>. They will be forced to change it on first login.
+      </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          wordBreak: "break-all",
+        }}
+      >
+        <code>{tempPasswordInfo.tempPassword}</code>
+        <button
+          className="confirm-btn"
+          onClick={() =>
+            navigator.clipboard.writeText(tempPasswordInfo.tempPassword)
+          }
+        >
+          Copy
+        </button>
+      </div>
+      <p style={{ fontSize: "0.85rem", color: "#666" }}>
+        This dialog will close only when you click Close.
+      </p>
+    </div>
+  )}
+</AccountsAuditModal>
+
     </div>
   );
 };
