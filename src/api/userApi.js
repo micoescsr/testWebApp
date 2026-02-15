@@ -11,6 +11,12 @@ export const updateUser = (id, userData) => {
   return api.put(`webApp/users/profiles/${id}`, userData);
 };
 
+// ADDED 3:27 PM FEB 11
+export const activateUserWithTemp = (id, userData) => {
+  return api.post(`webApp/users/profiles/${id}/activate-with-temp`, userData);
+};
+// ADDED 3:27 PM FEB 11 --- END
+
 
 /* // CREATE user
 export const createUser = (userData) => {
