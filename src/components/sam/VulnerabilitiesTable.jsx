@@ -24,7 +24,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
     goPrev,
   } = useSeverityTableControls({
     data: vulnerabilities,
-    defaultSortField: "severity",
+    defaultSortField: "detectedTime",
     searchFields: ["name", "observedConfig"],
     itemsPerPage: 10,
   });
