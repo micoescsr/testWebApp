@@ -34,6 +34,10 @@ app.use(
 );
 
 app.use(express.json());
+app.use("/api/webapp", webAppRoutes); 
+app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
+app.use('/api/rasPi_scan', scanRoutes);
+app.use('/api/auth', authRoutes);  // → /api/auth/sa/login
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
@@ -42,9 +46,9 @@ app.use("/api/auth", authRoutes); // /api/auth/login
 //app.use("/api", authJWT, requireActiveProfile);
 
 // 3) Protected sub-routers
-app.use("/api/webApp", webAppRoutes);
-app.use("/api/rasPi", rasPiRoutes);
-app.use("/api/rasPi_scan", scanRoutes);
+//app.use("/api/webApp", webAppRoutes);
+//app.use("/api/rasPi", rasPiRoutes);
+//app.use("/api/rasPi_scan", scanRoutes);
 //app.use("/api/captivePortal", captivePortalRoutes);
 
 
