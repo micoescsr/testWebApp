@@ -193,7 +193,12 @@ const SAM = () => {
   };
 
   const openThreatDetail = async (threat) => {
-    await fetchThreatDetail(threat.name);
+    const key =
+      typeof threat?.id === "string" && threat.id.includes("-")
+        ? threat.id // vt_code-like, e.g. WFVT-006
+        : threat?.name;
+
+    await fetchThreatDetail(key);
     setIsModalOpen(true);
   };
 
