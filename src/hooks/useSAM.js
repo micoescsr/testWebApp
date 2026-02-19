@@ -7,6 +7,7 @@ import {
   getThreatDetail,
   getVulnerabilityDetail,
 } from "../api/samApi";
+import { mappedThreats } from "../data/mockThreats";
 
   export const useNetworks = () => {
     const [networks, setNetworks] = useState([]);
@@ -92,35 +93,11 @@ export const useThreats = () => {
       setThreatDetailLoading(true);
       setThreatError(null);
 
-      // TODO: uncomment when detail endpoint is ready
-      // const res = await getThreatDetail(threatIdOrName);
-      // setThreatDetail(res.data);
-
-      // Mock detail fallback
-      if (threatIdOrName === "Rogue AP") {
-        setThreatDetail({
-          severity: "CRITICAL",
-          name: "Rogue AP",
-          cvss: "8.0",
-          cvssVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N",
-          description:
-            "A rogue access point is an unauthorized wireless access point that can allow attackers to intercept network traffic.",
-          recommendations: {
-            nist: [
-              "Monitor wireless infrastructure and detect unauthorized access points...",
-              "Segment guest networks from internal networks...",
-            ],
-            owasp: [
-              "Use wireless intrusion detection systems (WIDS)...",
-              "Harden access point configurations and disable unused services...",
-            ],
-          },
-        });
-      } else {
-        setThreatDetail(null);
-      }
+      const res = await getThreatDetail(threatIdOrName);
+      setThreatDetail(res.data);
     } catch (err) {
       setThreatError(err.message || "Failed to load threat detail");
+      setThreatDetail(null);
     } finally {
       setThreatDetailLoading(false);
     }
@@ -277,7 +254,30 @@ export const useThreatDetection = () => {
   const [liveThreats, setLiveThreats] = useState([]);
 
   // 2) sticky/latest-known threats (what you show in UI)
-  const [displayThreats, setDisplayThreats] = useState([]);
+  // Use mock data in development when REACT_APP_USE_MOCK_THREATS is true
+  let USE_MOCK_THREATS = false;
+  try {
+    // Prefer explicit VITE/REACT flag, but enable mocks automatically during Vite dev mode
+    const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+    const rawFlag = env.VITE_USE_MOCK_THREATS ?? env.REACT_APP_USE_MOCK_THREATS ?? null;
+
+    if (rawFlag != null) {
+      USE_MOCK_THREATS = String(rawFlag).toLowerCase() === "true";
+    } else if (env.DEV) {
+      // developer convenience: show mock threats during local dev
+      USE_MOCK_THREATS = true;
+    } else if (typeof process !== "undefined" && process.env) {
+      USE_MOCK_THREATS = String(process.env.REACT_APP_USE_MOCK_THREATS || "false").toLowerCase() === "true";
+    } else {
+      USE_MOCK_THREATS = false;
+    }
+  } catch (e) {
+    USE_MOCK_THREATS = false;
+  }
+
+  const [displayThreats, setDisplayThreats] = useState(
+    USE_MOCK_THREATS ? mappedThreats : []
+  );
 
   // Refs track the "Live" status without causing re-renders
   const isPollingRef = useRef(false);
@@ -294,12 +294,15 @@ export const useThreatDetection = () => {
     if (isPollingRef.current) {
       const threatRows = data.threatRows || [];
 
+      // Map raw threatRows into parent/session structure
+      const mapped = mapThreatRowsToParentSessions(threatRows);
+
       setDetectionResults(data);
-      setLiveThreats(threatRows);      // live snapshot
+      setLiveThreats(mapped); // live snapshot (mapped)
 
       // only update sticky state when we *have* threats
-      if (threatRows.length > 0) {
-        setDisplayThreats(threatRows); // last non-empty
+      if (mapped.length > 0) {
+        setDisplayThreats(mapped); // last non-empty mapped
       }
     }
   } catch (err) {
@@ -310,6 +313,66 @@ export const useThreatDetection = () => {
     }
   }
 };
+
+  // Helper: transform server threatRows into parent/session model
+  function toEpochSeconds(v) {
+    if (v == null) return null;
+    if (typeof v === "number") {
+      // seconds vs ms heuristic
+      return v > 1e12 ? Math.floor(v / 1000) : Math.floor(v);
+    }
+    const parsed = Date.parse(v);
+    return isNaN(parsed) ? null : Math.floor(parsed / 1000);
+  }
+
+  function mapThreatRowsToParentSessions(rows) {
+    if (!Array.isArray(rows)) return [];
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    return rows.map((t) => {
+      const rawSessions = Array.isArray(t.sessions) ? t.sessions : t.sessions || [];
+
+      const sessions = rawSessions
+        .map((s) => {
+          const first = toEpochSeconds(s.firstSeen ?? s.first_seen ?? s.first_seen_epoch ?? s.firstSeenEpoch);
+          const last = toEpochSeconds(s.lastSeen ?? s.last_seen ?? s.last_seen_epoch ?? s.lastSeenEpoch);
+          const state = s.state || s.status || (last ? "CLEARED" : "DETECTED");
+          const duration = first ? (last ? last - first : nowSec - first) : null;
+          return {
+            firstSeen: first,
+            lastSeen: last,
+            durationSeconds: duration,
+            state,
+            raw: s,
+          };
+        })
+        .filter((x) => x.firstSeen != null)
+        .sort((a, b) => {
+          const aKey = a.lastSeen || a.firstSeen;
+          const bKey = b.lastSeen || b.firstSeen;
+          return bKey - aKey; // newest first
+        });
+
+      const occurrencesCompleted = sessions.filter((s) => s.state === "CLEARED").length;
+      const activeSession = sessions.find((s) => s.state === "DETECTED") || null;
+
+      const lastSeen = activeSession ? (activeSession.lastSeen || nowSec) : (sessions[0]?.lastSeen || sessions[0]?.firstSeen || null);
+
+      return {
+        id: t.id || t.vt_id || t.code || t.name,
+        name: t.name || t.vt_name || t.vtName || "Unknown",
+        severity: t.severity || t.severity_rating || "N/A",
+        score: t.score ?? t.severity_score ?? null,
+        status: t.status || (activeSession ? "DETECTED" : "CLEARED"),
+        detectedTime: lastSeen, // used by table as detectedTime
+        occurrences: occurrencesCompleted,
+        activeCount: activeSession ? 1 : 0,
+        activeSession,
+        sessions,
+        raw: t,
+      };
+    });
+  }
 
 
   const startPolling = () => {

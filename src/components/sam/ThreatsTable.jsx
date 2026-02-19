@@ -24,6 +24,19 @@ const ThreatsTable = ({ threats = [], onView }) => {
   const formatDateTime = (iso) =>
     iso ? new Date(iso).toLocaleString() : "—";
 
+  const formatEpoch = (sec) => (sec ? new Date(sec * 1000).toLocaleString() : "—");
+
+  const formatDuration = (secs) => {
+    if (secs == null) return "—";
+    const s = Number(secs);
+    if (!Number.isFinite(s) || s < 0) return "—";
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    return `${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  };
+
   const {
     rows,
     currentRows,
@@ -161,10 +174,22 @@ const ThreatsTable = ({ threats = [], onView }) => {
                           {t.severity || "UNKNOWN"}
                         </span>
                       </td>
-                      <td>{t.name}</td>
-                      <td>{formatDateTime(t.detectedTime)}</td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          <strong>{t.name}</strong>
+                          <small style={{ color: "#666" }}>{t.id}</small>
+                        </div>
+                      </td>
+                      <td>{formatEpoch(t.detectedTime)}</td>
                       <td>{t.score ?? "N/A"}</td>
-                      <td>{t.occurrences ?? 0}</td>
+                      <td>
+                        {t.occurrences ?? 0}
+                        {t.activeCount ? (
+                          <span style={{ marginLeft: 8, color: "#0b6", fontSize: "0.85em" }}>
+                            (+{t.activeCount} active)
+                          </span>
+                        ) : null}
+                      </td>
                       <td
                         className="expand-cell"
                         onClick={() => toggleExpand(t.id)}
@@ -180,20 +205,49 @@ const ThreatsTable = ({ threats = [], onView }) => {
                       </td>
                     </tr>
 
-                    {isExpanded &&
-                      Array.isArray(t.sessions) &&
-                      t.sessions.map((s, idx) => (
-                        <tr key={`${t.id}-session-${idx}`} className="session-row">
-                          <td />
-                          <td colSpan={3}>
-                            {formatTime(s.firstSeen)} –{" "}
-                            {s.lastSeen ? formatTime(s.lastSeen) : "—"}
-                          </td>
-                          <td colSpan={3}>
-                            {s.state === "DETECTED" ? "Detected" : "Cleared"}
-                          </td>
-                        </tr>
-                      ))}
+                    {isExpanded && (
+                      <tr className="expanded-row">
+                        <td colSpan={7}>
+                          <div className="session-panel" style={{ padding: 12, border: "1px solid #eee", borderRadius: 6, background: "#fafafa" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                              <strong>Sessions</strong>
+                              <div style={{ fontSize: "0.9em", color: "#555" }}>
+                                {t.activeCount ? "Active now: Yes" : "Active now: No"}
+                              </div>
+                            </div>
+
+                            <table className="inner-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ textAlign: "left" }}>#</th>
+                                  <th style={{ textAlign: "left" }}>First seen</th>
+                                  <th style={{ textAlign: "left" }}>Last seen</th>
+                                  <th style={{ textAlign: "left" }}>Duration</th>
+                                  <th style={{ textAlign: "left" }}>State</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Array.isArray(t.sessions) && t.sessions.length > 0 ? (
+                                  t.sessions.map((s, idx) => (
+                                    <tr key={`${t.id}-session-${idx}`}> 
+                                      <td style={{ padding: "6px 8px" }}>{t.sessions.length - idx}</td>
+                                      <td style={{ padding: "6px 8px" }}>{formatEpoch(s.firstSeen)}</td>
+                                      <td style={{ padding: "6px 8px" }}>{s.lastSeen ? formatEpoch(s.lastSeen) : "—"}</td>
+                                      <td style={{ padding: "6px 8px" }}>{formatDuration(s.durationSeconds)}</td>
+                                          <td style={{ padding: "6px 8px" }}>{s.state}</td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={7} style={{ padding: 8 }}>No session data available.</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </React.Fragment>
                 );
               })}
