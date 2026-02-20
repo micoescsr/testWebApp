@@ -26,25 +26,7 @@ const router = express.Router();
   }
 }); */
 
-router.post("/signal_ap", async (req, res) => {
-  try {
-    const { toggleState } = req.body;
-
-    console.log("Received toggleState:", toggleState);
-    console.log(
-      toggleState ? "Access Point ENABLED" : "Access Point DISABLED"
-    );
-
-    // FOR NOW: just confirm receipt
-    res.json({
-      success: true,
-      status: toggleState ? "Active" : "Disabled",
-    });
-  } catch (err) {
-    console.error("Toggle test error:", err.message);
-    res.status(500).json({ error: "Toggle test failed" });
-  }
-});
+// NOTE: /signal_ap was migrated to routes/deviceMgmtRoutes.js
 
 
 module.exports = router;

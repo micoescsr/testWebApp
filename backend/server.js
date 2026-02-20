@@ -12,6 +12,7 @@ const rasPiRoutes = require("./routes/rasPiRoutes");
 const samRoutes = require("./routes/samRoutes");
 //const captivePortalRoutes = require("./routes/captivePortalRoutes");
 const scanRoutes = require('./routes/scanRoutes');
+const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
 
 const { authJWT } = require("./middleware/authMiddleware");
@@ -38,6 +39,7 @@ app.use(express.json());
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
 app.use('/api/rasPi_scan', scanRoutes);
+app.use('/api/device', deviceMgmtRoutes);
 app.use('/api/sam', samRoutes);
 
 // 1) Public auth routes (no JWT / status)
@@ -643,48 +645,7 @@ app.post("/api/terms", async (req, res) => {
   }
 });
 
-// 👈 NEW: Add /enable-ap endpoint
-app.post("/api/enable-ap", async (req, res) => {
-  try {
-    const { network_id, ssid, bssid, channel, encryption_type, ap_password } = req.body;
-    
-    if (!network_id || !ssid || !bssid || !channel || !encryption_type) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    // Upsert network (your scan data)
-    const { data: network, error: upsertError } = await supabaseClient
-      .from('networks')
-      .upsert({ 
-        network_id, ssid, bssid, channel, encryption_status: encryption_type 
-      }, { onConflict: 'network_id' })
-      .select('network_id')
-      .single();
-    
-    if (upsertError) throw upsertError;
-
-    // Forward to FastAPI
-    const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
-    const fastapiRes = await fetch(`${FASTAPI_BASE}/api/enable-captive-portal`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-    });
-    
-    const fastapiData = await fastapiRes.json();
-    
-    if (!fastapiRes.ok) throw new Error(fastapiData.detail || 'FastAPI error');
-    
-    res.json({ 
-      status: 'success', 
-      network_id,
-      fastapi: fastapiData 
-    });
-  } catch (err) {
-    console.error('enable-ap error:', err);
-    res.status(500).json({ error: 'AP enable failed', detail: err.message });
-  }
-});
+// NOTE: /enable-ap moved to routes/deviceMgmtRoutes.js
 
 app.get("/api/networks/:networkId", async (req, res) => {
   try {
