@@ -107,7 +107,7 @@ export const useDevice = () => {
       // 👈 NEW: If enabling WITH config, send full payload to /enable-ap
       if (nextState && configPayload) {
         console.log('Enabling AP with config:', configPayload);
-        const enableRes = await axios.post('/api/enable-ap', configPayload);
+        const enableRes = await axios.post('/api/device/enable-ap', configPayload);
         console.log('AP enable response:', enableRes.data);
         
         // Also call original toggle if needed (for basic on/off)
