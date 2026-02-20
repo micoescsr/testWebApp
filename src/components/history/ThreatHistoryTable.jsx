@@ -108,7 +108,7 @@ const ThreatHistoryTable = ({
                             <td>{threat.window}</td>
                             <td
                               className="view-action"
-                              onClick={() => onViewDetail(threat.name)}
+                              onClick={() => onViewDetail(threat.code || threat.name)}
                             >
                               VIEW
                             </td>
