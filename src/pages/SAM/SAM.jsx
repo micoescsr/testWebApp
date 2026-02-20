@@ -11,7 +11,7 @@ import {
   useNetworks,
   useThreatDetection,
 } from "../../hooks/useSAM";
-import { triggerScan } from "../../api/rasPiApi";
+import { triggerScan, sendMetadata } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 
 const SAM = () => {
@@ -39,7 +39,7 @@ const SAM = () => {
     vulnDetail,
     vulnDetailLoading,
     reloadVulnerabilities,
-  } = useVulnerabilities(selectedNetwork?.bssid);
+  } = useVulnerabilities(null); // don't auto-load on select; load after explicit scan
 
   const {
     networks,
@@ -56,6 +56,10 @@ const SAM = () => {
     displayThreats,
     resetDetection,
   } = useThreatDetection();
+
+  useEffect(() => {
+    console.log("vulnerabilities state updated:", vulnerabilities);
+  }, [vulnerabilities]);
 
     console.log("liveThreats:", liveThreats);
     console.log("displayThreats:", displayThreats);
@@ -76,8 +80,13 @@ const SAM = () => {
   const handleSelectNetwork = async (net) => {
     setSelectedNetwork(net);
 
+    // Fetch metadata with encoded query and cancellation support
+    const controller = new AbortController();
     try {
-      const res = await fetch(`/api/webApp/network_metadata?bssid=${net.bssid}`);
+      const url = `/api/webapp/network_metadata?bssid=${encodeURIComponent(
+        net.bssid || ""
+      )}`;
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) {
         console.warn(`Metadata fetch failed: ${res.status}`);
         setLocationMeta({ city: "", province: "", notes: "" });
@@ -97,16 +106,33 @@ const SAM = () => {
         notes: data.notes || "",
       });
     } catch (e) {
-      console.error("Failed to load metadata:", e);
+      if (e.name === "AbortError") {
+        console.log("Metadata fetch aborted");
+      } else {
+        console.error("Failed to load metadata:", e);
+      }
       setLocationMeta({ city: "", province: "", notes: "" });
     }
 
-    await reloadVulnerabilities(net.bssid);
+    // Do not auto-reload vulnerabilities here. Vulnerabilities are loaded
+    // only when the user triggers a scan (handleScan) to avoid showing stale data.
   };
 
   const handleScan = async () => {
     if (!selectedNetwork) {
       alert("Please select a network first");
+      return;
+    }
+
+    // Basic validation
+    if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
+      alert("Select a full network first");
+      return;
+    }
+
+    const channelNum = Number(selectedNetwork.channel);
+    if (!Number.isFinite(channelNum)) {
+      alert("Invalid channel value");
       return;
     }
 
@@ -125,28 +151,24 @@ const SAM = () => {
       setLastScan(result);
       setLastScannedNetwork(selectedNetwork);
 
-      // 3. Save Results
-      const saveRes = await fetch("http://localhost:3000/api/rasPi/networks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ssid: selectedNetwork.ssid,
-          bssid: selectedNetwork.bssid,
-          channel: selectedNetwork.channel,
-          city: locationMeta.city,
-          province: locationMeta.province,
-          notes: locationMeta.notes,
-          scan: result,
-          encryption_status: selectedNetwork.encryption_status,
-          num_clients: selectedNetwork.num_clients,
-        }),
+      // 3. Save Results (use API wrapper so base URL/auth are centralized)
+      const saveRes = await sendMetadata({
+        ssid: selectedNetwork.ssid,
+        bssid: selectedNetwork.bssid,
+        channel: channelNum,
+        city: locationMeta.city,
+        province: locationMeta.province,
+        notes: locationMeta.notes,
+        scan: result,
+        encryption_status: selectedNetwork.encryption_status,
+        num_clients: selectedNetwork.num_clients,
       });
 
-      if (!saveRes.ok) throw new Error("Save failed");
+      if (!saveRes || saveRes.status >= 400) throw new Error("Save failed");
 
-        // 👈 NEW: Get network_id from response + navigate!
-      const saveData = await saveRes.json();
-      const networkId = saveData.network_id;  // From Supabase upsert
+      // 👈 NEW: Get network_id from response + navigate!
+      const saveData = saveRes.data;
+      const networkId = saveData.network_id; // From Supabase upsert
 
        // ✅ Store for later use by DeviceManagement
       localStorage.setItem("lastNetworkId", networkId);
@@ -155,7 +177,10 @@ const SAM = () => {
       
       // 4. Start Detection Phase
       setDetectionStatus("DETECTING");
-      await reloadVulnerabilities(selectedNetwork.bssid);
+      const normalizedBssid = (selectedNetwork.bssid || "").toUpperCase();
+      console.log("Reloading vulnerabilities for BSSID:", normalizedBssid);
+      await reloadVulnerabilities(normalizedBssid);
+      console.log("Vulnerabilities after reload:", vulnerabilities);
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");

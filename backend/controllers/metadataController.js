@@ -101,24 +101,30 @@ async function getNetworkMetadata(req, res) {
 async function getVulnerabilitiesLatest(req, res) {
   try {
     const { bssid } = req.query;
+    console.log("[getVulnerabilitiesLatest] called with bssid:", bssid);
 
     if (!bssid) {
       return res.status(400).json({ error: "bssid is required" });
     }
 
+    // Normalize bssid for lookup (stored as uppercase)
+    const normalizedBssid = String(bssid).toUpperCase();
+    console.log("[getVulnerabilitiesLatest] normalized bssid:", normalizedBssid);
+
     // Step 1: resolve network_id
     const { data: network, error: networkError } = await supabaseClient
       .from("networks")
       .select("network_id")
-      .eq("bssid", bssid)
+      .eq("bssid", normalizedBssid)
       .single();
 
     if (networkError || !network) {
-      console.error("Network lookup failed:", networkError);
+      console.error("[getVulnerabilitiesLatest] Network lookup failed:", networkError);
       return res.status(500).json({ error: "Failed to resolve network" });
     }
 
     const networkId = network.network_id;
+    console.log("[getVulnerabilitiesLatest] resolved network_id:", networkId);
 
     // Step 2: Build query (DO NOT AWAIT YET)
     let query = supabaseClient
@@ -152,14 +158,20 @@ async function getVulnerabilitiesLatest(req, res) {
     }
 
     // Only return rows that represent vulnerability findings (not runtime threats)
-    query = query.eq("vt_kind", "vulnerability");
+    // Use .ilike for case-insensitive match (DB may store "VULNERABILITY" or "vulnerability")
+    query = query.ilike("vt_kind", "vulnerability");
 
     // Step 3: Execute Query
     const { data, error } = await query;
 
     if (error) {
-      console.error("Supabase error fetching vulnerabilities:", error);
+      console.error("[getVulnerabilitiesLatest] Supabase query error:", error);
       throw error;
+    }
+
+    console.log("[getVulnerabilitiesLatest] raw rows from Supabase:", data?.length, "rows");
+    if (data?.length > 0) {
+      console.log("[getVulnerabilitiesLatest] first raw row:", JSON.stringify(data[0], null, 2));
     }
 
     // Step 4: Map Results
@@ -187,6 +199,11 @@ async function getVulnerabilitiesLatest(req, res) {
         };
       })
       .sort((a, b) => new Date(b.detectedTime) - new Date(a.detectedTime));
+
+    // Debug log: show how many rows we are returning for this bssid
+    console.log(
+      `getVulnerabilitiesLatest: bssid=${normalizedBssid}, rows=${rows.length}`
+    );
 
     return res.json({ status: "OK", rows });
 

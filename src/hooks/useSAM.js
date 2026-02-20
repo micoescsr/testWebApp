@@ -140,14 +140,17 @@ export const useVulnerabilities = (bssid) => {
           )}`
         : `/api/webApp/vulnerabilities_latest`; */
 
-        const url = `/api/webApp/vulnerabilities_latest?bssid=${encodeURIComponent(
+      const url = `/api/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
         targetBssid
       )}`;
 
+      console.log("[loadVulnerabilities] fetching:", url);
       const res = await fetch(url);
+      console.log("[loadVulnerabilities] response status:", res.status);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const body = await res.json();
+      console.log("[loadVulnerabilities] response body:", JSON.stringify(body).slice(0, 500));
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");
       }
@@ -175,6 +178,7 @@ export const useVulnerabilities = (bssid) => {
       }));
 
       setVulnerabilities(mapped);
+      console.log("[loadVulnerabilities] mapped rows:", mapped.length, mapped);
 
     } catch (err) {
       console.error("fetchVulnerabilities error:", err);
