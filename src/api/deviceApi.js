@@ -24,7 +24,7 @@ export const publishTerms = (content, version) =>
 
 // 👈 NEW: Access Point Enable (full config)
 export const enableAccessPoint = (payload) =>
-  api.post("/enable-ap", payload);
+  api.post("/device/enable-ap", payload);
 
 // 👈 NEW: Get current AP status (for polling) 
 export const getAccessPointStatus = () => 

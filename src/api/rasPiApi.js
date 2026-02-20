@@ -24,7 +24,7 @@ export const triggerScan = async (network) => {  // Pass full network object
 
 
 export const toggleAccessPoint = async (toggleState) => {
-  const res = await api.post("/rasPi_scan/signal_ap", {
+  const res = await api.post("/device/signal_ap", {
     toggleState,
   });
 
