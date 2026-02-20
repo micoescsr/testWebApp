@@ -9,6 +9,7 @@ const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
+const samRoutes = require("./routes/samRoutes");
 //const captivePortalRoutes = require("./routes/captivePortalRoutes");
 const scanRoutes = require('./routes/scanRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -37,7 +38,7 @@ app.use(express.json());
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
 app.use('/api/rasPi_scan', scanRoutes);
-app.use('/api/auth', authRoutes);  // → /api/auth/sa/login
+app.use('/api/sam', samRoutes);
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
@@ -50,9 +51,6 @@ app.use("/api/auth", authRoutes); // /api/auth/login
 //app.use("/api/rasPi", rasPiRoutes);
 //app.use("/api/rasPi_scan", scanRoutes);
 //app.use("/api/captivePortal", captivePortalRoutes);
-
-
-app.use('/api/rasPi_scan', scanRoutes);
 
 app.get("/api/device/status", async (req, res) => {
   try {
@@ -349,7 +347,8 @@ app.get('/api/history/vulnerabilities', async (req, res) => {
     const { data: findings, error: findingsError } = await supabaseClient
       .from('vulnerabilities_threat')
       .select('scan_id, vt_name, vt_kind, severity_score')
-      .in('scan_id', scanIds);
+      .in('scan_id', scanIds)
+      .eq('vt_kind', 'vulnerability');
 
     if (findingsError) throw findingsError;
 
@@ -403,9 +402,20 @@ app.get('/api/history/threats', async (req, res) => {
     if (scanIds.length === 0) return res.json([]);
 
     const { data: findings, error: findingsError } = await supabaseClient
-      .from('vulnerabilities_threat')
-      .select('scan_id, vt_name, vt_kind, severity_score')
-      .in('scan_id', scanIds);
+      .from("vulnerabilities_threat")
+      .select(`
+        scan_id,
+        vt_name,
+        vt_kind,
+        severity_score,
+        detail:vulnerability_threat_details(
+          vt_code,
+          vt_severity_rating,
+          vt_cvss_base_score
+        )
+      `)
+      .in("scan_id", scanIds)
+      .eq("vt_kind", "threat");
 
     if (findingsError) throw findingsError;
 
@@ -429,11 +439,12 @@ app.get('/api/history/threats', async (req, res) => {
         ssid,
         summary: items.length,
         threats: items.map(i => ({
-          severity: 'UNKNOWN',
+          code: i.detail?.vt_code ?? null,
+          severity: i.detail?.vt_severity_rating ?? 'UNKNOWN',
           name: i.vt_name || i.vt_kind,
-          score: i.severity_score ?? 0,
+          score: i.detail?.vt_cvss_base_score ?? i.severity_score ?? 0,
           occurrences: 1,
-          window: '', // fill if you have timing data
+          window: '',
         })),
       };
     });
