@@ -65,11 +65,14 @@ async function saveNetworkMetadataScan(req, res) {
     const encryption = scan?.encryption || null;
     const num_clients = scan?.num_clients ?? null;
 
+    // Normalize BSSID for consistent storage/lookup
+    const normalizedBssid = String(bssid).toUpperCase();
+
     // 1. Upsert network
     let { data: network, error: lookupErr } = await supabaseClient
       .from("networks")
       .select("network_id")
-      .eq("bssid", bssid)
+      .eq("bssid", normalizedBssid)
       .maybeSingle();
     if (lookupErr) throw lookupErr;
 
@@ -78,7 +81,7 @@ async function saveNetworkMetadataScan(req, res) {
         .from("networks")
         .insert({
           ssid,
-          bssid,
+          bssid: normalizedBssid,
           channel,
           city,
           province,
@@ -99,6 +102,7 @@ async function saveNetworkMetadataScan(req, res) {
           notes,
           encryption_status: encryption,
           num_clients,
+          bssid: normalizedBssid,
         })
         .eq("network_id", network.network_id);
       if (updateErr) throw updateErr;
@@ -124,6 +128,7 @@ async function saveNetworkMetadataScan(req, res) {
     // 3. Insert vulnerabilities_threat from scan.findings
     if (scanRow && scan?.findings) {
       const vulnRows = [];
+      console.log("[saveNetworkMetadataScan] scan.findings type:", typeof scan.findings, "keys:", Object.keys(scan.findings));
 
       // findings = { encryption: {...}, wps: {...}, mfp: {...} }
       for (const [key, finding] of Object.entries(scan.findings)) {
@@ -143,16 +148,21 @@ async function saveNetworkMetadataScan(req, res) {
           vt_value: finding.value,              // "Disabled"
           vt_detail_id: detail?.vt_detail_id || null,
           // Mark these rows explicitly as vulnerability findings so they can be filtered
-          vt_kind: detail?.vt_kind || 'vulnerability',
+          // Normalize to lowercase for consistent querying
+          vt_kind: (detail?.vt_kind || 'vulnerability').toLowerCase(),
           severity_score: detail?.vt_cvss_base_score ?? null,
         });
       }
 
       if (vulnRows.length > 0) {
+        console.log("[saveNetworkMetadataScan] inserting", vulnRows.length, "vuln rows:", JSON.stringify(vulnRows, null, 2));
         const { error: vulnErr } = await supabaseClient
           .from("vulnerabilities_threat")
           .insert(vulnRows);
         if (vulnErr) throw vulnErr;
+        console.log("[saveNetworkMetadataScan] vuln insert succeeded");
+      } else {
+        console.log("[saveNetworkMetadataScan] no vuln rows to insert");
       }
     }
 
