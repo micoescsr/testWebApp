@@ -150,19 +150,6 @@ app.get("/api/detect/poll", async (req, res) => {
   }
 });
 
-// ADDED 03:23 PM - FEB 11
-async function getCurrentUserRole(userId) {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .single();
-
-  if (error) throw error;
-  return data.role;
-}
-// ADDED 03:23 PM - FEB 11 --- END
-
 
 async function loadThreatDefinitions(supabaseClient) {
   const { data, error } = await supabaseClient
@@ -652,6 +639,18 @@ app.post("/api/terms", async (req, res) => {
 
 
 
+// ADDED 03:23 PM - FEB 11
+async function getCurrentUserRole(userId) {
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (error) throw error;
+  return data.role;
+}
+// ADDED 03:23 PM - FEB 11 --- END
 
 // ADDED 03:23 PM - FEB 11
 // POST /api/webApp/users/profiles/:id/activate-with-temp
