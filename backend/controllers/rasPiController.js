@@ -130,7 +130,7 @@ async function saveNetworkMetadataScan(req, res) {
         // finding.id is the vt_code like "WFVT-005"
         const { data: detail, error: detailErr } = await supabaseClient
           .from("vulnerability_threat_details")
-          .select("vt_detail_id, vt_name")   // vt_name is the canonical label
+          .select("vt_detail_id, vt_name, vt_kind, vt_cvss_base_score")
           .eq("vt_code", finding.id)
           .maybeSingle();
         if (detailErr) throw detailErr;
@@ -142,6 +142,9 @@ async function saveNetworkMetadataScan(req, res) {
           vt_status: finding.status,            // "DETECTED"
           vt_value: finding.value,              // "Disabled"
           vt_detail_id: detail?.vt_detail_id || null,
+          // Mark these rows explicitly as vulnerability findings so they can be filtered
+          vt_kind: detail?.vt_kind || 'vulnerability',
+          severity_score: detail?.vt_cvss_base_score ?? null,
         });
       }
 

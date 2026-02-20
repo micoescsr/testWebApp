@@ -44,7 +44,7 @@ async function handleSingleScan(userId, scan) {  //to refine
   for (const [, finding] of Object.entries(scan.findings || {})) {
     const { data: detail, error: detailErr } = await supabaseClient
       .from("vulnerability_threat_details")
-      .select("vt_detail_id")
+      .select("vt_detail_id, vt_kind, vt_cvss_base_score")
       .eq("vt_code", finding.id)
       .maybeSingle();
     if (detailErr) throw detailErr;
@@ -55,6 +55,8 @@ async function handleSingleScan(userId, scan) {  //to refine
       vt_status: finding.status,
       vt_value: finding.value,
       vt_detail_id: detail?.vt_detail_id || null,
+      vt_kind: detail?.vt_kind || 'vulnerability',
+      severity_score: detail?.vt_cvss_base_score ?? null,
     });
   }
 
