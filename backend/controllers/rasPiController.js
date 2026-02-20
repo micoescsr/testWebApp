@@ -192,7 +192,30 @@ async function getAccessPointDetails(req, res) {
   }
 }
 
-module.exports = { triggerScan, getNetworksList, saveNetworkMetadataScan, getAccessPointDetails };
+// Get specific saved network config by network_id (used by web UI)
+async function getNetworkById(req, res) {
+  try {
+    const { networkId } = req.params;
+    const { data, error } = await supabaseClient
+      .from("networks")
+      .select("ssid, bssid, channel, encryption_status")
+      .eq("network_id", networkId)
+      .single();
+
+    if (error) throw error;
+    res.json({
+      ssid: data.ssid,
+      bssid: data.bssid,
+      channel: data.channel,
+      encryption_type: data.encryption_status,
+    });
+  } catch (err) {
+    console.error("getNetworkById error:", err);
+    res.status(500).json({ message: "Failed to load network config" });
+  }
+}
+
+module.exports = { triggerScan, getNetworksList, saveNetworkMetadataScan, getAccessPointDetails, getNetworkById };
 /*
 module.exports = {insertMetadata, getAccessPointDetails};
 

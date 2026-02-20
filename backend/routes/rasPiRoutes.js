@@ -7,6 +7,7 @@ app.use(express.json());
 const router = express.Router();
 const rasPiController = require("../controllers/rasPiController");
 router.get("/networks", rasPiController.getAccessPointDetails);
+router.get("/networks/:networkId", rasPiController.getNetworkById);
 //router.post("/networks", rasPiController.insertMetadata);
 
 //OFFICIAL SCAN ROUTE

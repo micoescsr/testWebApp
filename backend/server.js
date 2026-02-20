@@ -647,30 +647,9 @@ app.post("/api/terms", async (req, res) => {
 
 // NOTE: /enable-ap moved to routes/deviceMgmtRoutes.js
 
-app.get("/api/networks/:networkId", async (req, res) => {
-  try {
-    const { networkId } = req.params;
-    const { data, error } = await supabaseClient
-      .from("networks")
-      .select("ssid, bssid, channel, encryption_status")
-      .eq("network_id", networkId)
-      .single();
+// The networks-by-id GET was moved into the rasPi router (rasPiRoutes)
+// so that all rasPi-related endpoints live under /api/rasPi.
 
-    if (error) throw error;
-    res.json({
-      ssid: data.ssid,
-      bssid: data.bssid,
-      channel: data.channel,
-      encryption_type: data.encryption_status,
-    });
-  } catch (err) {
-    console.error("network config error:", err);
-    res.status(500).json({ message: "Failed to load network config" });
-  }
-});
-
-
-//========================================
 
 
 
