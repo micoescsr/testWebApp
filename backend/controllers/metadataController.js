@@ -151,6 +151,9 @@ async function getVulnerabilitiesLatest(req, res) {
       query = query.eq("scans.network_id", networkId);
     }
 
+    // Only return rows that represent vulnerability findings (not runtime threats)
+    query = query.eq("vt_kind", "vulnerability");
+
     // Step 3: Execute Query
     const { data, error } = await query;
 
