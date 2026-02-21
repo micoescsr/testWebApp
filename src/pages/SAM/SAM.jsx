@@ -181,6 +181,12 @@ const SAM = () => {
       console.log("Reloading vulnerabilities for BSSID:", normalizedBssid);
       await reloadVulnerabilities(normalizedBssid);
       console.log("Vulnerabilities after reload:", vulnerabilities);
+
+      // 5. Show vulnerabilities first, then auto-switch to Threats after 5 seconds
+      setActiveTab("vulnerabilities");
+      setTimeout(() => {
+        setActiveTab("threats");
+      }, 5000);
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
