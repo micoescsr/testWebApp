@@ -263,7 +263,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
                             className="view-action"
                             onClick={() => onView(vuln)}
                           >
-                            VIEW
+                            View Details
                           </td>
                         </tr>
                       ))}
