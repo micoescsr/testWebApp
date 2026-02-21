@@ -699,3 +699,57 @@ th.sortable {
   cursor: pointer;
   user-select: none;
 }
+
+/* ===========================
+   Grouped-by-time rows
+=========================== */
+
+/* Parent header row for each detected-time group */
+.group-header-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header-row td {
+  background: #f0f2f5 !important;
+  padding: 12px 18px !important;
+  border-bottom: 1px solid #d9dce1;
+}
+
+.group-header-row:hover td {
+  background: #e4e7ec !important;
+}
+
+.group-header-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+}
+
+.group-count {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+/* Chevron icon rotation */
+.group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: #374151;
+}
+
+.group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+/* Child rows: subtle left border to indicate hierarchy */
+.group-child-row td:first-child {
+  border-left: 3px solid #2563eb;
+}

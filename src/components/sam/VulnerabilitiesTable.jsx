@@ -1,8 +1,64 @@
 // components/sam/VulnerabilitiesTable.jsx
+import { useState, useMemo, Fragment } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
+
+const formatDetectedTime = (iso) => {
+  if (!iso) return "N/A";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+};
+
+/** Return a grouping key rounded to the minute so rows from the same scan batch stay together */
+const getGroupKey = (iso) => {
+  if (!iso) return "N/A";
+  const d = new Date(iso);
+  // round to the nearest minute
+  d.setSeconds(0, 0);
+  return d.toISOString();
+};
+
+/**
+ * Groups an array of rows by detected time (minute-level).
+ * Returns an ordered array of { key, label, rows }.
+ */
+const groupByDetectedTime = (rows) => {
+  const map = new Map();
+  for (const row of rows) {
+    const key = getGroupKey(row.detectedTime);
+    if (!map.has(key)) {
+      map.set(key, { key, label: formatDetectedTime(row.detectedTime), rows: [] });
+    }
+    map.get(key).rows.push(row);
+  }
+  return Array.from(map.values());
+};
+
+const ChevronIcon = ({ expanded }) => (
+  <svg
+    className={`group-chevron ${expanded ? "expanded" : ""}`}
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
 
 const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
   const hasVulns =
@@ -29,21 +85,29 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
     itemsPerPage: 10,
   });
 
-  const formatDetectedTime = (iso) => {
-    if (!iso) return "N/A";
-    const d = new Date(iso);
-    return new Intl.DateTimeFormat("en-PH", {
-      timeZone: "Asia/Manila",
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
+  // --- Grouping & expand/collapse state ---
+  const groups = useMemo(() => groupByDetectedTime(currentRows), [currentRows]);
+
+  // Track which groups are expanded (by group key). Default: all expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+
+  const toggleGroup = (key) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   const activeCount = rows.length;
   const totalCount = vulnerabilities.length;
+
+  // Column count for the group header colspan
+  const COL_COUNT = 6;
 
   return (
     <div className="sam-card">
@@ -150,26 +214,62 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
           {hasVulns && (
             <tbody>
-              {currentRows.map((vuln) => (
-                <tr key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}>
-                  <td>
-                    <span
-                      className={`severity ${String(
-                        vuln.severity || ""
-                      ).toLowerCase()}`}
+              {groups.map((group) => {
+                const isExpanded = !collapsedGroups.has(group.key);
+                return (
+                  <Fragment key={group.key}>
+                    {/* ── Group header row ── */}
+                    <tr
+                      className="group-header-row"
+                      onClick={() => toggleGroup(group.key)}
                     >
-                      {vuln.severity ?? "N/A"}
-                    </span>
-                  </td>
-                  <td>{vuln.name}</td>
-                  <td>{vuln.score ?? "N/A"}</td>
-                  <td>{vuln.observedConfig || "N/A"}</td>
-                  <td>{formatDetectedTime(vuln.detectedTime)}</td>
-                  <td className="view-action" onClick={() => onView(vuln)}>
-                    VIEW
-                  </td>
-                </tr>
-              ))}
+                      <td colSpan={COL_COUNT}>
+                        <div className="group-header-content">
+                          <ChevronIcon expanded={isExpanded} />
+                          <span className="group-label">
+                            {group.label}
+                          </span>
+                          <span className="group-count">
+                            ({group.rows.length}{" "}
+                            {group.rows.length === 1
+                              ? "vulnerability"
+                              : "vulnerabilities"})
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* ── Child vulnerability rows ── */}
+                    {isExpanded &&
+                      group.rows.map((vuln) => (
+                        <tr
+                          key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}
+                          className="group-child-row"
+                        >
+                          <td>
+                            <span
+                              className={`severity ${String(
+                                vuln.severity || ""
+                              ).toLowerCase()}`}
+                            >
+                              {vuln.severity ?? "N/A"}
+                            </span>
+                          </td>
+                          <td>{vuln.name}</td>
+                          <td>{vuln.score ?? "N/A"}</td>
+                          <td>{vuln.observedConfig || "N/A"}</td>
+                          <td>{formatDetectedTime(vuln.detectedTime)}</td>
+                          <td
+                            className="view-action"
+                            onClick={() => onView(vuln)}
+                          >
+                            VIEW
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           )}
         </table>
