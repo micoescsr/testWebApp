@@ -127,15 +127,15 @@ const SAMSidebar = ({
               )}
             </div>
               <div className="network-list">
-        {filteredNetworks.length > 0 ? (
-          filteredNetworks.map((net, idx) => (
-            <div
-              key={`${net.bssid || net.ssid}-${idx}`}
-              className={`network-item cursor-pointer p-3 border-b border-gray-200 hover:bg-gray-50 transition-colors ${
-                selectedNetwork && selectedNetwork.bssid === net.bssid ? "bg-blue-50 border-blue-200" : ""
-              }`}
-              onClick={() => onSelectNetwork(net)}
-            >
+          {filteredNetworks.length > 0 ? (
+            filteredNetworks.map((net, idx) => (
+              <div
+                key={`${net.bssid || net.ssid}-${idx}`}
+                className={`network-item cursor-pointer p-3 border-b border-gray-200 hover:bg-gray-50 transition-colors ${
+                  selectedNetwork && selectedNetwork.bssid === net.bssid ? "active" : ""
+                }`}
+                onClick={() => onSelectNetwork(net)}
+              >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{net.ssid || "(hidden)"}</div>

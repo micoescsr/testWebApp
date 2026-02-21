@@ -301,8 +301,8 @@
 }
 
 .network-item.active {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #e5e7eb; /* light gray to indicate selection */
+  color: #111827;
   font-weight: 600;
 }
 
