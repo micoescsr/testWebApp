@@ -1,27 +1,151 @@
 
-//backend/controllers/authController.js
-const authService = require('../services/authService');
-const { createClient } = require('@supabase/supabase-js');
-const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// backend/controllers/authController.js
 
+// ── cookie options ──────────────────────────────────────
+function refreshCookieOpts() {
+  const isProd = process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    secure: isProd, // true on HTTPS in prod; false on localhost
+    sameSite: "lax", // baseline CSRF protection
+    path: "/api/auth", // cookie only sent to /api/auth/*
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  };
+}
+
+// ── CSRF origin check (Fix #1) ──────────────────────────
+// Browser requests always send Origin on POST.
+// Non-browser clients (Postman/cURL) typically omit Origin.
+// In dev: allow missing Origin so Postman works.
+// In prod: require Origin and it must be in the allow-list.
+const allowedOrigins = ["http://localhost:5173"];
+
+function assertOrigin(req) {
+  const origin = req.headers.origin;
+  const isProd = process.env.NODE_ENV === "production";
+
+  if (!origin) {
+    // No Origin header — non-browser client
+    if (isProd) {
+      const err = new Error("Origin header required");
+      err.status = 403;
+      throw err;
+    }
+    // In dev/test: allow (Postman, cURL)
+    return;
+  }
+
+  if (!allowedOrigins.includes(origin)) {
+    const err = new Error("Forbidden origin");
+    err.status = 403;
+    throw err;
+  }
+}
+
+// ── Supabase token refresh helper ───────────────────────
+// Uses SUPABASE_ANON_KEY (public key), NOT service role.
+async function supabaseRefresh(refreshToken) {
+  const url = `${process.env.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: process.env.SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const json = await r.json();
+  if (!r.ok) {
+    const msg = json?.error_description || json?.error || "Refresh failed";
+    throw new Error(msg);
+  }
+  return json; // { access_token, refresh_token, expires_in, ... }
+}
+
+// ── POST /api/auth/login ────────────────────────────────
+// (Fix #2) Uses Supabase REST endpoint with anon key — no service role.
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
-  const { data: { session }, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
-  if (error) return res.status(401).json({ error: error.message });
-  res.json({ token: session.access_token, user: session.user });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+
+    const url = `${process.env.SUPABASE_URL}/auth/v1/token?grant_type=password`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: process.env.SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const json = await r.json();
+    if (!r.ok) {
+      const msg = json?.error_description || json?.error || "Login failed";
+      return res.status(401).json({ error: msg });
+    }
+
+    res.json({ token: json.access_token, user: json.user });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 };
 
-/* // Superadmin creates user (your modal)
-exports.createUser = async (req, res) => {
-  // req.user from middleware = logged-in superadmin
-  const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', req.user.id).single();
-  if (profile.role !== 'superadmin') return res.status(403).json({ error: 'Superadmin only' });
+// ── POST /api/auth/set-refresh ──────────────────────────
+// Called once after frontend login to persist refresh token as HttpOnly cookie.
+exports.setRefresh = async (req, res) => {
+  try {
+    assertOrigin(req);
+    const { refresh_token } = req.body;
+    if (!refresh_token) {
+      return res.status(400).json({ error: "Missing refresh_token" });
+    }
+    const opts = refreshCookieOpts();
+    console.log("[auth/set-refresh] setting cookie, token length:", refresh_token.length, "opts:", JSON.stringify(opts));
+    res.cookie("sb_refresh", refresh_token, opts);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message });
+  }
+};
 
-  const { first_name, last_name, email, role, username, password } = req.body;
-  const { data: authUser, error } = await supabaseAdmin.auth.admin.createUser({
-    email, password, email_confirm: true,
-    user_metadata: { first_name, last_name, role }
-  });
-  if (error) return res.status(400).json({ error });
-  res.json({ message: 'User created', userId: authUser.user.id });
-}; */
+// ── POST /api/auth/refresh ──────────────────────────────
+// Reads HttpOnly cookie, exchanges with Supabase for new tokens.
+exports.refresh = async (req, res) => {
+  try {
+    assertOrigin(req);
+
+    // ── DEBUG: remove after testing ─────────────────────
+    console.log("[auth/refresh] cookies:", JSON.stringify(req.cookies));
+    console.log("[auth/refresh] raw cookie header:", req.headers.cookie);
+    // ────────────────────────────────────────────────────
+
+    const rt = req.cookies?.sb_refresh;
+    if (!rt) return res.status(401).json({ error: "No refresh cookie" });
+
+    const data = await supabaseRefresh(rt);
+
+    // Rotate cookie if Supabase returned a new refresh token
+    if (data.refresh_token) {
+      res.cookie("sb_refresh", data.refresh_token, refreshCookieOpts());
+    }
+
+    return res.json({
+      access_token: data.access_token,
+      expires_in: data.expires_in,
+    });
+  } catch (e) {
+    // Clear bad cookie so user can re-login cleanly
+    res.clearCookie("sb_refresh", { path: "/api/auth" });
+    return res.status(401).json({ error: e.message || "Refresh failed" });
+  }
+};
+
+// ── POST /api/auth/logout ───────────────────────────────
+exports.logout = async (req, res) => {
+  res.clearCookie("sb_refresh", { path: "/api/auth" });
+  return res.json({ ok: true });
+};
+

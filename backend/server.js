@@ -3,6 +3,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const FASTAPI_BASE = "http://mothership.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
 //const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
 const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
@@ -11,7 +12,7 @@ const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
 const samRoutes = require("./routes/samRoutes");
 //const captivePortalRoutes = require("./routes/captivePortalRoutes");
-const scanRoutes = require('./routes/scanRoutes');
+//const scanRoutes = require('./routes/scanRoutes');
 const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
 
@@ -22,6 +23,7 @@ const { supabaseClient } = require("./config/supabaseClient");
 const app = express();
 const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
 
+app.use(cookieParser());
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -32,13 +34,15 @@ app.use(
       }
     },
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
 );
 
 app.use(express.json());
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
-app.use('/api/rasPi_scan', scanRoutes);
+//app.use('/api/rasPi_scan', scanRoutes);
 app.use('/api/device', deviceMgmtRoutes);
 app.use('/api/sam', samRoutes);
 

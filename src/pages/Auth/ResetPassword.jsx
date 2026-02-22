@@ -14,28 +14,41 @@ function ResetPassword() {
     submitting: false,
   });
 
+  // Listen for Supabase auth state changes.
+  // When a user clicks the reset link, Supabase JS processes the URL hash
+  // (detectSessionInUrl: true) and fires a PASSWORD_RECOVERY event.
   useEffect(() => {
-    const init = async () => {
-      const { data, error } = await supabase.auth.getSession();
-
-      if (error || !data.session) {
-        setStatus({
-          loading: false,
-          message: "",
-          error:
-            "Recovery session not found or has expired. Please request a new reset email.",
-          submitting: false,
-        });
-        return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, _session) => {
+        if (event === "PASSWORD_RECOVERY" || _session) {
+          setStatus((prev) => ({ ...prev, loading: false }));
+        }
       }
+    );
 
-      setStatus((prev) => ({
-        ...prev,
-        loading: false,
-      }));
-    };
+    // Fallback: if the hash is already consumed (fast reload), check session
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setStatus((prev) => ({ ...prev, loading: false }));
+      } else {
+        // Give onAuthStateChange a moment before showing error
+        setTimeout(() => {
+          setStatus((prev) => {
+            if (prev.loading) {
+              return {
+                ...prev,
+                loading: false,
+                error:
+                  "Recovery session not found or has expired. Please request a new reset email.",
+              };
+            }
+            return prev;
+          });
+        }, 2000);
+      }
+    });
 
-    init();
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleSubmit = async (e) => {
