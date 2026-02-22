@@ -17,16 +17,8 @@ export const useProfile = () => {
         setProfileLoading(true);
         setProfileError(null);
 
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.user) {
-          setProfile(null);
-          return;
-        }
-
-        // Get profile data from your backend
-        const res = await api.get("webApp/users/profiles/me");
+        // Get profile data from backend (Bearer token attached by axios interceptor)
+        const res = await api.get("webapp/users/profiles/me");
         const p = res.data;
 
         setProfile({

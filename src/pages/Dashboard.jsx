@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   RadialBarChart,
   RadialBar,
@@ -14,7 +14,6 @@ import {
   Cell,
 } from "recharts";
 import "./Dashboard.css";
-import { supabase } from "../lib/supabaseClient"; //added
 
 // Sample data
 const riskScoreData = [{ name: "Wi-Fi Risk", value: 89 }];
@@ -70,29 +69,8 @@ const COLORS = ["#2563eb", "#818cf8", "#22c55e", "#f97316"];
 const Dashboard = () => {
   const [viewMode, setViewMode] = useState("Summary");
   const [showLegend, setShowLegend] = useState(false);
-  const [loading, setLoading] = useState(true); //added
 
   const isSummary = viewMode === "Summary";
-
-  //--------------------added
-    useEffect(() => {
-      const checkSession = async () => {
-        console.log("Dashboard: checking session...");
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log("Dashboard session:", session);
-
-        if (session) {
-          setLoading(false);
-        } else {
-          window.location.href = "/login";
-        }
-      };
-
-      checkSession();
-    }, []);
-
-    if (loading) return <div>Loading dashboard...</div>;
-  //--------------------end of added
 
   return (
     <div className="dashboard">

@@ -2,7 +2,7 @@
 import "./Login.css";
 import { useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import api from "../../api/axios";
+import api, { setAccessToken } from "../../api/axios";
 import { Link } from "react-router-dom";
 
 const Login = () => {
@@ -16,40 +16,59 @@ const Login = () => {
     setError(null);
     setLoading(true);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Call /api/webApp/users/profiles/me
-      const res = await api.get("webApp/users/profiles/me");
+      // 1) Sign in via Supabase JS (tokens NOT persisted — persistSession: false)
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        setError(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      const session = data.session;
+      if (!session) throw new Error("No session returned");
+
+      // 2) Store access token in memory for axios
+      setAccessToken(session.access_token);
+
+      // 3) Send refresh token to backend → HttpOnly cookie
+      await api.post("auth/set-refresh", {
+        refresh_token: session.refresh_token,
+      });
+
+      // 4) Check profile status (Bearer from memory now)
+      const res = await api.get("webapp/users/profiles/me");
       const profile = res.data;
 
-      // If middleware blocked it, axios will throw (403), caught below
-
       if (profile.status !== "active") {
-        await supabase.auth.signOut();
+        await api.post("auth/logout");
+        setAccessToken(null);
+
+        const statusMessages = {
+          on_hold: "Your account is currently on hold. Please contact the administrator to restore access.",
+          inactive: "Your account has been deactivated. Please contact the administrator.",
+        };
         setError(
-          "Your account is on hold or inactive. Please contact the administrator."
+          statusMessages[profile.status] ||
+            "Your account is not active. Please contact the administrator."
         );
         setLoading(false);
         return;
       }
 
-      window.location.href = "/dashboard";
+      // 5) All good — full navigation so App bootstraps from cookie
+      window.location.replace("/dashboard");
     } catch (err) {
-      // 403 from requireActiveProfile
-      console.error("Profile check failed:", err);
-      await supabase.auth.signOut();
+      console.error("Login failed:", err);
+      setAccessToken(null);
       setError(
-        "Your account is on hold or inactive. Please contact the administrator."
+        err?.response?.data?.error ||
+          err.message ||
+          "Login failed. Please try again."
       );
       setLoading(false);
     }

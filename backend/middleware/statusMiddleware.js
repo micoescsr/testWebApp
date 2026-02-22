@@ -22,7 +22,11 @@ exports.requireActiveProfile = async (req, res, next) => {
   }
 
   if (profile.status !== "active") {
-    return res.status(403).json({ error: "Account is not active" });
+    // Return the actual status so the frontend can show a specific message
+    return res.status(403).json({
+      error: "Account is not active",
+      status: profile.status,  // "on_hold" | "inactive" | etc.
+    });
   }
 
   next();
