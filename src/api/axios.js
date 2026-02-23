@@ -48,14 +48,23 @@ api.interceptors.response.use(
 
     original._retry = true;
 
+    // Build a clean config for the retry.
+    // Reusing err.config directly in axios 1.x can carry stale internal
+    // properties (AxiosHeaders instance, transformResponse, adapter, etc.)
+    // that corrupt the retried response. Only copy the essentials —
+    // the request interceptor will re-attach the Bearer token.
+    const cleanRetry = () => api({
+      method:  original.method,
+      url:     original.url,
+      data:    original.data,
+      params:  original.params,
+    });
+
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
       return new Promise((resolve, reject) => {
         refreshQueue.push({ resolve, reject });
-      }).then((newToken) => {
-        original.headers.Authorization = `Bearer ${newToken}`;
-        return api(original);
-      });
+      }).then(() => cleanRetry());
     }
 
     isRefreshing = true;
@@ -69,8 +78,7 @@ api.interceptors.response.use(
       refreshQueue.forEach(({ resolve }) => resolve(newToken));
       refreshQueue = [];
 
-      original.headers.Authorization = `Bearer ${newToken}`;
-      return api(original);
+      return cleanRetry();
     } catch (refreshErr) {
       // Refresh failed — force logout
       refreshQueue.forEach(({ reject }) => reject(refreshErr));
