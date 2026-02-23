@@ -10,6 +10,7 @@ import Profile from "./pages/Profile/Profile";
 import Login from "./pages/Login/Login";
 import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
+import TestAuth from "./pages/TestAuth/TestAuth";
 import api, { setAccessToken, getAccessToken } from "./api/axios";
 import "./App.css";
 
@@ -70,6 +71,7 @@ function App() {
                     <Route path="/accounts-audit" element={<AccountsAudit />} />
                     <Route path="/history" element={<History />} />
                     <Route path="/profile" element={<Profile />} />
+                    <Route path="/test-auth" element={<TestAuth />} />
                   </Routes>
                 </main>
               </div>

@@ -13,10 +13,11 @@ router.use("/users", userRoutes);
 router.use("/vulnerabilities", networkMetadataRoutes.);   */ 
 
 const metadataController = require("../controllers/metadataController");
+const { authJWT } = require("../middleware/authMiddleware");
 
-// like your rasPi routes:
-router.get("/network_metadata", metadataController.getNetworkMetadata);
-router.get("/vulnerabilities_latest", metadataController.getVulnerabilitiesLatest);
+// Protected metadata routes — require valid JWT
+router.get("/network_metadata", authJWT, metadataController.getNetworkMetadata);
+router.get("/vulnerabilities_latest", authJWT, metadataController.getVulnerabilitiesLatest);
 //router.use("/deviceMgmt", require("./deviceMgmtRoutes")); 
 //router.use("/threatVuln_result", require("./threatVulnResultRoutes"));  //iseparate nlng sila sa controllers service repository
 //router.use("/dashboard", require("./dashboardRoutes"));
