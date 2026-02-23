@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { supabaseClient } = require('../config/supabaseClient');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
+const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 
 // Lightweight route to handle AP toggle from web UI.
 // This was previously in routes/scanRoutes.js as a test endpoint.
