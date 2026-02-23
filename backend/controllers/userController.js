@@ -1,6 +1,7 @@
 // controllers/userController.js
 const { createClient } = require("@supabase/supabase-js");
 const userRepository = require("../repositories/userRepository");
+const crypto = require("crypto"); // temp password generation
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -101,6 +102,71 @@ async function updateUser(req, res) {
   }
 }
 
+// Superadmin-only activation with a one-time temp password
+async function activateUserWithTemp(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+
+    const currentRole = await getCurrentUserRole(currentUser.id);
+    if (currentRole !== "superadmin") {
+      return res.status(403).json({ error: "Superadmin only" });
+    }
+
+    const id = req.params.id;
+    const { first_name, last_name, username, email, role } = req.body;
+
+    // Update profile and mark for password change
+    const { data: updatedProfile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        first_name,
+        last_name,
+        username,
+        email,
+        role,
+        status: "active",
+        must_change_password: true,
+        temp_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (profileError) {
+      console.error("activate-with-temp profileError:", profileError);
+      return res.status(400).json({ error: profileError.message });
+    }
+
+    // Generate secure random temp password
+    const tempPassword = crypto.randomBytes(32).toString("base64url");
+
+    // Update auth user
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+      id,
+      {
+        email,
+        password: tempPassword,
+      }
+    );
+
+    if (authError) {
+      console.error("activate-with-temp authError:", authError);
+      return res.status(400).json({ error: authError.message });
+    }
+
+    return res.json({
+      profile: updatedProfile,
+      tempPassword,
+    });
+  } catch (error) {
+    console.error("activate-with-temp error:", error);
+    return res.status(500).json({ error: "Failed to activate user with temp" });
+  }
+}
+
 
 async function deleteUser(req, res) {
   try {
@@ -132,4 +198,5 @@ module.exports = {
   updateUser, 
   deleteUser,
   getCurrentProfile, // NEW
+  activateUserWithTemp,
 };

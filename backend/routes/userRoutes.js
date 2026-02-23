@@ -32,6 +32,13 @@ router.delete(
   userController.deleteUser
 );
 
+// Activate profile + issue temp password (superadmin only)
+router.post(
+  "/profiles/:id/activate-with-temp",
+  authMiddleware.authJWT,
+  userController.activateUserWithTemp
+);
+
 /** OPTIONAL TRIGGER FOR EASY QUERYING
  CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
