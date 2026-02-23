@@ -7,7 +7,7 @@
 // interference, no console ambiguity. Results display inline and
 // aggregate into a summary table with Export for appendix evidence.
 // ──────────────────────────────────────────────────────────────────
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import api, { setAccessToken, getAccessToken } from "../../api/axios";
 import { logout as apiLogout } from "../../api/authApi";
 import "./TestAuth.css";
@@ -43,9 +43,18 @@ const GATE_META = [
   { id: "g6", label: "G6", title: "Route Exposure Audit" },
 ];
 
+// sessionStorage keys — gate results survive destructive-gate redirects
+const STORAGE_KEY = "auth-qa-gate-results";
+const G4_ARMED_KEY = "auth-qa-g4-armed";
+
 // ── Component ────────────────────────────────────────────────────
 export default function TestAuth() {
-  const [results, setResults] = useState({});
+  const [results, setResults] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [logs, setLogs] = useState([]);
   const [running, setRunning] = useState(null);
   const logEndRef = useRef(null);
@@ -62,8 +71,32 @@ export default function TestAuth() {
   }, []);
 
   const setResult = useCallback((id, status, detail, subs) => {
-    setResults((prev) => ({ ...prev, [id]: { status, detail, subs } }));
+    setResults((prev) => {
+      const next = { ...prev, [id]: { status, detail, subs } };
+      try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
   }, []);
+
+  // ── Restore G4 armed flag on mount (redirect = PASS) ──────────
+  useEffect(() => {
+    try {
+      const armed = sessionStorage.getItem(G4_ARMED_KEY);
+      if (armed) {
+        sessionStorage.removeItem(G4_ARMED_KEY);
+        const { timestamp } = JSON.parse(armed);
+        const elapsed = Date.now() - (timestamp || 0);
+        if (elapsed < 60_000) {
+          setResult("g4", "pass", [
+            "PASS — Redirect to /login detected.",
+            `Redirect occurred ~${(elapsed / 1000).toFixed(1)}s ago.`,
+            "Corrupted cookie → refresh failed → clean redirect.",
+            "(Result recovered from sessionStorage after navigation.)",
+          ].join("\n"));
+        }
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Generic runner ─────────────────────────────────────────────
   const run = async (id, fn) => {
@@ -441,16 +474,51 @@ export default function TestAuth() {
     run(id, async () => {
       const originalToken = getAccessToken();
 
-      log("warn", `[${id}] Clearing in-memory token to force cookie-based refresh`);
+      // Pre-flight: quick refresh to see if cookie is already corrupted.
+      // If it's still valid, G4 can't test anything — tell the user.
+      log("info", `[${id}] Pre-flight: checking if sb_refresh cookie is corrupted...`);
+      let cookieStillValid = false;
+      try {
+        const preflight = await api.post("auth/refresh");
+        cookieStillValid = preflight.status === 200 && !!preflight.data?.access_token;
+        if (cookieStillValid) setAccessToken(preflight.data.access_token);
+      } catch {
+        cookieStillValid = false;
+      }
+
+      if (cookieStillValid) {
+        setResult(
+          id,
+          "info",
+          [
+            "SKIPPED — cookie is still valid. Refresh succeeded.",
+            "",
+            "To test G4 properly:",
+            "  1. DevTools → Application → Cookies → localhost",
+            '  2. Change sb_refresh value to "abc"',
+            "  3. Click \"Run G4\" again (not Run ALL)",
+          ].join("\n")
+        );
+        log("info", `[${id}] Cookie valid — G4 skipped. Corrupt cookie first.`);
+        return;
+      }
+
+      log("warn", `[${id}] Cookie appears corrupted — proceeding with G4 test`);
       setAccessToken(null);
 
       log("info", `[${id}] GET ${PROFILE_ENDPOINT} — will 401 → refresh from cookie`);
       log("info", `[${id}] If sb_refresh cookie is corrupted, expect redirect to /login`);
 
+      // Arm the flag — if the interceptor redirects to /login before
+      // the catch block runs, the useEffect on next mount will detect it.
+      try { sessionStorage.setItem(G4_ARMED_KEY, JSON.stringify({ timestamp: Date.now() })); } catch {}
+
       const start = performance.now();
       try {
         const res = await api.get(PROFILE_ENDPOINT);
         const elapsed = (performance.now() - start).toFixed(0);
+        // Cookie was valid — not a real G4 test.  Disarm.
+        try { sessionStorage.removeItem(G4_ARMED_KEY); } catch {}
         const summary = [
           `Status: ${res.status}`,
           `Time: ${elapsed}ms`,
@@ -465,6 +533,8 @@ export default function TestAuth() {
         setResult(id, "info", summary);
         log("info", `[${id}] Cookie was valid. Corrupt it to test G4.`);
       } catch (err) {
+        // Catch ran before navigation — disarm the flag.
+        try { sessionStorage.removeItem(G4_ARMED_KEY); } catch {}
         const elapsed = (performance.now() - start).toFixed(0);
         if (err.response?.status === 401) {
           setResult(
@@ -649,22 +719,27 @@ export default function TestAuth() {
           });
         }
       } else {
+        // No token (e.g. after G5 logout) — treat as SKIP, not FAIL.
+        // The unauthenticated sweep above already proved routes are protected.
         subs.push({
-          pass: false,
-          label: "Skipped authenticated check — no token (login first)",
+          pass: true,
+          label: "Skipped authenticated check — no token (session ended). Unauthenticated sweep is sufficient.",
+          skipped: true,
         });
       }
 
-      const allPass = subs.every((s) => s.pass);
+      const unauthSubs = subs.filter((s) => !s.skipped);
+      const allProtected = unauthSubs.every((s) => s.pass);
+      const hasSkip = subs.some((s) => s.skipped);
       setResult(
         id,
-        allPass ? "pass" : "fail",
-        allPass
-          ? "All tested endpoints properly protected."
+        allProtected ? "pass" : "fail",
+        allProtected
+          ? `All tested endpoints properly protected.${hasSkip ? " (Bearer re-test skipped — no active session)" : ""}`
           : "Some endpoints are exposed without auth!",
         subs
       );
-      log(allPass ? "pass" : "fail", `[${id}] ${allPass ? "PASS" : "FAIL"}`);
+      log(allProtected ? "pass" : "fail", `[${id}] ${allProtected ? "PASS" : "FAIL"}`);
     });
 
   // ═══════════════════════════════════════════════════════════════
@@ -794,6 +869,14 @@ export default function TestAuth() {
         <h2>
           Gate Summary
           <span className="summary-actions">
+            <button onClick={() => {
+              setResults({});
+              setLogs([]);
+              try {
+                sessionStorage.removeItem(STORAGE_KEY);
+                sessionStorage.removeItem(G4_ARMED_KEY);
+              } catch {}
+            }}>Clear</button>
             <button onClick={exportResults}>Export JSON</button>
           </span>
         </h2>

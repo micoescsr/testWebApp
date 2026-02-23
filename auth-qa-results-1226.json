@@ -1,0 +1,299 @@
+{
+  "timestamp": "2026-02-23T04:25:59.436Z",
+  "environment": "http://localhost:5173",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 OPR/127.0.0.0",
+  "gates": [
+    {
+      "id": "g0",
+      "title": "Sanity & Invariants",
+      "status": "pass",
+      "detail": "All invariants hold.",
+      "subResults": [
+        {
+          "pass": true,
+          "label": "No sb-* keys in localStorage"
+        },
+        {
+          "pass": true,
+          "label": "Access token present in memory"
+        },
+        {
+          "pass": true,
+          "label": "Refresh cookie valid (auth/refresh returned 200)"
+        },
+        {
+          "pass": true,
+          "label": "/profiles/me returns 401 without Bearer"
+        }
+      ]
+    },
+    {
+      "id": "g1",
+      "title": "Login Creates Valid Session",
+      "status": "pass",
+      "detail": "Valid session confirmed.",
+      "subResults": [
+        {
+          "pass": true,
+          "label": "JWT valid — sub: 7edc6428-b58d-4f51-b2be-be43ee499bc8, aud: authenticated"
+        },
+        {
+          "pass": true,
+          "label": "GET /profiles/me → 200 (291ms) — superadmin"
+        },
+        {
+          "pass": true,
+          "label": "Profile status: \"active\""
+        },
+        {
+          "pass": true,
+          "label": "Token stored in memory only (no sb-* in localStorage)"
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "title": "Reload Bootstrap Recovers Session",
+      "status": "pass",
+      "detail": "Bootstrap recovery works.",
+      "subResults": [
+        {
+          "pass": true,
+          "label": "POST auth/refresh → 200 (252ms), got new access_token"
+        },
+        {
+          "pass": true,
+          "label": "GET /profiles/me → 200 with refreshed token"
+        },
+        {
+          "pass": true,
+          "label": "Token rotated after refresh"
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "title": "Expired Token → Refresh + Retry",
+      "status": "pass",
+      "detail": "Status: (missing)\nTime: 584ms\nToken rotated: YES\nNew token (20ch): eyJhbGciOiJFUzI1NiIs...\nHas response data: false\nData: null",
+      "subResults": null
+    },
+    {
+      "id": "g3q",
+      "title": "Concurrent Refresh Queue",
+      "status": "pass",
+      "detail": "Statuses: [fulfilled-no-status, fulfilled-no-status, fulfilled-no-status]\nFulfilled: 3/3\nTime: 758ms\nAll 200: NO\nToken rotated: YES\nToken after: eyJhbGciOiJFUzI1NiIs...\nVerify in Network tab: only 1 refresh call, not 3.",
+      "subResults": null
+    },
+    {
+      "id": "g4",
+      "title": "Invalid Cookie → Clean Logout",
+      "status": "not-run",
+      "detail": null,
+      "subResults": null
+    },
+    {
+      "id": "g5",
+      "title": "Logout Is Terminal",
+      "status": "pass",
+      "detail": "Logout is terminal — session fully destroyed.",
+      "subResults": [
+        {
+          "pass": true,
+          "label": "POST auth/logout → 200"
+        },
+        {
+          "pass": true,
+          "label": "In-memory token cleared"
+        },
+        {
+          "pass": true,
+          "label": "Refresh rejected after logout (401) — cookie cleared"
+        },
+        {
+          "pass": true,
+          "label": "Protected endpoint blocked after logout (401)"
+        }
+      ]
+    },
+    {
+      "id": "g6",
+      "title": "Route Exposure Audit",
+      "status": "pass",
+      "detail": "All tested endpoints properly protected.",
+      "subResults": [
+        {
+          "pass": true,
+          "label": "GET /profiles/me → 401"
+        },
+        {
+          "pass": true,
+          "label": "GET /profiles → 401"
+        },
+        {
+          "pass": true,
+          "label": "GET /network_metadata → 401"
+        },
+        {
+          "pass": true,
+          "label": "GET /vulnerabilities_latest → 401"
+        },
+        {
+          "pass": true,
+          "label": "GET /sam/threats/:id → 401"
+        },
+        {
+          "pass": true,
+          "label": "/profiles/me with Bearer → 200 (works)"
+        }
+      ]
+    }
+  ],
+  "eventLog": [
+    {
+      "time": "790",
+      "level": "info",
+      "msg": "[g0] START"
+    },
+    {
+      "time": "791",
+      "level": "pass",
+      "msg": "[g0] localStorage sb-*: clean"
+    },
+    {
+      "time": "791",
+      "level": "pass",
+      "msg": "[g0] In-memory token: present"
+    },
+    {
+      "time": "084",
+      "level": "pass",
+      "msg": "[g0] Refresh cookie: valid"
+    },
+    {
+      "time": "118",
+      "level": "pass",
+      "msg": "[g0] Unauthenticated /profiles/me: 401"
+    },
+    {
+      "time": "119",
+      "level": "pass",
+      "msg": "[g0] PASS"
+    },
+    {
+      "time": "119",
+      "level": "info",
+      "msg": "[g1] START"
+    },
+    {
+      "time": "412",
+      "level": "pass",
+      "msg": "[g1] PASS"
+    },
+    {
+      "time": "413",
+      "level": "info",
+      "msg": "[g2] START"
+    },
+    {
+      "time": "413",
+      "level": "warn",
+      "msg": "[g2] Clearing in-memory token to simulate page reload"
+    },
+    {
+      "time": "957",
+      "level": "pass",
+      "msg": "[g2] PASS"
+    },
+    {
+      "time": "957",
+      "level": "info",
+      "msg": "[g3] START"
+    },
+    {
+      "time": "957",
+      "level": "warn",
+      "msg": "[g3] Poisoning token → \"expired.fake.token\""
+    },
+    {
+      "time": "543",
+      "level": "pass",
+      "msg": "[g3] PASS — status ? in 584ms"
+    },
+    {
+      "time": "543",
+      "level": "info",
+      "msg": "[g3q] START"
+    },
+    {
+      "time": "543",
+      "level": "warn",
+      "msg": "[g3q] Poisoning token → \"expired.fake.token\""
+    },
+    {
+      "time": "543",
+      "level": "info",
+      "msg": "[g3q] Firing 3 concurrent requests..."
+    },
+    {
+      "time": "300",
+      "level": "pass",
+      "msg": "[g3q] PASS — [fulfilled-no-status,fulfilled-no-status,fulfilled-no-status] in 758ms"
+    },
+    {
+      "time": "300",
+      "level": "info",
+      "msg": "[g6] START"
+    },
+    {
+      "time": "300",
+      "level": "info",
+      "msg": "[g6] Sweeping 5 endpoints without Bearer..."
+    },
+    {
+      "time": "339",
+      "level": "pass",
+      "msg": "[g6] GET /profiles/me: 401 (protected)"
+    },
+    {
+      "time": "385",
+      "level": "pass",
+      "msg": "[g6] GET /profiles: 401 (protected)"
+    },
+    {
+      "time": "428",
+      "level": "pass",
+      "msg": "[g6] GET /network_metadata: 401 (protected)"
+    },
+    {
+      "time": "487",
+      "level": "pass",
+      "msg": "[g6] GET /vulnerabilities_latest: 401 (protected)"
+    },
+    {
+      "time": "554",
+      "level": "pass",
+      "msg": "[g6] GET /sam/threats/:id: 401 (protected)"
+    },
+    {
+      "time": "554",
+      "level": "info",
+      "msg": "[g6] Re-testing first endpoint with valid token..."
+    },
+    {
+      "time": "860",
+      "level": "pass",
+      "msg": "[g6] PASS"
+    },
+    {
+      "time": "475",
+      "level": "info",
+      "msg": "[g5] START"
+    },
+    {
+      "time": "560",
+      "level": "pass",
+      "msg": "[g5] PASS"
+    }
+  ]
+}
