@@ -65,6 +65,21 @@ const History = () => {
     return 0;
   };
 
+  // Format ISO datetimes into a readable local string for display in tables
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
   // Filter + sort data
   const filteredVulnHistory = useMemo(() => {
     let data = vulnHistory;
@@ -235,7 +250,10 @@ const History = () => {
       {activeTab === "vulnerabilities" && (
         <>
           <VulnerabilityHistoryTable
-            data={vulnPager.currentItems}
+            data={vulnPager.currentItems.map((item) => ({
+              ...item,
+              datetime: formatDate(item.datetime),
+            }))}
             expandedRow={expandedRow}
             onToggleExpand={toggleExpand}
             onViewDetail={openVulnModal}
@@ -259,7 +277,10 @@ const History = () => {
       {activeTab === "threats" && (
         <>
           <ThreatHistoryTable
-            data={threatPager.currentItems}
+            data={threatPager.currentItems.map((item) => ({
+              ...item,
+              datetime: formatDate(item.datetime),
+            }))}
             expandedRow={expandedRow}
             onToggleExpand={toggleExpand}
             onViewDetail={openThreatModal}

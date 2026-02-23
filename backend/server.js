@@ -3,7 +3,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const FASTAPI_BASE = "http://mothership.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
+const FASTAPI_BASE = "http://mothership-1.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
 //const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
 const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
 
