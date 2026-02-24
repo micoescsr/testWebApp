@@ -36,6 +36,7 @@ const freshScan = (createdAt) => ({
   scan_id: SCAN_ID,
   network_id: NETWORK_ID,
   created_at: createdAt || new Date().toISOString(),
+  risk_score: 14,
 });
 
 /** Scan from a different network */
@@ -43,6 +44,7 @@ const mismatchedScan = (createdAt) => ({
   scan_id: SCAN_ID,
   network_id: "other-net-999",
   created_at: createdAt || new Date().toISOString(),
+  risk_score: 0,
 });
 
 /** Old scan (10 min ago) */
@@ -50,6 +52,7 @@ const oldScan = () => ({
   scan_id: SCAN_ID,
   network_id: NETWORK_ID,
   created_at: new Date(Date.now() - 600_000).toISOString(), // 10 min ago
+  risk_score: 7,
 });
 
 /** Valid enable request body */

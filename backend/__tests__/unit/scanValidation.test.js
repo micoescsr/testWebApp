@@ -156,11 +156,13 @@ describe("buildPortalPatchPayload", () => {
     expect(tips.updated_at).toBe(FIXED_UNIX);
   });
 
-  test("security section starts at score 0 / NOT YET ASSESSED", () => {
+  test("security section defaults to LOW when score is 0", () => {
     const payload = buildPortalPatchPayload(BSSID, SSID, FIXED_UNIX);
     const sec = payload.patch.security;
     expect(sec.score).toBe(0);
-    expect(sec.risk_level).toBe("NOT YET ASSESSED");
+    expect(sec.risk_level).toBe("LOW");
+    expect(sec.ui_color).toBe("#22C55E");
+    expect(sec.description).toBe("Low risk — minimal threats detected");
   });
 
   test("uses Date.now when nowUnix is omitted", () => {
