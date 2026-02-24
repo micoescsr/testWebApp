@@ -10,7 +10,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const { profile } = useProfile();
-  const { networkId } = useNetworkContext();
+  const { networkId, scanId } = useNetworkContext();
   const role = profile?.role;
 
   const handleLogout = () => {
@@ -27,7 +27,7 @@ const Sidebar = () => {
     },
     {
       path: networkId
-        ? `/device-management?network_id=${networkId}`
+        ? `/device-management?network_id=${networkId}${scanId ? `&scan_id=${scanId}` : ""}`
         : "/device-management",
       icon: "📱",
       label: "Device Management",

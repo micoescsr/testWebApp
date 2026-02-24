@@ -2,10 +2,10 @@
 
 ## Unit Tests & Integration Tests
 
-**Version:** 1.0.0
-**Date:** February 23, 2026
+**Version:** 2.0.0
+**Date:** February 24, 2026
 **Authors:** WhyPII Development Team
-**Framework:** Jest 29 · supertest 7 · Node.js
+**Framework:** Jest 30 · supertest 7 · Playwright 1.x · Node.js
 
 ---
 
@@ -17,6 +17,7 @@
 4. [Test Categories](#4-test-categories)
    - 4.1 [Unit Tests](#41-unit-tests)
    - 4.2 [Integration Tests](#42-integration-tests)
+   - 4.3 [E2E Tests (Playwright)](#43-e2e-tests-playwright)
 5. [Test Inventory](#5-test-inventory)
 6. [Fixtures & Helpers](#6-fixtures--helpers)
 7. [Extracted Utility Modules](#7-extracted-utility-modules)
@@ -37,12 +38,13 @@ The suite is designed for **short-timeframe, high-value** coverage: every test t
 
 | Metric | Target |
 |---|---|
-| Unit tests | 115 cases across 4 suites |
-| Integration tests | 27 scenario tests across 3 suites |
-| Total | **142 tests, 7 suites, 0 failures** |
+| Unit tests | 132 cases across 5 suites |
+| Integration tests | 43 scenario tests across 4 suites |
+| Total (backend) | **175 tests, 9 suites, 0 failures** |
+| E2E tests (Playwright) | 4 golden-path flows (chromium) |
 | Coverage (utils/) | 99 % statements, 87 % branches, 100 % functions |
 | Coverage (middleware/) | 92 % statements, 80 % branches, 100 % functions |
-| Execution time | ~2 s total (mocked I/O) |
+| Execution time | ~2 s backend (mocked I/O) |
 
 ---
 
@@ -89,12 +91,14 @@ backend/
 │   ├── scoring.js                   #   CVSS scoring & severity
 │   ├── normalization.js             #   Payload normalization & validation
 │   ├── sorting.js                   #   Sort & filter functions
-│   └── exportFormatters.js          #   CSV / XLSX export helpers
+│   ├── exportFormatters.js          #   CSV / XLSX export helpers
+│   └── scanValidation.js            #   Scan validation + portal payload builder
 ├── __tests__/
 │   ├── setup.js                     # Global env vars for test env
 │   ├── fixtures/
 │   │   ├── scanPayloads.js          # Canonical scan payload fixtures
-│   │   └── threatDefinitions.js     # Threat definition mocks + poll results
+│   │   ├── threatDefinitions.js     # Threat definition mocks + poll results
+│   │   └── deviceMgmtPayloads.js    # AP toggle, scan, network row fixtures
 │   ├── helpers/
 │   │   ├── testApp.js               # Express app factory (no listen)
 │   │   └── mockSupabase.js          # Chainable Supabase client mock
@@ -102,11 +106,20 @@ backend/
 │   │   ├── scoring.test.js          # Suite A — scoring & severity
 │   │   ├── normalization.test.js    # Suite B — normalization & validation
 │   │   ├── sorting.test.js          # Suite C — sorting & filtering
-│   │   └── exportFormatters.test.js # Suite D — CSV / XLSX export
+│   │   ├── exportFormatters.test.js # Suite D — CSV / XLSX export
+│   │   └── scanValidation.test.js   # Suite E — scan validation & portal payload
 │   └── integration/
 │       ├── auth.test.js             # Auth & session flow
 │       ├── scanIngestion.test.js    # Scan pipeline ingestion
-│       └── authorization.test.js    # Role-based access control
+│       ├── authorization.test.js    # Role-based access control
+│       └── deviceMgmt.test.js       # AP toggle, state, scan gating
+
+(root)/
+├── playwright.config.js             # Playwright E2E configuration
+├── e2e/
+│   ├── helpers/
+│   │   └── auth.js                  # Shared login helper
+│   └── device-management.spec.js    # 4 golden-path AP panel tests
 ```
 
 ---
@@ -123,6 +136,7 @@ Unit tests validate **pure functions** with deterministic inputs — no network 
 | **B. Normalization & Validation** | `utils/normalization.js` | BSSID normalization (colon / dash / raw hex), payload validation (missing SSID / BSSID / channel), XSS string sanitization |
 | **C. Sorting & Filtering** | `utils/sorting.js` | Sort high→low / low→high by severity & score, filter by severity / date range / category |
 | **D. Export Formatting** | `utils/exportFormatters.js` | CSV header correctness, row count matching, special-character escaping (RFC 4180), XLSX row generation |
+| **E. Scan Validation** | `utils/scanValidation.js` | `validateScan` — null/missing, network mismatch, freshness boundary, string coercion. `buildPortalPatchPayload` — network_id format, content structure, timestamps |
 
 ### 4.2 Integration Tests
 
@@ -133,6 +147,18 @@ Integration tests hit **real Express routes** through `supertest`, with external
 | **Auth & Session Flow** | `POST /api/auth/login`, `/set-refresh`, `/refresh`, `/logout` | Login → cookie set → refresh with cookie → logout clears cookie. HttpOnly flag verification. |
 | **Scan Ingestion Pipeline** | `POST /api/rasPi/networks`, `POST /api/rasPi/scan` | Valid payload → 201 with computed fields. Missing fields → 400. FastAPI proxy behavior. |
 | **Authorization Checks** | `GET /api/protected`, `GET /api/admin/users` | Non-admin → 403, superadmin → 200, missing token → 401, expired token → 401, profile status checks (active / on_hold / inactive). |
+| **Device Management (AP Toggle)** | `GET /api/device/ap-state/:networkId`, `POST /api/device/enable-ap` | AP state from DB, scan-gated enable (SCAN_REQUIRED / SCAN_TOO_OLD / SCAN_NETWORK_MISMATCH), portal/patch before orchestrate/apply, idempotent portal init, disable without scan. |
+
+### 4.3 E2E Tests (Playwright)
+
+End-to-end tests run a real browser (Chromium) against the full app stack — Vite frontend + Express backend. They validate cross-page flows that unit/integration tests cannot catch.
+
+| Test | Flow | Asserts |
+|---|---|---|
+| **No scan context** | Direct nav to `/device-management` | Toggle disabled or "No network selected" guard |
+| **SAM → Device Mgmt** | Login → SAM scan → sidebar nav to Device Mgmt | Toggle visible and enabled, network config shown |
+| **AP Info panel** | Navigate with/without network | SSID, BSSID, Channel, Encryption labels visible |
+| **Go to Scan navigation** | Click "Go to Scan" button | URL changes to `/security-assessment` |
 
 ---
 
@@ -230,6 +256,35 @@ Integration tests hit **real Express routes** through `supertest`, with external
 | 13 | formatXLSXRows: row count | 1 + data length |
 | 14 | formatXLSXRows: missing fields → empty string | — |
 
+#### E. `scanValidation.test.js` (17 cases)
+
+**validateScan(scan, networkId, maxAgeSeconds, nowMs)**
+
+| # | Test | Expected |
+|---|---|---|
+| 1 | `scan` is null | `SCAN_REQUIRED` |
+| 2 | `scan` is undefined | `SCAN_REQUIRED` |
+| 3 | `scan.network_id` differs from request | `SCAN_NETWORK_MISMATCH` |
+| 4 | Numeric `network_id` coerced to string | `valid: true` |
+| 5 | Scan exceeds max age (10 min old, limit 5) | `SCAN_TOO_OLD`, extras include `scan_age_seconds` + `max_age_seconds` |
+| 6 | Scan exactly at age boundary (300s = 300s) | `valid: true` (not >)
+| 7 | Scan 1 second past limit (301s) | `SCAN_TOO_OLD` |
+| 8 | Fresh scan, correct network (1 min old) | `valid: true` |
+| 9 | Scan created 0 seconds ago | `valid: true` |
+| 10 | Custom max age (60s) — 2 min old scan | `SCAN_TOO_OLD` |
+| 11 | Default `nowMs` (uses `Date.now()`) | `valid: true` for fresh scan |
+
+**buildPortalPatchPayload(bssid, ssid, nowUnix)**
+
+| # | Test | Expected |
+|---|---|---|
+| 12 | `network_id` format | `"BSSID | SSID"` |
+| 13 | Announcements text | Contains "Welcome" |
+| 14 | Terms version format | `YYYY-MM-DD` |
+| 15 | Tips array | 3 items |
+| 16 | Security defaults | `score: 0`, `risk_level: "NOT YET ASSESSED"` |
+| 17 | Default `nowUnix` (uses `Date.now`) | `updated_at` within 60s of now |
+
 ### 5.2 Integration Test Cases
 
 #### Auth & Session Flow (`auth.test.js`) — 7 tests
@@ -268,6 +323,55 @@ Integration tests hit **real Express routes** through `supertest`, with external
 | 7 | Active user → active-only route | 200 |
 | 8 | On-hold user → active-only route | 403 |
 
+#### Device Management (`deviceMgmt.test.js`) — 16 tests
+
+**GET /api/device/ap-state/:networkId** (3 tests)
+
+| # | Test | Expected |
+|---|---|---|
+| 1 | Returns `ap_enabled` and `portal_initialized` from DB | 200, both fields |
+| 2 | Defaults to `false` when columns are null | 200, `false`/`false` |
+| 3 | DB query fails | 500, "Failed to fetch AP state" |
+
+**POST /api/device/enable-ap — validation** (3 tests)
+
+| # | Test | Expected |
+|---|---|---|
+| 4 | Missing `network_id` | 400, "Missing or invalid" |
+| 5 | Invalid `ap_status` (e.g. `"toggle"`) | 400, "Missing or invalid" |
+| 6 | Enable without `scan_id` | 400, `SCAN_REQUIRED` |
+
+**POST /api/device/enable-ap — enable path** (4 tests)
+
+| # | Test | Expected |
+|---|---|---|
+| 7 | Scan not found in DB | 400, `SCAN_REQUIRED` |
+| 8 | Scan belongs to different network | 400, `SCAN_NETWORK_MISMATCH` |
+| 9 | Scan exceeds max age | 400, `SCAN_TOO_OLD` + `scan_age_seconds` + `max_age_seconds` |
+| 10 | First enable → portal/patch **then** orchestrate/apply | 200, 2 fetch calls in order, DB config used |
+| 11 | Second enable (portal initialized) → skips portal/patch | 200, 1 fetch call |
+| 12 | Enable includes `ap_password` in orchestrate/apply | Password in payload |
+| 13 | `orchestrate/apply` returns error | 500, "AP toggle failed" |
+
+**POST /api/device/enable-ap — disable path** (3 tests)
+
+| # | Test | Expected |
+|---|---|---|
+| 14 | Disable works without `scan_id` | 200, `ap_status: "disable"` |
+| 15 | Disable does not include `ap_password` | `ap_password` absent from payload |
+| 16 | Network not found in DB on disable | 500 |
+
+### 5.3 E2E Test Cases
+
+#### Device Management (`device-management.spec.js`) — 4 tests
+
+| # | Test | Prerequisites | Asserts |
+|---|---|---|---|
+| 1 | AP toggle disabled without scan context | Logged in, no scan run | Toggle disabled or "No network selected" guard visible |
+| 2 | After SAM scan, toggle is enabled | Logged in, scan completed | Toggle visible, SSID label visible |
+| 3 | AP Info panel shows network config | Logged in, network exists | SSID, BSSID, Channel, Encryption labels present |
+| 4 | "Go to Scan" navigates to SAM | Logged in, no scan context | URL contains `/security-assessment` after click |
+
 ---
 
 ## 6. Fixtures & Helpers
@@ -278,6 +382,7 @@ Integration tests hit **real Express routes** through `supertest`, with external
 |---|---|
 | `fixtures/scanPayloads.js` | `validScanPayload`, `missingSSID`, `missingBSSID`, `missingChannel`, `emptyPayload`, `xssPayload`, `bssidVariants`, `triggerScanPayload` |
 | `fixtures/threatDefinitions.js` | `threatDefinitions` (7 entries), `buildDefinitionsMap()`, `samplePollResults` (2 detection cycles), `sampleVulnerabilityRows` (6 rows) |
+| `fixtures/deviceMgmtPayloads.js` | `networkRow`, `networkRowInitialized`, `networkRowEnabled`, `freshScan(createdAt)`, `mismatchedScan(createdAt)`, `oldScan()`, `enableBody`, `enableBodyNoScan`, `disableBody`, `fastapiSuccess`, `portalPatchSuccess` |
 
 ### 6.2 Helpers
 
@@ -285,6 +390,12 @@ Integration tests hit **real Express routes** through `supertest`, with external
 |---|---|
 | `helpers/testApp.js` | Creates a minimal Express app with real middleware + routes, without calling `app.listen()`. Mounts auth, rasPi, device, SAM routes plus synthetic `/api/protected` and `/api/admin/users` endpoints for testing. |
 | `helpers/mockSupabase.js` | Factory function `createMockSupabase()` returning a chainable Supabase client mock supporting `.from().select().eq().single()` etc. |
+
+### 6.3 E2E Helpers
+
+| File | Purpose |
+|---|---|
+| `e2e/helpers/auth.js` | `login(page, email, password)` — fills the login form and waits for redirect to `/dashboard`. Used by all E2E tests as a setup step. |
 
 ---
 
@@ -298,12 +409,16 @@ These modules were extracted from inline `server.js` logic into testable, reusab
 | `normalization.js` | `normalizeScanPayload(payload)`, `normalizeBSSID(bssid)`, `validateScanPayload(payload)`, `sanitizeString(value)` | `rasPiController.js` patterns, new |
 | `sorting.js` | `sortBySeverity()`, `sortByScore()`, `sortByDate()`, `filterBySeverity()`, `filterByDateRange()`, `filterByCategory()` | `useSeverityTableControls.js` logic, new |
 | `exportFormatters.js` | `escapeCSVField()`, `formatCSV()`, `parseCSV()`, `formatXLSXRows()` | New utility |
+| `scanValidation.js` | `validateScan(scan, networkId, maxAgeSeconds, nowMs)`, `buildPortalPatchPayload(bssid, ssid, nowUnix)` | Extracted from `deviceMgmtRoutes.js` inline logic |
 
 **Adoption path:** Import these modules into your controllers / routes to replace inline logic. For example:
 
 ```js
 // In server.js — replace inline mapPollResultsToThreatRows with:
 const { mapPollResultsToThreatRows } = require("./utils/scoring");
+
+// In deviceMgmtRoutes.js — already adopted:
+const { validateScan, buildPortalPatchPayload } = require("../utils/scanValidation");
 ```
 
 ---
@@ -342,14 +457,39 @@ PASS  __tests__/unit/scoring.test.js
 PASS  __tests__/unit/normalization.test.js
 PASS  __tests__/unit/sorting.test.js
 PASS  __tests__/unit/exportFormatters.test.js
+PASS  __tests__/unit/scanValidation.test.js
 PASS  __tests__/integration/auth.test.js
 PASS  __tests__/integration/scanIngestion.test.js
 PASS  __tests__/integration/authorization.test.js
+PASS  __tests__/integration/deviceMgmt.test.js
 
-Test Suites: 7 passed, 7 total
-Tests:       142 passed, 142 total
+Test Suites: 9 passed, 9 total
+Tests:       175 passed, 175 total
 Time:        ~2 s
 ```
+
+### Running E2E Tests (Playwright)
+
+Playwright E2E tests live in the repo root `e2e/` directory. They require both the backend and frontend to be running (Playwright can auto-start them via `playwright.config.js`).
+
+```bash
+# From repo root
+npm run test:e2e              # headless
+npm run test:e2e:headed       # visible browser
+npm run test:e2e:ui           # interactive UI mode
+```
+
+Set test credentials via environment variables:
+
+```bash
+E2E_EMAIL=test@example.com E2E_PASSWORD=password123 npm run test:e2e
+```
+
+| Command | Description |
+|---|---|
+| `npm run test:e2e` | Run all E2E tests (headless Chromium) |
+| `npm run test:e2e:headed` | Run with visible browser window |
+| `npm run test:e2e:ui` | Playwright interactive UI mode |
 
 ---
 
@@ -388,11 +528,12 @@ Output is written to `backend/coverage/`. Open `coverage/lcov-report/index.html`
 
 | Path | Description |
 |---|---|
-| `utils/**/*.js` | Scoring, normalization, sorting, export |
+| `utils/**/*.js` | Scoring, normalization, sorting, export, scan validation |
 | `controllers/**/*.js` | Auth, rasPi, SAM, device, user, metadata |
 | `middleware/**/*.js` | JWT auth, profile status |
 | `services/**/*.js` | Auth service |
 | `validators/**/*.js` | Auth, rasPi validators |
+| `routes/**/*.js` | Auth, rasPi, device mgmt, SAM, user, webapp |
 
 ---
 
@@ -441,9 +582,28 @@ jest.mock("../../config/supabaseClient", () => ({
 }));
 ```
 
----
+### 10.4 Device Management Mocking Pattern
 
-## 11. CI / CD Integration
+The `deviceMgmt.test.js` integration tests use a per-test Supabase mock builder that returns different results per table name. This allows testing the multi-table flow (scans → networks → update) in a single test:
+
+```js
+function setupSupabase(tableMap) {
+  mockFrom.mockImplementation((table) => {
+    if (tableMap[table]) return tableMap[table];
+    return chain();
+  });
+}
+
+// Usage:
+setupSupabase({
+  scans: chain({ singleResult: { data: freshScan(), error: null } }),
+  networks: chain({ singleResult: { data: networkRow, error: null } }),
+});
+```
+
+`global.fetch` is mocked per-test to intercept FastAPI calls (orchestrate/apply, portal/patch). The `fetchCalls` array tracks call order to verify portal/patch is called before orchestrate/apply.
+
+---
 
 ### GitHub Actions Example
 
@@ -506,11 +666,13 @@ jobs:
 | Area | Current State | Next Step |
 |---|---|---|
 | **DB testing** | Mocked at module level (Option 1) | Option 2: Supabase local emulator or test schema for full DB integration |
-| **Frontend unit tests** | Sorting / filtering logic extracted to backend `utils/`; no React component tests yet | Add `@testing-library/react` tests for `useSeverityTableControls` and dashboard components |
-| **E2E tests** | Not implemented | Playwright / Cypress for full browser flows |
+| **Frontend unit tests** | Sorting / filtering logic extracted to backend `utils/`; no React component tests yet | Add `@testing-library/react` tests for AccessPointPanel, useDevice, useSAM |
+| **E2E coverage** | 4 golden-path tests (AP panel flows) | Expand: scan-too-old banner, mismatch banner, portal content editing, history page |
+| **E2E auth** | Uses real Supabase login | Consider mocking auth for faster, isolated E2E runs |
 | **Export to real XLSX** | `formatXLSXRows` generates arrays; no actual `.xlsx` file output | Integrate with SheetJS (`xlsx` npm) and add file-output tests |
 | **Refresh token rotation** | Tested basic flow | Add edge cases: expired refresh, concurrent refresh, race condition |
 | **Rate limiting / brute force** | Not tested | Add tests when rate-limiting middleware is implemented |
+| **Device management edge cases** | Core AP toggle + scan gating covered | Add: portal/patch content customization, concurrent enable, network row missing on enable |
 | **Captive portal routes** | Commented out in codebase | Uncomment and add tests when activated |
 
 ---

@@ -15,10 +15,11 @@ import {
 } from "../../api/deviceApi";
 
 const DeviceManagement = () => {
-  // ─── Resolve network_id: context first, URL param fallback ─────
-  const { networkId: ctxNetworkId } = useNetworkContext();
+  // ─── Resolve network_id + scan_id: context first, URL param fallback
+  const { networkId: ctxNetworkId, scanId: ctxScanId } = useNetworkContext();
   const [searchParams] = useSearchParams();
   const networkId = ctxNetworkId || searchParams.get("network_id");
+  const scanId = ctxScanId || searchParams.get("scan_id");
 
   const [activeTab, setActiveTab] = useState("announcement");
   const [isEditing, setIsEditing] = useState(false);
@@ -39,7 +40,7 @@ const DeviceManagement = () => {
   const { profile, profileLoading } = useProfile();
   const role = (profile?.role || "").toLowerCase();
 
-  // useDevice now owns network config fetching + AP toggle logic
+  // useDevice owns network config fetching + AP toggle + scan validation
   const {
     accessPoint,
     networkConfig,
@@ -47,10 +48,11 @@ const DeviceManagement = () => {
     loading,
     configLoading,
     error,
-    isEmpty,
+    scanError,
+    hasScanId,
     refetch,
     handleToggleAccessPoint,
-  } = useDevice(networkId);
+  } = useDevice(networkId, scanId);
 
   const safeActiveTab = activeTab;
 
@@ -270,7 +272,8 @@ const DeviceManagement = () => {
           setApPassword={setApPassword}
           loading={loading}
           error={error}
-          isEmpty={isEmpty}
+          scanError={scanError}
+          hasScanId={hasScanId}
           onRetry={refetch}
           onToggle={handleToggleAccessPoint}
         />

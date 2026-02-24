@@ -2,39 +2,69 @@
 
 ## Overview
 
-The Access Point (AP) panel in Device Management lets an authenticated user **enable/disable a captive portal AP** on a scanned network. When the toggle is enabled, the app sends the network config (from the most recent scan) to the Raspberry Pi orchestrator via FastAPI. On the very first enable, it also seeds the captive portal with default content (announcements, terms, tips, security stub).
+The Access Point (AP) panel in Device Management lets an authenticated user **enable/disable a captive portal AP** on a scanned network. The **backend is the sole source of truth** — it loads all network config (SSID, BSSID, channel, encryption) from Supabase, validates scan freshness, seeds the captive portal on first enable, and persists AP + portal state in the DB.
 
 ---
 
 ## Architecture
 
 ```
-SAM (scan) ──► NetworkContext (in-memory) ──► DeviceManagement page
-                                                    │
-                                                    ├─ useDevice(networkId)
-                                                    │      │
-                                                    │      ├─ GET  /rasPi/networks/:id     → fetch network config from Supabase
-                                                    │      ├─ POST /device/enable-ap        → proxy to orchestrate/apply
-                                                    │      └─ POST /device/portal-patch     → proxy to portal/patch (first init only)
-                                                    │
-                                                    └─ AccessPointPanel (UI)
+SAM (scan) ──► NetworkContext (in-memory: networkId + scanId)
+                  │
+                  ▼
+              DeviceManagement page
+                  │
+                  ├─ useDevice(networkId, scanId)
+                  │      │
+                  │      ├─ GET  /device/ap-state/:networkId  → { ap_enabled, portal_initialized }
+                  │      ├─ GET  /rasPi/networks/:id          → { ssid, bssid, channel, encryption_type }
+                  │      └─ POST /device/enable-ap             → backend validates scan, loads config,
+                  │                                               calls portal/patch + orchestrate/apply
+                  │
+                  └─ AccessPointPanel (UI: toggle + scan validation banners)
 ```
 
 ---
 
-## Secure Network ID Transport
+## Secure Network ID + Scan ID Transport
 
 **Problem:** The previous implementation stored `network_id` in `localStorage`, which is insecure (accessible to any JS on the origin, persists across sessions, visible in dev tools).
 
-**Solution:** Replaced with a **React Context** (`NetworkContext`) that holds the `network_id` **in memory only**.
+**Solution:** Replaced with a **React Context** (`NetworkContext`) that holds both `networkId` and `scanId` **in memory only**.
 
 | Layer | What happens |
 |---|---|
-| `NetworkContext.jsx` | Creates a React context with `{ networkId, setNetworkId }` stored via `useState` (memory only) |
+| `NetworkContext.jsx` | Creates a React context with `{ networkId, scanId, setNetworkScan }` stored via `useState` (memory only) |
 | `App.jsx` | Wraps the entire app in `<NetworkProvider>` |
-| `SAM.jsx` | After a successful scan + save, calls `setNetworkId(networkId)` instead of `localStorage.setItem(...)` |
-| `Sidebar.jsx` | Dynamically appends `?network_id=<id>` to the Device Management link when a network is in context |
-| `DeviceManagement.jsx` | Reads from context first, falls back to `?network_id=` URL search param (for direct links / page refresh) |
+| `SAM.jsx` | After a successful scan + save, calls `setNetworkScan(networkId, scanId)` |
+| `Sidebar.jsx` | Dynamically appends `?network_id=<id>&scan_id=<id>` to the Device Management link |
+| `DeviceManagement.jsx` | Reads from context first, falls back to URL search params (for direct links / page refresh) |
+
+---
+
+## Scan Validation
+
+The backend validates scans before enabling the AP:
+
+| Check | When | Backend Error Code | UI Behaviour |
+|---|---|---|---|
+| `scan_id` is present | Enable only | `SCAN_REQUIRED` | Toggle disabled + "Scan required" banner with link to SAM |
+| Scan is not older than `SCAN_MAX_AGE_SECONDS` (default 300s, env-configurable) | Enable only | `SCAN_TOO_OLD` | Warning banner + "Scan Again" button |
+| Scan's `network_id` matches the requested `network_id` | Enable only | `SCAN_NETWORK_MISMATCH` | Warning banner + "Scan Again" button |
+| None of the above | Disable | — | No scan_id required; toggle works immediately |
+
+---
+
+## DB Schema Additions
+
+Two new columns on the `networks` table (run in Supabase SQL editor):
+
+```sql
+ALTER TABLE networks ADD COLUMN portal_initialized boolean NOT NULL DEFAULT false;
+ALTER TABLE networks ADD COLUMN ap_enabled boolean NOT NULL DEFAULT false;
+```
+
+These make AP state and portal initialization persistent across page reloads and server restarts.
 
 ---
 
@@ -43,164 +73,113 @@ SAM (scan) ──► NetworkContext (in-memory) ──► DeviceManagement page
 ### Backend
 
 #### `backend/routes/deviceMgmtRoutes.js`
-- **Fixed critical bug:** `module.exports = router` was placed *before* the `/enable-ap` route, so it was never registered.
-- **`POST /api/device/enable-ap`** — Proxies to FastAPI `orchestrate/apply`
-  - Upserts network row in Supabase
-  - Forwards `{ ssid, bssid, channel, encryption_type, ap_password?, ap_status }` to FastAPI
-  - `ap_status`: `"enable"` or `"disable"`
-- **`POST /api/device/portal-patch`** (new) — Proxies to FastAPI `portal/patch`
-  - Constructs `network_id` as `"BSSID | SSID"` (FastAPI format)
-  - Sends hardcoded default `portal_content` (announcements, terms, tips) + security stub
-  - Called only on **first AP enable** per session
+- **`GET /api/device/ap-state/:networkId`** — Returns `{ ap_enabled, portal_initialized }` from `networks` table
+- **`POST /api/device/enable-ap`** — Secure AP toggle:
+  - Accepts only `{ network_id, scan_id?, ap_status, ap_password? }`
+  - **Backend loads** SSID/BSSID/channel/encryption from Supabase (never from frontend)
+  - On **enable**: validates scan_id exists, is fresh, matches network
+  - If `portal_initialized` is false: calls `portal/patch` first, then `orchestrate/apply`
+  - If portal already initialized: calls `orchestrate/apply` directly
+  - Persists `ap_enabled` and `portal_initialized` in `networks` table
+  - On **disable**: no scan validation; calls `orchestrate/apply` with `ap_status: "disable"`
 
 ### Frontend
 
-#### `src/context/NetworkContext.jsx` (new)
-- In-memory React context for `networkId`
-- Replaces `localStorage` usage
+#### `src/context/NetworkContext.jsx`
+- In-memory React context for `{ networkId, scanId }`
+- `setNetworkScan(nId, sId)` convenience method
 
 #### `src/api/deviceApi.js`
-- `toggleAP(payload)` → `POST /device/enable-ap`
-- `patchPortal(payload)` → `POST /device/portal-patch`
-- `getNetworkConfig(networkId)` → `GET /rasPi/networks/:id`
-- Fixed `getTerms` and `publishTerms` to pass `networkId`
+- `toggleAP(payload)` → `POST /device/enable-ap` (sends only IDs + password)
+- `getApState(networkId)` → `GET /device/ap-state/:networkId`
+- `getNetworkConfig(networkId)` → `GET /rasPi/networks/:id` (display only)
+- `patchPortal()` removed (portal seeding is now internal to backend)
 
 #### `src/hooks/useDevice.js`
-- Now accepts `networkId` parameter
-- Owns network config fetching from Supabase (`GET /rasPi/networks/:id`)
-- Toggle flow:
-  1. **Enable** → calls `orchestrate/apply` (enable) + `portal/patch` (first time only)
-  2. **Disable** → calls `orchestrate/apply` (disable)
-- Tracks `portalInitialized` to avoid re-patching portal content
-- Resets AP state when `networkId` changes (new scan)
+- Accepts `(networkId, scanId)`
+- Fetches AP state from DB on mount
+- Toggle flow with optimistic UI + revert on failure
+- Exposes `scanError` and `hasScanId` for UI scan-validation banners
+- Handles `SCAN_REQUIRED`, `SCAN_TOO_OLD`, `SCAN_NETWORK_MISMATCH` error codes
 
 #### `src/components/device/AccessPointPanel.jsx`
-- Validates AP password internally before calling `onToggle(apPassword)`
-- Displays network config (SSID, BSSID, channel, encryption) always visible
-- Conditionally shows password input for encrypted networks
+- New props: `scanError`, `hasScanId` (replaces `isEmpty`)
+- Scan-required banner with "Go to Scan" navigation
+- Scan-too-old and scan-mismatch warning banners
+- Toggle disabled when no scan available and AP is off
 
 #### `src/pages/DeviceManagement/DeviceManagement.jsx`
-- Reads `networkId` from context (priority) or `?network_id=` URL param (fallback)
-- Delegates network config + AP toggle to `useDevice(networkId)`
-- Removed all `localStorage` usage
-- Shows guard message if no network is selected
+- Reads `networkId` + `scanId` from context (priority) or URL params (fallback)
+- Passes `scanId` to `useDevice(networkId, scanId)`
+- Passes `scanError` + `hasScanId` to `AccessPointPanel`
 
 #### `src/pages/SAM/SAM.jsx`
-- After scan save: calls `setNetworkId(networkId)` via `useNetworkContext()`
-- Removed `localStorage.setItem("lastNetworkId", ...)`
+- After scan save: calls `setNetworkScan(networkId, scanId)`
 
 #### `src/layouts/Sidebar.jsx`
-- Device Management link dynamically includes `?network_id=<id>` when context has a value
-
-#### `src/App.jsx`
-- Wraps app in `<NetworkProvider>`
+- Device Management link includes `?network_id=<id>&scan_id=<id>` when context has values
 
 ---
 
 ## AP Enable/Disable Flow
 
-### First-time Enable (after fresh scan)
+### Enable (with scan validation)
 
 ```
 User clicks toggle ON (+ enters AP password for encrypted networks)
     │
     ▼
-POST /api/device/enable-ap
-  Body: { network_id, ssid, bssid, channel, encryption_type, ap_password, ap_status: "enable" }
-    │
-    ├─ Upsert network in Supabase
-    └─ Forward to FastAPI → POST orchestrate/apply
-         Body: { ssid, bssid, channel, encryption_type, ap_password, ap_status: "enable" }
+Frontend sends POST /api/device/enable-ap
+  Body: { network_id, scan_id, ap_status: "enable", ap_password? }
     │
     ▼
-POST /api/device/portal-patch  (first enable only)
-  Body: { network_id, bssid, ssid }
+Backend validates:
+  1. scan_id exists in scans table
+  2. scan is not older than SCAN_MAX_AGE_SECONDS
+  3. scan.network_id matches request.network_id
     │
-    └─ Forward to FastAPI → POST portal/patch
-         Body: {
-           network_id: "BSSID | SSID",
-           patch: {
-             portal_content: { announcements, terms, tips },
-             security: { score: 0, risk_level: "NOT YET ASSESSED" }
-           }
-         }
+    ▼
+Backend loads config from DB:
+  SELECT ssid, bssid, channel, encryption_type FROM networks WHERE network_id = ?
+    │
+    ▼
+If portal_initialized = false:
+  → POST portal/patch (FastAPI) with default content
+  → UPDATE networks SET portal_initialized = true
+    │
+    ▼
+POST orchestrate/apply (FastAPI)
+  Body: { ssid, bssid, channel, encryption_type, ap_password?, ap_status: "enable" }
+    │
+    ▼
+UPDATE networks SET ap_enabled = true
 ```
 
-### Disable
+### Disable (no scan required)
 
 ```
 User clicks toggle OFF
     │
     ▼
-POST /api/device/enable-ap
-  Body: { ..., ap_status: "disable" }
+Frontend sends POST /api/device/enable-ap
+  Body: { network_id, ap_status: "disable" }
     │
-    └─ Forward to FastAPI → POST orchestrate/apply
-         Body: { ..., ap_status: "disable" }
+    ▼
+Backend loads config from DB (needs SSID/BSSID for FastAPI)
+    │
+    ▼
+POST orchestrate/apply (FastAPI)
+  Body: { ssid, bssid, channel, encryption_type, ap_status: "disable" }
+    │
+    ▼
+UPDATE networks SET ap_enabled = false
 ```
-
-### Update AP Details (after new scan)
-
-1. Disable toggle → sends `ap_status: "disable"` to `orchestrate/apply`
-2. New scan runs in SAM → updates `networkId` in context → `useDevice` refetches config
-3. Enable toggle → sends updated config with `ap_status: "enable"` to `orchestrate/apply`
 
 ---
 
-## Example Payloads
+## Environment Variables
 
-### orchestrate/apply (enable)
-```json
-{
-  "ssid": "DMSCVG 2.4G",
-  "bssid": "30:40:74:8E:8D:2A",
-  "channel": 4,
-  "encryption_type": "WPA2 WPA2-PSK AES-CCMP",
-  "ap_password": "#Dns1125",
-  "ap_status": "enable"
-}
-```
-
-### orchestrate/apply (disable)
-```json
-{
-  "ssid": "DMSCVG 2.4G",
-  "bssid": "30:40:74:8E:8D:2A",
-  "channel": 4,
-  "encryption_type": "WPA2 WPA2-PSK AES-CCMP",
-  "ap_status": "disable"
-}
-```
-
-### portal/patch (first initialization)
-```json
-{
-  "network_id": "30:40:74:8E:8D:2A | DMSCVG 2.4G",
-  "patch": {
-    "portal_content": {
-      "announcements": {
-        "updated_at": 1760785000,
-        "announcement_text": "Welcome to this secured network. Stay safe online."
-      },
-      "terms": {
-        "version": "2026-02-24",
-        "updated_at": 1760785000,
-        "text": "By connecting to this network, you agree to our terms of service and acceptable use policy."
-      },
-      "tips": {
-        "updated_at": 1760785000,
-        "items": [
-          "Use a VPN when possible.",
-          "Avoid banking on public Wi-Fi.",
-          "Keep your device software up to date."
-        ]
-      }
-    },
-    "security": {
-      "score": 0,
-      "risk_level": "NOT YET ASSESSED",
-      "updated_at": 1760785000
-    }
-  }
-}
-```
+| Variable | Default | Description |
+|---|---|---|
+| `SCAN_MAX_AGE_SECONDS` | `300` | Max age (seconds) of a scan before it's considered stale for AP enable |
+| `FASTAPI_BASE` | `http://mothership-1.tail781e52.ts.net:8000` | Raspberry Pi FastAPI base URL |

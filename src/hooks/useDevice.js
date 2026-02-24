@@ -1,12 +1,9 @@
-// hooks/useDevice.js - orchestrate/apply + portal/patch flow
+// hooks/useDevice.js - DB-driven AP state + scan validation
 import { useState, useEffect, useCallback } from "react";
-import { toggleAP, patchPortal, getNetworkConfig } from "../api/deviceApi";
+import { toggleAP, getApState, getNetworkConfig } from "../api/deviceApi";
 
-export const useDevice = (networkId) => {
-  // AP toggle state
-  const [apEnabled, setApEnabled] = useState(false);
-
-  // Network config fetched from DB
+export const useDevice = (networkId, scanId) => {
+  // Network config fetched from DB (display only — never sent to enable-ap)
   const [networkConfig, setNetworkConfig] = useState({
     ssid: "",
     bssid: "",
@@ -14,16 +11,17 @@ export const useDevice = (networkId) => {
     encryption_type: "",
   });
 
+  // AP state from DB (source of truth)
+  const [apEnabled, setApEnabled] = useState(false);
+  const [portalInitialized, setPortalInitialized] = useState(false);
+
   // UI states
   const [loading, setLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [isEmpty, setIsEmpty] = useState(false);
+  const [scanError, setScanError] = useState(null); // SCAN_REQUIRED, SCAN_TOO_OLD, etc.
 
-  // Track whether portal/patch has been sent for this session
-  const [portalInitialized, setPortalInitialized] = useState(false);
-
-  // ─── Fetch network config from Supabase via rasPi/networks/:id ──
+  // ─── Fetch network config from Supabase ──────────────────────
   const fetchNetworkConfig = useCallback(async () => {
     if (!networkId) return;
     try {
@@ -39,54 +37,72 @@ export const useDevice = (networkId) => {
     }
   }, [networkId]);
 
+  // ─── Fetch AP state from DB (source of truth) ────────────────
+  const fetchApState = useCallback(async () => {
+    if (!networkId) return;
+    try {
+      const res = await getApState(networkId);
+      setApEnabled(res.data.ap_enabled ?? false);
+      setPortalInitialized(res.data.portal_initialized ?? false);
+    } catch (err) {
+      console.error("fetchApState error:", err);
+      // Non-fatal: default to disabled
+    }
+  }, [networkId]);
+
   useEffect(() => {
     fetchNetworkConfig();
-    // Reset AP state when network changes (user did a new scan)
-    setApEnabled(false);
-    setPortalInitialized(false);
-  }, [fetchNetworkConfig]);
+    fetchApState();
+    setScanError(null);
+  }, [fetchNetworkConfig, fetchApState]);
 
-  // ─── Toggle AP → orchestrate/apply + portal/patch on first enable ──
+  // ─── Toggle AP → sends only IDs + password to backend ────────
   const handleToggleAccessPoint = async (apPassword = "") => {
     const nextState = !apEnabled;
     const apStatus = nextState ? "enable" : "disable";
 
-    // Optimistically flip UI
+    // Clear previous scan errors
+    setScanError(null);
+
+    // Optimistic UI flip
     setApEnabled(nextState);
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Call orchestrate/apply (enable or disable)
-      const orchestratePayload = {
+      const payload = {
         network_id: networkId,
-        ssid: networkConfig.ssid,
-        bssid: networkConfig.bssid,
-        channel: networkConfig.channel,
-        encryption_type: networkConfig.encryption_type,
         ap_status: apStatus,
         ...(apPassword && { ap_password: apPassword }),
+        // scan_id only needed for enable
+        ...(nextState && scanId && { scan_id: scanId }),
       };
 
-      console.log(`Sending orchestrate/apply (${apStatus}):`, orchestratePayload);
-      const apRes = await toggleAP(orchestratePayload);
-      console.log("orchestrate/apply response:", apRes.data);
+      console.log(`Sending enable-ap (${apStatus}):`, payload);
+      const res = await toggleAP(payload);
+      console.log("enable-ap response:", res.data);
 
-      // 2. If enabling for the first time, also send portal/patch (hardcoded content)
-      if (nextState && !portalInitialized) {
-        console.log("First AP enable – sending portal/patch...");
-        const portalRes = await patchPortal({
-          network_id: networkId,
-          bssid: networkConfig.bssid,
-          ssid: networkConfig.ssid,
-        });
-        console.log("portal/patch response:", portalRes.data);
-        setPortalInitialized(true);
-      }
+      // Refresh AP state from DB after success
+      await fetchApState();
     } catch (err) {
       console.error("AP toggle failed:", err);
-      setError("Failed to toggle access point. Check device connection.");
-      // Keep UI in attempted state so user sees what happened
+      const backendError = err?.response?.data?.error;
+
+      // Revert optimistic toggle on failure
+      setApEnabled(!nextState);
+
+      if (backendError === "SCAN_REQUIRED") {
+        setScanError("SCAN_REQUIRED");
+      } else if (backendError === "SCAN_TOO_OLD") {
+        setScanError("SCAN_TOO_OLD");
+        // Include extra detail from backend
+        setError(err?.response?.data?.message || "Scan is too old. Run a new scan.");
+      } else if (backendError === "SCAN_NETWORK_MISMATCH") {
+        setScanError("SCAN_NETWORK_MISMATCH");
+        setError("Scan does not match this network. Run a new scan.");
+      } else {
+        setError("Failed to toggle access point. Check device connection.");
+      }
     } finally {
       setLoading(false);
     }
@@ -113,10 +129,12 @@ export const useDevice = (networkId) => {
     accessPoint: effectiveAccessPoint,
     networkConfig,
     apEnabled,
+    portalInitialized,
     loading,
     configLoading,
     error,
-    isEmpty,
+    scanError,        // "SCAN_REQUIRED" | "SCAN_TOO_OLD" | "SCAN_NETWORK_MISMATCH" | null
+    hasScanId: !!scanId,
     refetch: fetchNetworkConfig,
     handleToggleAccessPoint,
   };
