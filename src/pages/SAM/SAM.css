@@ -688,6 +688,9 @@
   flex-wrap: wrap;
   gap: 6px;
   margin: 8px 0 4px;
+  padding: 8px 18px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .filter-chip {
