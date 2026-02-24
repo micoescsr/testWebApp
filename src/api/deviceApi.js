@@ -8,19 +8,35 @@ const api = axios.create({
 
 // ─── Announcement (per-network) ──────────────────────────────────
 export const getAnnouncement = (networkId) =>
-  api.get(`/announcement?network_id=${networkId}`);
+  api.get(`/captivePortal/announcement?network_id=${networkId}`);
 export const getAnnouncementHistory = (networkId) =>
-  api.get(`/announcement/history?network_id=${networkId}`);
+  api.get(`/captivePortal/announcement/history?network_id=${networkId}`);
 export const publishAnnouncement = (content, networkId) =>
-  api.post("/announcement", { content, network_id: networkId });
+  api.post("/captivePortal/announcement", { content, network_id: networkId });
 
 // ─── Terms & Conditions (per-network) ────────────────────────────
 export const getTerms = (networkId) =>
-  api.get(`/terms?network_id=${networkId}`);
+  api.get(`/captivePortal/terms?network_id=${networkId}`);
 export const getTermsHistory = (networkId) =>
-  api.get(`/terms/history?network_id=${networkId}`);
+  api.get(`/captivePortal/terms/history?network_id=${networkId}`);
 export const publishTerms = (content, version, networkId) =>
-  api.post("/terms", { content, version, network_id: networkId });
+  api.post("/captivePortal/terms", { content, version, network_id: networkId });
+
+// ─── Tips (per-network) ─────────────────────────────────────────
+export const getTips = (networkId) =>
+  api.get(`/captivePortal/tips?network_id=${networkId}`);
+export const upsertTips = (tips, networkId) =>
+  api.post("/captivePortal/tips", { tips, network_id: networkId });
+
+// ─── Risk Classification ─────────────────────────────────────────
+export const getRiskClassifications = () =>
+  api.get("/captivePortal/risk-classifications");
+
+// ─── Portal Summary & Sync ──────────────────────────────────────
+export const getPortalSummary = (networkId, score) =>
+  api.get(`/captivePortal/summary?network_id=${networkId}&score=${score || 0}`);
+export const syncPortal = (networkId, score) =>
+  api.post("/captivePortal/sync", { network_id: networkId, score: score || 0 });
 
 // ─── AP Toggle → backend validates scan + loads config from DB ───
 // payload: { network_id, scan_id?, ap_status: "enable"|"disable", ap_password? }

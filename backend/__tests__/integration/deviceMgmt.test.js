@@ -42,6 +42,33 @@ jest.mock("../../config/supabaseClient", () => ({
   },
 }));
 
+// Mock captivePortalController helpers used by deviceMgmtRoutes on first-enable
+jest.mock("../../controllers/captivePortalController", () => ({
+  seedDefaultContent: jest.fn().mockResolvedValue(1),
+  buildPortalPayloadFromDB: jest.fn().mockResolvedValue({
+    network_id: "30:40:74:8E:8D:2A | TestNet",
+    patch: {
+      portal_content: {
+        announcements: { updated_at: 1740000000, announcement_text: "Welcome" },
+        terms: { version: "2026-02-25", updated_at: 1740000000, text: "Terms" },
+        tips: { updated_at: 1740000000, items: ["Tip 1", "Tip 2", "Tip 3"] },
+      },
+      security: {
+        score: 0,
+        risk_level: "LOW",
+        ui_color: "#22C55E",
+        description: "Low risk — minimal threats detected",
+        updated_at: 1740000000,
+      },
+    },
+  }),
+}));
+
+const {
+  seedDefaultContent,
+  buildPortalPayloadFromDB,
+} = require("../../controllers/captivePortalController");
+
 let app;
 let fetchCalls; // track calls to global.fetch
 
@@ -52,15 +79,17 @@ beforeAll(() => {
 beforeEach(() => {
   fetchCalls = [];
   jest.restoreAllMocks();
+  seedDefaultContent.mockClear();
+  buildPortalPayloadFromDB.mockClear();
 });
 
 // ── Helpers ─────────────────────────────────────────────────────
 
 /**
  * Build a chainable mock for supabaseClient.from("table").
- * Supports: select().eq().single(), update().eq()
+ * Supports: select().eq().single(), select().eq() (thenable), update().eq()
  */
-function chain({ singleResult = { data: null, error: null }, updateResult = { data: null, error: null } } = {}) {
+function chain({ singleResult = { data: null, error: null }, listResult = { data: [], error: null }, updateResult = { data: null, error: null } } = {}) {
   return {
     select: jest.fn().mockReturnThis(),
     insert: jest.fn().mockReturnThis(),
@@ -69,7 +98,11 @@ function chain({ singleResult = { data: null, error: null }, updateResult = { da
     })),
     upsert: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
+    gte: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     single: jest.fn().mockResolvedValue(singleResult),
+    maybeSingle: jest.fn().mockResolvedValue(singleResult),
   };
 }
 
@@ -260,10 +293,22 @@ describe("POST /api/device/enable-ap — enable", () => {
     expect(res.body.status).toBe("success");
     expect(res.body.ap_status).toBe("enable");
 
+    // Verify seedDefaultContent + buildPortalPayloadFromDB were called
+    expect(seedDefaultContent).toHaveBeenCalledWith(NETWORK_ID);
+    expect(buildPortalPayloadFromDB).toHaveBeenCalledWith(
+      NETWORK_ID, networkRow.bssid, networkRow.ssid
+    );
+
     // Verify portal/patch was called BEFORE orchestrate/apply
     expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0].url).toContain("/portal/patch");
     expect(fetchCalls[1].url).toContain("/orchestrate/apply");
+
+    // Verify portal/patch payload includes risk classification fields (real score)
+    const portalPayload = JSON.parse(fetchCalls[0].opts.body);
+    expect(portalPayload.patch.security).toHaveProperty("ui_color");
+    expect(portalPayload.patch.security).toHaveProperty("description");
+    expect(portalPayload.patch.security.risk_level).not.toBe("NOT YET ASSESSED");
 
     // Verify orchestrate/apply payload uses DB config (not from request body)
     const apPayload = JSON.parse(fetchCalls[1].opts.body);

@@ -2,8 +2,8 @@
 
 ## Unit Tests & Integration Tests
 
-**Version:** 2.0.0
-**Date:** February 24, 2026
+**Version:** 2.1.0
+**Date:** February 25, 2026
 **Authors:** WhyPII Development Team
 **Framework:** Jest 30 · supertest 7 · Playwright 1.x · Node.js
 
@@ -93,6 +93,10 @@ backend/
 │   ├── sorting.js                   #   Sort & filter functions
 │   ├── exportFormatters.js          #   CSV / XLSX export helpers
 │   └── scanValidation.js            #   Scan validation + portal payload builder
+├── controllers/
+│   └── captivePortalController.js   #   Captive portal CRUD + risk classification + FastAPI sync
+├── routes/
+│   └── captivePortalRoutes.js       #   11 endpoints under /api/captivePortal
 ├── __tests__/
 │   ├── setup.js                     # Global env vars for test env
 │   ├── fixtures/
@@ -136,7 +140,7 @@ Unit tests validate **pure functions** with deterministic inputs — no network 
 | **B. Normalization & Validation** | `utils/normalization.js` | BSSID normalization (colon / dash / raw hex), payload validation (missing SSID / BSSID / channel), XSS string sanitization |
 | **C. Sorting & Filtering** | `utils/sorting.js` | Sort high→low / low→high by severity & score, filter by severity / date range / category |
 | **D. Export Formatting** | `utils/exportFormatters.js` | CSV header correctness, row count matching, special-character escaping (RFC 4180), XLSX row generation |
-| **E. Scan Validation** | `utils/scanValidation.js` | `validateScan` — null/missing, network mismatch, freshness boundary, string coercion. `buildPortalPatchPayload` — network_id format, content structure, timestamps |
+| **E. Scan Validation** | `utils/scanValidation.js` | `validateScan` — null/missing, network mismatch, freshness boundary, string coercion. `buildPortalPatchPayload` — network_id format, content structure, risk classification defaults, timestamps |
 
 ### 4.2 Integration Tests
 
@@ -147,7 +151,7 @@ Integration tests hit **real Express routes** through `supertest`, with external
 | **Auth & Session Flow** | `POST /api/auth/login`, `/set-refresh`, `/refresh`, `/logout` | Login → cookie set → refresh with cookie → logout clears cookie. HttpOnly flag verification. |
 | **Scan Ingestion Pipeline** | `POST /api/rasPi/networks`, `POST /api/rasPi/scan` | Valid payload → 201 with computed fields. Missing fields → 400. FastAPI proxy behavior. |
 | **Authorization Checks** | `GET /api/protected`, `GET /api/admin/users` | Non-admin → 403, superadmin → 200, missing token → 401, expired token → 401, profile status checks (active / on_hold / inactive). |
-| **Device Management (AP Toggle)** | `GET /api/device/ap-state/:networkId`, `POST /api/device/enable-ap` | AP state from DB, scan-gated enable (SCAN_REQUIRED / SCAN_TOO_OLD / SCAN_NETWORK_MISMATCH), portal/patch before orchestrate/apply, idempotent portal init, disable without scan. |
+| **Device Management (AP Toggle)** | `GET /api/device/ap-state/:networkId`, `POST /api/device/enable-ap` | AP state from DB, scan-gated enable (SCAN_REQUIRED / SCAN_TOO_OLD / SCAN_NETWORK_MISMATCH), per-scan `risk_score` passed to `buildPortalPayloadFromDB`, portal seed + portal/patch before orchestrate/apply, idempotent portal init, disable without scan. |
 
 ### 4.3 E2E Tests (Playwright)
 
@@ -282,7 +286,7 @@ End-to-end tests run a real browser (Chromium) against the full app stack — Vi
 | 13 | Announcements text | Contains "Welcome" |
 | 14 | Terms version format | `YYYY-MM-DD` |
 | 15 | Tips array | 3 items |
-| 16 | Security defaults | `score: 0`, `risk_level: "NOT YET ASSESSED"` |
+| 16 | Security defaults | `score: 0`, `risk_level: "LOW"`, `ui_color: "#22C55E"` |
 | 17 | Default `nowUnix` (uses `Date.now`) | `updated_at` within 60s of now |
 
 ### 5.2 Integration Test Cases
@@ -348,7 +352,7 @@ End-to-end tests run a real browser (Chromium) against the full app stack — Vi
 | 7 | Scan not found in DB | 400, `SCAN_REQUIRED` |
 | 8 | Scan belongs to different network | 400, `SCAN_NETWORK_MISMATCH` |
 | 9 | Scan exceeds max age | 400, `SCAN_TOO_OLD` + `scan_age_seconds` + `max_age_seconds` |
-| 10 | First enable → portal/patch **then** orchestrate/apply | 200, 2 fetch calls in order, DB config used |
+| 10 | First enable → portal/patch **then** orchestrate/apply | 200, 2 fetch calls in order, `seedDefaultContent` + `buildPortalPayloadFromDB` called with `scan.risk_score`, DB config used |
 | 11 | Second enable (portal initialized) → skips portal/patch | 200, 1 fetch call |
 | 12 | Enable includes `ap_password` in orchestrate/apply | Password in payload |
 | 13 | `orchestrate/apply` returns error | 500, "AP toggle failed" |
@@ -382,7 +386,7 @@ End-to-end tests run a real browser (Chromium) against the full app stack — Vi
 |---|---|
 | `fixtures/scanPayloads.js` | `validScanPayload`, `missingSSID`, `missingBSSID`, `missingChannel`, `emptyPayload`, `xssPayload`, `bssidVariants`, `triggerScanPayload` |
 | `fixtures/threatDefinitions.js` | `threatDefinitions` (7 entries), `buildDefinitionsMap()`, `samplePollResults` (2 detection cycles), `sampleVulnerabilityRows` (6 rows) |
-| `fixtures/deviceMgmtPayloads.js` | `networkRow`, `networkRowInitialized`, `networkRowEnabled`, `freshScan(createdAt)`, `mismatchedScan(createdAt)`, `oldScan()`, `enableBody`, `enableBodyNoScan`, `disableBody`, `fastapiSuccess`, `portalPatchSuccess` |
+| `fixtures/deviceMgmtPayloads.js` | `networkRow`, `networkRowInitialized`, `networkRowEnabled`, `freshScan(createdAt)` (includes `risk_score`), `mismatchedScan(createdAt)`, `oldScan()`, `enableBody`, `enableBodyNoScan`, `disableBody`, `fastapiSuccess`, `portalPatchSuccess` |
 
 ### 6.2 Helpers
 
@@ -405,11 +409,20 @@ These modules were extracted from inline `server.js` logic into testable, reusab
 
 | Module | Functions | Origin |
 |---|---|---|
-| `scoring.js` | `computeSeverityFromScore(score)`, `computeRiskScore(findings)`, `mapPollResultsToThreatRows(results, defs)` | `server.js` inline, new |
+| `scoring.js` | `computeSeverityFromScore(score)`, `computeRiskScore(findings)`, `mapPollResultsToThreatRows(results, defs)` | `server.js` inline, new. `computeRiskScore` also used by `persistThreatRows` to write `scans.risk_score`. |
 | `normalization.js` | `normalizeScanPayload(payload)`, `normalizeBSSID(bssid)`, `validateScanPayload(payload)`, `sanitizeString(value)` | `rasPiController.js` patterns, new |
 | `sorting.js` | `sortBySeverity()`, `sortByScore()`, `sortByDate()`, `filterBySeverity()`, `filterByDateRange()`, `filterByCategory()` | `useSeverityTableControls.js` logic, new |
 | `exportFormatters.js` | `escapeCSVField()`, `formatCSV()`, `parseCSV()`, `formatXLSXRows()` | New utility |
 | `scanValidation.js` | `validateScan(scan, networkId, maxAgeSeconds, nowMs)`, `buildPortalPatchPayload(bssid, ssid, nowUnix)` | Extracted from `deviceMgmtRoutes.js` inline logic |
+
+### Captive Portal Controller (I/O — not pure, but exported helpers)
+
+| Module | Functions | Purpose |
+|---|---|---|
+| `captivePortalController.js` | `seedDefaultContent(networkId)` | Idempotent: inserts default announcement, terms, tips + `captive_portal` row if none exists |
+| | `lookupRiskClassification(score)` | Queries `risk_classification` table — finds the row where `risk_percentage >= score` (ascending) |
+| | `buildPortalPayloadFromDB(networkId, bssid, ssid, score)` | Reads DB content (announcements, terms, tips) + risk classification → builds full `/portal/patch` JSON |
+| | Route handlers | `getAnnouncement`, `publishAnnouncement`, `getTerms`, `publishTerms`, `getTips`, `upsertTips`, `getRiskClassifications`, `getPortalSummary`, `syncPortal` |
 
 **Adoption path:** Import these modules into your controllers / routes to replace inline logic. For example:
 
@@ -419,6 +432,7 @@ const { mapPollResultsToThreatRows } = require("./utils/scoring");
 
 // In deviceMgmtRoutes.js — already adopted:
 const { validateScan, buildPortalPatchPayload } = require("../utils/scanValidation");
+const { seedDefaultContent, buildPortalPayloadFromDB } = require("../controllers/captivePortalController");
 ```
 
 ---
@@ -529,11 +543,11 @@ Output is written to `backend/coverage/`. Open `coverage/lcov-report/index.html`
 | Path | Description |
 |---|---|
 | `utils/**/*.js` | Scoring, normalization, sorting, export, scan validation |
-| `controllers/**/*.js` | Auth, rasPi, SAM, device, user, metadata |
+| `controllers/**/*.js` | Auth, rasPi, SAM, device, user, metadata, captive portal |
 | `middleware/**/*.js` | JWT auth, profile status |
 | `services/**/*.js` | Auth service |
 | `validators/**/*.js` | Auth, rasPi validators |
-| `routes/**/*.js` | Auth, rasPi, device mgmt, SAM, user, webapp |
+| `routes/**/*.js` | Auth, rasPi, device mgmt, SAM, user, webapp, captive portal |
 
 ---
 
@@ -602,6 +616,25 @@ setupSupabase({
 ```
 
 `global.fetch` is mocked per-test to intercept FastAPI calls (orchestrate/apply, portal/patch). The `fetchCalls` array tracks call order to verify portal/patch is called before orchestrate/apply.
+
+### 10.5 Captive Portal Controller Mock
+
+The `captivePortalController` helpers (`seedDefaultContent`, `buildPortalPayloadFromDB`) are mocked at the module level in `deviceMgmt.test.js` so integration tests don't need the `risk_classification` or `captive_portal_*` tables:
+
+```js
+jest.mock("../../controllers/captivePortalController", () => ({
+  seedDefaultContent: jest.fn().mockResolvedValue(1),
+  buildPortalPayloadFromDB: jest.fn().mockResolvedValue({
+    network_id: "30:40:74:8E:8D:2A | TestNet",
+    patch: {
+      portal_content: { /* ... */ },
+      security: { score: 0, risk_level: "LOW", ui_color: "#22C55E", description: "..." },
+    },
+  }),
+}));
+```
+
+This verifies that `deviceMgmtRoutes` calls `seedDefaultContent` and `buildPortalPayloadFromDB` with the correct arguments (including `scan.risk_score`) without requiring the full portal pipeline.
 
 ---
 
@@ -672,8 +705,9 @@ jobs:
 | **Export to real XLSX** | `formatXLSXRows` generates arrays; no actual `.xlsx` file output | Integrate with SheetJS (`xlsx` npm) and add file-output tests |
 | **Refresh token rotation** | Tested basic flow | Add edge cases: expired refresh, concurrent refresh, race condition |
 | **Rate limiting / brute force** | Not tested | Add tests when rate-limiting middleware is implemented |
-| **Device management edge cases** | Core AP toggle + scan gating covered | Add: portal/patch content customization, concurrent enable, network row missing on enable |
-| **Captive portal routes** | Commented out in codebase | Uncomment and add tests when activated |
+| **Device management edge cases** | Core AP toggle + scan gating covered; per-scan `risk_score` used for portal payload | Add: portal/patch content customization, concurrent enable, network row missing on enable |
+| **Captive portal routes** | Fully implemented: 11 endpoints in `captivePortalRoutes.js` (announcement, terms, tips, risk classifications, summary, sync) | Add integration tests for captive portal CRUD (announcement publish, terms publish, tips upsert, risk lookup, portal sync) |
+| **Risk classification** | Lookup table `risk_classification` with 4 tiers (LOW / MEDIUM / HIGH / CRITICAL); `scans.risk_score` persisted by `persistThreatRows` | Add: score recalculation on re-scan, edge cases for boundary scores (25, 50, 75) |
 
 ---
 

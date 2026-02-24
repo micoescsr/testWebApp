@@ -11,7 +11,7 @@ const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
 const samRoutes = require("./routes/samRoutes");
-//const captivePortalRoutes = require("./routes/captivePortalRoutes");
+const captivePortalRoutes = require("./routes/captivePortalRoutes");
 //const scanRoutes = require('./routes/scanRoutes');
 const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -45,6 +45,7 @@ app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect 
 //app.use('/api/rasPi_scan', scanRoutes);
 app.use('/api/device', deviceMgmtRoutes);
 app.use('/api/sam', samRoutes);
+app.use('/api/captivePortal', captivePortalRoutes);
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
@@ -318,6 +319,22 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
       console.error("Error inserting threat row", insertErr, payload);
     }
   }
+
+  // After all threat rows are persisted, compute + store risk score on the scan
+  const { computeRiskScore } = require("./utils/scoring");
+  const findings = threatRows.map(t => ({ score: t.score ?? 0 }));
+  const riskScore = computeRiskScore(findings);
+
+  const { error: scoreErr } = await supabaseClient
+    .from("scans")
+    .update({ risk_score: riskScore })
+    .eq("scan_id", scanId);
+
+  if (scoreErr) {
+    console.error("Failed to update scan risk_score", scoreErr);
+  } else {
+    console.log(`Scan ${scanId} risk_score updated to ${riskScore}`);
+  }
 }
 
 
@@ -450,191 +467,21 @@ app.get('/api/history/threats', async (req, res) => {
 });
 
 
-// Replace your server.js announcement/terms routes - DYNAMIC network_id support
-
-//======================================
-
-// Get current announcement (latest active for SPECIFIC network)
-app.get("/api/announcement", async (req, res) => {
-  try {
-    const { network_id } = req.query;  // 👈 NEW: from ?network_id=uuid
-    
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id query param required" });
-    }
-
-    const { data, error } = await supabaseClient
-      .from("captive_portal_announcements")
-      .select("*")
-      .eq("network_id", network_id)      // 👈 DYNAMIC: use query param
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    res.json(
-      data || {
-        announcement_id: null,
-        announcement_content: "",
-        created_at: null,
-      }
-    );
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch announcement" });
-  }
-});
-
-// Get announcement history for SPECIFIC network
-app.get("/api/announcement/history", async (req, res) => {
-  try {
-    const { network_id } = req.query;  // 👈 NEW
-    
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id query param required" });
-    }
-
-    const { data, error } = await supabaseClient
-      .from("captive_portal_announcements")
-      .select("*")
-      .eq("network_id", network_id)      // 👈 DYNAMIC
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch announcement history" });
-  }
-});
-
-// Publish new announcement (for SPECIFIC network)
-app.post("/api/announcement", async (req, res) => {
-  try {
-    const { content, network_id } = req.body;  // 👈 NEW: network_id from body
-
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id required in body" });
-    }
-
-    // Deactivate previous announcements for this network
-    await supabaseClient
-      .from("captive_portal_announcements")
-      .update({ is_active: false })
-      .eq("network_id", network_id);
-
-    const { data, error } = await supabaseClient
-      .from("captive_portal_announcements")
-      .insert({
-        announcement_content: content ?? "",
-        is_active: true,
-        network_id: network_id,            // 👈 DYNAMIC - no more NETWORK_ID
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to publish announcement" });
-  }
-});
-
-// 👈 FIXED: Terms now also per-network (matches your FK schema)
-app.get("/api/terms", async (req, res) => {
-  try {
-    const { network_id } = req.query;  // 👈 NEW
-    
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id query param required" });
-    }
-
-    const { data, error } = await supabaseClient
-      .from("terms_conditions")
-      .select("*")
-      .eq("network_id", network_id)      // 👈 Assuming you add this column
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    res.json(
-      data || {
-        tc_id: null,
-        content: "",
-        version: "",
-        created_at: null,
-      }
-    );
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch terms" });
-  }
-});
-
-app.get("/api/terms/history", async (req, res) => {
-  try {
-    const { network_id } = req.query;
-    
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id query param required" });
-    }
-
-    const { data, error } = await supabaseClient
-      .from("terms_conditions")
-      .select("*")
-      .eq("network_id", network_id)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch terms history" });
-  }
-});
-
-app.post("/api/terms", async (req, res) => {
-  try {
-    const { content, version, network_id } = req.body;  // 👈 NEW
-    
-    if (!network_id) {
-      return res.status(400).json({ error: "network_id required in body" });
-    }
-
-    // Deactivate previous terms for this network
-    await supabaseClient
-      .from("terms_conditions")
-      .update({ is_active: false })
-      .eq("network_id", network_id);
-
-    const { data, error } = await supabaseClient
-      .from("terms_conditions")
-      .insert({
-        content: content ?? "",
-        version: version ?? "v1",
-        is_active: true,
-        network_id: network_id,            // 👈 DYNAMIC
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to publish terms" });
-  }
-});
+// ─── Announcement / Terms / Tips / Risk / Portal Sync ────────────
+// Moved to controllers/captivePortalController.js + routes/captivePortalRoutes.js
+// Mounted at: app.use('/api/captivePortal', captivePortalRoutes)
+// Endpoints:
+//   GET  /api/captivePortal/announcement?network_id=
+//   GET  /api/captivePortal/announcement/history?network_id=
+//   POST /api/captivePortal/announcement            { content, network_id }
+//   GET  /api/captivePortal/terms?network_id=
+//   GET  /api/captivePortal/terms/history?network_id=
+//   POST /api/captivePortal/terms                   { content, version, network_id }
+//   GET  /api/captivePortal/tips?network_id=
+//   POST /api/captivePortal/tips                    { network_id, tips: [...] }
+//   GET  /api/captivePortal/risk-classifications
+//   GET  /api/captivePortal/summary?network_id=&score=
+//   POST /api/captivePortal/sync                    { network_id, score? }
 
 // NOTE: /enable-ap moved to routes/deviceMgmtRoutes.js
 

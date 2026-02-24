@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { supabaseClient } = require('../config/supabaseClient');
 const { validateScan, buildPortalPatchPayload } = require('../utils/scanValidation');
+const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
@@ -104,10 +105,10 @@ router.post('/enable-ap', async (req, res) => {
 			return res.status(400).json({ error: 'SCAN_REQUIRED', message: 'A recent scan is required to enable the access point.' });
 		}
 
-		// 1. Load scan row from DB
+		// 1. Load scan row from DB (includes pre-computed risk_score)
 		const { data: scan, error: scanErr } = await supabaseClient
 			.from('scans')
-			.select('scan_id, network_id, created_at')
+			.select('scan_id, network_id, created_at, risk_score')
 			.eq('scan_id', scan_id)
 			.single();
 
@@ -134,10 +135,17 @@ router.post('/enable-ap', async (req, res) => {
 			.single();
 		if (netErr) throw netErr;
 
-		// 4. If portal not yet initialized → seed it FIRST (before enabling AP)
+		// 4. If portal not yet initialized → seed DB content + push to FastAPI
 		if (!net.portal_initialized) {
 			console.log('Portal not initialized — seeding captive portal content...');
-			const patchPayload = buildPortalPatchPayload(net.bssid, net.ssid);
+
+			// Seed default content into DB tables (announcements, terms, tips)
+			await seedDefaultContent(network_id);
+
+			// Build payload from DB (risk_score fetched internally from scans table)
+			const patchPayload = await buildPortalPayloadFromDB(
+				network_id, net.bssid, net.ssid
+			);
 
 			const portalRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
 				method: 'POST',
@@ -150,10 +158,11 @@ router.post('/enable-ap', async (req, res) => {
 			}
 
 			// Mark initialized in DB
-			await supabaseClient
+			const { error: updErr } = await supabaseClient
 				.from('networks')
 				.update({ portal_initialized: true })
 				.eq('network_id', network_id);
+			if (updErr) throw updErr;
 
 			console.log('Portal initialized successfully for', patchPayload.network_id);
 		}
