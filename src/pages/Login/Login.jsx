@@ -42,9 +42,20 @@ const Login = () => {
 
       // 4) Check profile status (Bearer from memory now)
       const res = await api.get("webapp/users/profiles/me");
-      const profile = res.data;
+      const profile = res?.data ?? null;
 
-      if (profile.status !== "active") {
+      // Defensive: normalize possible response shapes and avoid reading
+      // properties from undefined (which caused the console error).
+      const status = profile?.status ?? profile?.profile?.status ?? null;
+      if (!status) {
+        await api.post("auth/logout");
+        setAccessToken(null);
+        setError("Unable to verify account status. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      if (status !== "active") {
         await api.post("auth/logout");
         setAccessToken(null);
 
@@ -52,10 +63,7 @@ const Login = () => {
           on_hold: "Your account is currently on hold. Please contact the administrator to restore access.",
           inactive: "Your account has been deactivated. Please contact the administrator.",
         };
-        setError(
-          statusMessages[profile.status] ||
-            "Your account is not active. Please contact the administrator."
-        );
+        setError(statusMessages[status] || "Your account is not active. Please contact the administrator.");
         setLoading(false);
         return;
       }
