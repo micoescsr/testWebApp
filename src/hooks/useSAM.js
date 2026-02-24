@@ -21,7 +21,7 @@ import { mappedThreats } from "../data/mockThreats";
         setLoading(true);
         setError(null);
 
-        const res = await fetch("http://localhost:3000/api/rasPi/networks_list");
+        const res = await fetch("http://localhost:3000/api/rasPi/networks_list/");
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} testing error`);
         }
@@ -140,16 +140,16 @@ export const useVulnerabilities = (bssid) => {
           )}`
         : `/api/webApp/vulnerabilities_latest`; */
 
-      const url = `/api/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
+      const url = `/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
         targetBssid
       )}`;
 
       console.log("[loadVulnerabilities] fetching:", url);
-      const res = await fetch(url);
+      const { default: api } = await import("../api/axios");
+      const res = await api.get(url);
       console.log("[loadVulnerabilities] response status:", res.status);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const body = await res.json();
+      const body = res.data;
       console.log("[loadVulnerabilities] response body:", JSON.stringify(body).slice(0, 500));
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");

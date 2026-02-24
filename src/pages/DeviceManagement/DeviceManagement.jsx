@@ -1,9 +1,11 @@
-// pages/DeviceManagement.jsx - FIXED with network_id + AP config display/input
+// pages/DeviceManagement.jsx - secure network_id via context + URL params
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import "./DeviceManagement.css";
 import Tabs from "../../components/common/Tabs/Tabs";
 import { useDevice } from "../../hooks/useDevice";
 import { useProfile } from "../../hooks/useProfile";
+import { useNetworkContext } from "../../context/NetworkContext";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
 import {
   getAnnouncement,
@@ -13,18 +15,14 @@ import {
 } from "../../api/deviceApi";
 
 const DeviceManagement = () => {
-  const [networkId, setNetworkId] = useState(null);
+  // ─── Resolve network_id: context first, URL param fallback ─────
+  const { networkId: ctxNetworkId } = useNetworkContext();
+  const [searchParams] = useSearchParams();
+  const networkId = ctxNetworkId || searchParams.get("network_id");
+
   const [activeTab, setActiveTab] = useState("announcement");
   const [isEditing, setIsEditing] = useState(false);
-
-  // 👈 NEW: Scan config state (displayed in AccessPointPanel)
-  const [networkConfig, setNetworkConfig] = useState({
-    ssid: "",
-    bssid: "",
-    channel: "",
-    encryption_type: "",
-  });
-  const [apPassword, setApPassword] = useState("");  // 👈 NEW: user input
+  const [apPassword, setApPassword] = useState("");
 
   const [announcementContent, setAnnouncementContent] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
@@ -36,26 +34,23 @@ const DeviceManagement = () => {
   const [termsCreatedAt, setTermsCreatedAt] = useState(null);
 
   const [contentLoading, setContentLoading] = useState(false);
-  const [configLoading, setConfigLoading] = useState(false);  // 👈 NEW
   const [contentError, setContentError] = useState(null);
 
   const { profile, profileLoading } = useProfile();
   const role = (profile?.role || "").toLowerCase();
 
+  // useDevice now owns network config fetching + AP toggle logic
   const {
     accessPoint,
+    networkConfig,
     apEnabled,
     loading,
+    configLoading,
     error,
     isEmpty,
     refetch,
     handleToggleAccessPoint,
-  } = useDevice();
-
-  const tabs = [
-    { label: "Announcement", value: "announcement" },
-    { label: "Terms and Conditions", value: "terms" },
-  ];
+  } = useDevice(networkId);
 
   const safeActiveTab = activeTab;
 
@@ -68,42 +63,18 @@ const DeviceManagement = () => {
       ? "Captive Portal Announcement"
       : "Terms and Conditions";
 
-   useEffect(() => {
-    const storedId = localStorage.getItem("lastNetworkId");
-    setNetworkId(storedId);
-  }, []);
-
-
-  // 👈 NEW: Load scan config from Supabase networks table
+  // Fetch announcement + terms when networkId is available
   useEffect(() => {
     if (!networkId) return;
 
-    const fetchNetworkConfig = async () => {
-      try {
-        setConfigLoading(true);
-        const res = await fetch(`/api/networks/${networkId}`);
-        const data = await res.json();
-        setNetworkConfig(data);
-      } catch (err) {
-        console.error("fetchNetworkConfig error:", err);
-      } finally {
-        setConfigLoading(false);
-      }
-    };
-
-    fetchNetworkConfig();
-  }, [networkId]);
-
-  // 👈 Existing announcement/terms useEffect
-  useEffect(() => {
     const fetchContent = async () => {
       try {
         setContentLoading(true);
         setContentError(null);
 
         const [annRes, termsRes] = await Promise.all([
-          getAnnouncement(networkId),  // 👈 Pass networkId
-          getTerms(networkId),         // 👈 Pass networkId
+          getAnnouncement(networkId),
+          getTerms(networkId),
         ]);
 
         const ann = annRes?.data || {};
@@ -125,16 +96,21 @@ const DeviceManagement = () => {
     };
 
     fetchContent();
-  }, [networkId]);  // 👈 Depend on networkId
+  }, [networkId]);
 
+  // ─── Guards ────────────────────────────────────────────────────
   if (profileLoading || configLoading) {
     return <p>Loading device config...</p>;
   }
-
-    // guard if none
   if (!networkId) {
     return <p>No network selected. Run a scan first.</p>;
   }
+
+  // ─── Tabs ──────────────────────────────────────────────────────
+  const tabs = [
+    { label: "Announcement", value: "announcement" },
+    { label: "Terms and Conditions", value: "terms" },
+  ];
 
   const currentContent =
     safeActiveTab === "announcement" ? announcementContent : termsContent;
@@ -206,28 +182,9 @@ const DeviceManagement = () => {
     return d.toLocaleDateString();
   };
 
-  const onToggleAP = () => {
-    if (!apEnabled && networkConfig.encryption_type !== 'Open' && !apPassword) {
-      return alert('Enter AP password for encrypted network');
-    }
-
-
-    const payload = {
-      network_id: networkId,
-      ssid: networkConfig.ssid,
-      bssid: networkConfig.bssid,
-      channel: networkConfig.channel,
-      encryption_type: networkConfig.encryption_type,
-      ...(networkConfig.encryption_type !== 'Open' && { ap_password: apPassword }),
-    };
-
-    // Call your existing toggle OR new enableAP endpoint
-    handleToggleAccessPoint(payload);  // Keep optimistic UI
-  };
-
   return (
     <div className="device-page">
-      <h1 className="page-title">Device - {networkConfig.ssid}</h1>  {/* 👈 Show SSID */}
+      <h1 className="page-title">Device - {networkConfig.ssid || "Unknown"}</h1>
 
       <Tabs
         tabs={tabs}
@@ -308,14 +265,14 @@ const DeviceManagement = () => {
         {/* 👈 UPDATED: Pass network config + password handling */}
         <AccessPointPanel
           accessPoint={accessPoint}
-          networkConfig={networkConfig}  // 👈 NEW
+          networkConfig={networkConfig}
           apPassword={apPassword}
-          setApPassword={setApPassword}  // 👈 NEW
+          setApPassword={setApPassword}
           loading={loading}
           error={error}
           isEmpty={isEmpty}
           onRetry={refetch}
-          onToggle={onToggleAP}  // 👈 Now sends full payload
+          onToggle={handleToggleAccessPoint}
         />
       </div>
     </div>

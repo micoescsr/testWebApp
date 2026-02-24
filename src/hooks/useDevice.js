@@ -1,149 +1,123 @@
-// hooks/useDevice.js - FIXED to accept config payload for AP enable
+// hooks/useDevice.js - orchestrate/apply + portal/patch flow
 import { useState, useEffect, useCallback } from "react";
-import { getNetworks, toggleAccessPoint } from "../api/rasPiApi";
-import axios from "axios";  // 👈 NEW: for /enable-ap calls
+import { toggleAP, patchPortal, getNetworkConfig } from "../api/deviceApi";
 
-export const useDevice = () => {
-  // toggle state of AP itself
-  const [apEnabled, setApEnabled] = useState(false);     // default: disabled
+export const useDevice = (networkId) => {
+  // AP toggle state
+  const [apEnabled, setApEnabled] = useState(false);
 
-  // info state (only relevant when enabled)
-  const [accessPoint, setAccessPoint] = useState(null);
+  // Network config fetched from DB
+  const [networkConfig, setNetworkConfig] = useState({
+    ssid: "",
+    bssid: "",
+    channel: "",
+    encryption_type: "",
+  });
+
+  // UI states
   const [loading, setLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isEmpty, setIsEmpty] = useState(false);
 
-  const fetchAccessPoint = useCallback(async () => {
-    if (!apEnabled) {
-      // if AP is disabled, do NOT call backend at all
-      return;
+  // Track whether portal/patch has been sent for this session
+  const [portalInitialized, setPortalInitialized] = useState(false);
+
+  // ─── Fetch network config from Supabase via rasPi/networks/:id ──
+  const fetchNetworkConfig = useCallback(async () => {
+    if (!networkId) return;
+    try {
+      setConfigLoading(true);
+      setError(null);
+      const res = await getNetworkConfig(networkId);
+      setNetworkConfig(res.data);
+    } catch (err) {
+      console.error("fetchNetworkConfig error:", err);
+      setError("Failed to load network configuration.");
+    } finally {
+      setConfigLoading(false);
     }
+  }, [networkId]);
+
+  useEffect(() => {
+    fetchNetworkConfig();
+    // Reset AP state when network changes (user did a new scan)
+    setApEnabled(false);
+    setPortalInitialized(false);
+  }, [fetchNetworkConfig]);
+
+  // ─── Toggle AP → orchestrate/apply + portal/patch on first enable ──
+  const handleToggleAccessPoint = async (apPassword = "") => {
+    const nextState = !apEnabled;
+    const apStatus = nextState ? "enable" : "disable";
+
+    // Optimistically flip UI
+    setApEnabled(nextState);
+    setLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
-      setIsEmpty(false);
-
-      const res = await getNetworks(); // GET /rasPi/networks
-      const data = res.data;
-
-      if (!data || data.length === 0) {
-        // AP enabled but no network configured
-        setIsEmpty(true);
-        setAccessPoint(null);
-        return;
-      }
-
-      const formattedAccessPoint = {
-        currentNetwork: data[0].SSID ?? "N/A",
-        accessPointNetwork: data[0].SSID ?? "N/A",
-        status: data[0].Status ?? "Active",
-        connectedClients: data[0].ConnectedClients ?? "N/A",
-        enabled: true,
+      // 1. Call orchestrate/apply (enable or disable)
+      const orchestratePayload = {
+        network_id: networkId,
+        ssid: networkConfig.ssid,
+        bssid: networkConfig.bssid,
+        channel: networkConfig.channel,
+        encryption_type: networkConfig.encryption_type,
+        ap_status: apStatus,
+        ...(apPassword && { ap_password: apPassword }),
       };
 
-      setAccessPoint(formattedAccessPoint);
-    } catch (err) {
-      console.error("getNetworks failed:", err);
-      const status = err?.response?.status;
+      console.log(`Sending orchestrate/apply (${apStatus}):`, orchestratePayload);
+      const apRes = await toggleAP(orchestratePayload);
+      console.log("orchestrate/apply response:", apRes.data);
 
-      if (status === 404) {
-        setIsEmpty(true);
-        // keep accessPoint as-is (enabled) or set a minimal enabled object
-        setAccessPoint((prev) => ({
-          currentNetwork: "N/A",
-          accessPointNetwork: "N/A",
-          status: "Active",
-          connectedClients: "N/A",
-          enabled: true,
-        }));
-        setError(null);
-      } else if (status >= 500 && status < 600) {
-        setError("Unable to connect to the device network. Please try again.");
-        // do NOT setAccessPoint(null) here
-      } else {
-        setError("Access point info is currently unavailable.");
-        setAccessPoint(null);
-        setIsEmpty(false);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [apEnabled]);
-
-  // only refetch when AP is enabled and we explicitly call refetch
-  useEffect(() => {
-    if (apEnabled) {
-      fetchAccessPoint();
-    } else {
-      // when disabled, clear info/error states
-      setAccessPoint(null);
-      setError(null);
-      setIsEmpty(false);
-      setLoading(false);
-    }
-  }, [apEnabled, fetchAccessPoint]);
-
-  // 👈 FIXED: Accept optional configPayload for full AP enable
-  const handleToggleAccessPoint = async (configPayload = null) => {
-    const nextState = !apEnabled;
-
-    // 1) Optimistically flip the local toggle
-    setApEnabled(nextState);
-
-    // 2) Immediately reflect that in accessPoint so the UI moves
-    setAccessPoint((prev) => ({
-      currentNetwork: prev?.currentNetwork ?? "N/A",
-      accessPointNetwork: prev?.accessPointNetwork ?? "N/A",
-      status: nextState ? "Active" : "Disabled",
-      connectedClients: prev?.connectedClients ?? "N/A",
-      enabled: nextState,
-    }));
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      // 👈 NEW: If enabling WITH config, send full payload to /enable-ap
-      if (nextState && configPayload) {
-        console.log('Enabling AP with config:', configPayload);
-        const enableRes = await axios.post('/api/device/enable-ap', configPayload);
-        console.log('AP enable response:', enableRes.data);
-        
-        // Also call original toggle if needed (for basic on/off)
-        await toggleAccessPoint(true);
-      } else {
-        // Original toggle logic (basic enable/disable)
-        const res = await toggleAccessPoint(nextState);
-        console.log("Toggle AP response data:", res.data);
-      }
-
-      // 3) If enabling, try to load real info (may 500, that's fine)
-      if (nextState) {
-        await fetchAccessPoint();
+      // 2. If enabling for the first time, also send portal/patch (hardcoded content)
+      if (nextState && !portalInitialized) {
+        console.log("First AP enable – sending portal/patch...");
+        const portalRes = await patchPortal({
+          network_id: networkId,
+          bssid: networkConfig.bssid,
+          ssid: networkConfig.ssid,
+        });
+        console.log("portal/patch response:", portalRes.data);
+        setPortalInitialized(true);
       }
     } catch (err) {
-      console.error("Toggle AP failed:", err);
-      setError("Failed to contact the device. Access point state may be stale.");
-      // IMPORTANT: do NOT revert apEnabled here, we keep the UI as-is
+      console.error("AP toggle failed:", err);
+      setError("Failed to toggle access point. Check device connection.");
+      // Keep UI in attempted state so user sees what happened
     } finally {
       setLoading(false);
     }
   };
 
-  // when disabled, we still want to show a disabled panel (not "empty")
-  const effectiveAccessPoint =
-    apEnabled && accessPoint
-      ? { ...accessPoint, enabled: true }
-      : { currentNetwork: "N/A", accessPointNetwork: "N/A", status: "Disabled", connectedClients: "N/A", enabled: false };
+  // ─── Effective access-point object for the panel ──────────────
+  const effectiveAccessPoint = apEnabled
+    ? {
+        currentNetwork: networkConfig.ssid || "N/A",
+        accessPointNetwork: networkConfig.ssid || "N/A",
+        status: "Active",
+        connectedClients: "N/A",
+        enabled: true,
+      }
+    : {
+        currentNetwork: networkConfig.ssid || "N/A",
+        accessPointNetwork: networkConfig.ssid || "N/A",
+        status: "Disabled",
+        connectedClients: "N/A",
+        enabled: false,
+      };
 
   return {
     accessPoint: effectiveAccessPoint,
+    networkConfig,
     apEnabled,
     loading,
+    configLoading,
     error,
     isEmpty,
-    refetch: fetchAccessPoint,
-    handleToggleAccessPoint,  // 👈 Now accepts configPayload
+    refetch: fetchNetworkConfig,
+    handleToggleAccessPoint,
   };
 };

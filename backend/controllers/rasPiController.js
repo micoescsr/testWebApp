@@ -1,6 +1,6 @@
 // controllers/rasPiController.js
 const rasPiService = require("../services/rasPiService");
-const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership.tail781e52.ts.net:8000";
+const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const { supabaseClient } = require("../config/supabaseClient");
 
   // --- 1. TRIGGER SCAN: ONLY TALKS TO FASTAPI, NO DB ---

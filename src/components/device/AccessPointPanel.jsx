@@ -1,16 +1,24 @@
-// components/device/AccessPointPanel.jsx - FIXED with network config display + conditional password
+// components/device/AccessPointPanel.jsx - AP config display + toggle
 const AccessPointPanel = ({
   accessPoint,
-  networkConfig,      // 👈 NEW: from DeviceManagement (scan data)
-  apPassword,         // 👈 NEW: password state
-  setApPassword,      // 👈 NEW: password setter
+  networkConfig,
+  apPassword,
+  setApPassword,
   loading,
   error,
   isEmpty,
   onRetry,
-  onToggle,
+  onToggle,       // called with (apPassword) by this component
 }) => {
-  const isEncrypted = networkConfig?.encryption_type !== 'Open';
+  const isEncrypted = networkConfig?.encryption_type !== "Open";
+
+  const handleToggleClick = () => {
+    // Validate password for encrypted networks before enabling
+    if (!accessPoint?.enabled && isEncrypted && !apPassword) {
+      return alert("Enter AP password for encrypted network");
+    }
+    onToggle(apPassword);
+  };
 
   return (
     <div className="right-panel">
@@ -24,7 +32,7 @@ const AccessPointPanel = ({
               type="checkbox"
               checked={accessPoint?.enabled ?? false}
               disabled={loading}
-              onChange={onToggle}
+              onChange={handleToggleClick}
             />
             <span className="slider"></span>
           </label>
