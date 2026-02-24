@@ -1,0 +1,374 @@
+/* ScanDetailsDrawer.css */
+
+/* Backdrop */
+.drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Drawer panel */
+.scan-details-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 95vw;
+  height: 100vh;
+  background-color: #f9fafb;
+  z-index: 1000;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.scan-details-drawer.open {
+  transform: translateX(0);
+}
+
+/* Drawer header */
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px 20px 12px;
+  background-color: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.drawer-header-left h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 6px;
+}
+
+.drawer-meta {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.drawer-meta span {
+  display: block;
+}
+
+.drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #374151;
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.drawer-close:hover {
+  background-color: #1f2937;
+}
+
+/* KPI Section */
+.drawer-kpi-section {
+  padding: 16px 20px;
+  background-color: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.kpi-risk-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #1f2937;
+  color: #fff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+
+.kpi-risk-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.kpi-risk-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.kpi-risk-badge.critical {
+  background-color: #b91c1c;
+  color: #fff;
+}
+
+.kpi-risk-badge.high {
+  background-color: #f97316;
+  color: #fff;
+}
+
+.kpi-risk-badge.medium {
+  background-color: #eab308;
+  color: #fff;
+}
+
+.kpi-risk-badge.low {
+  background-color: #16a34a;
+  color: #fff;
+}
+
+.kpi-risk-number {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* KPI grid (2x2 cards) */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kpi-card {
+  background-color: #f3f4f6;
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.kpi-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b7280;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.kpi-card-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  word-break: break-word;
+}
+
+/* Drawer tabs */
+.drawer-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 14px 20px;
+  background-color: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.drawer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid #d1d5db;
+  background-color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.drawer-tab:hover {
+  border-color: #9ca3af;
+}
+
+.drawer-tab.active {
+  background-color: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+
+.drawer-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 5px;
+}
+
+.drawer-tab.active .drawer-tab-count {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.drawer-tab:not(.active) .drawer-tab-count {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+/* Finding cards list */
+.drawer-findings {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+}
+
+.finding-card {
+  background-color: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.finding-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.finding-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.finding-card-id {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 2px 0 0;
+}
+
+.finding-severity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.finding-severity-chip.critical {
+  background-color: #b91c1c;
+}
+
+.finding-severity-chip.high {
+  background-color: #f97316;
+}
+
+.finding-severity-chip.medium {
+  background-color: #eab308;
+}
+
+.finding-severity-chip.low {
+  background-color: #16a34a;
+}
+
+.finding-severity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.finding-cvss {
+  font-size: 13px;
+  color: #374151;
+  text-align: right;
+  margin-bottom: 10px;
+}
+
+/* Finding detail rows */
+.finding-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.finding-detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.finding-detail-label {
+  color: #6b7280;
+}
+
+.finding-detail-value {
+  color: #111827;
+  font-weight: 500;
+  text-align: right;
+}
+
+.finding-detail-value.status-cleared {
+  color: #9ca3af;
+}
+
+/* View Full JSON link */
+.finding-view-json {
+  display: block;
+  text-align: right;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2563eb;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.finding-view-json:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* Empty state */
+.drawer-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .scan-details-drawer {
+    width: 100vw;
+  }
+}
