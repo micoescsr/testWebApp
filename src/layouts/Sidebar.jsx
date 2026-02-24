@@ -3,12 +3,14 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Sidebar.css";
 import { useProfile } from "../hooks/useProfile";
+import { useNetworkContext } from "../context/NetworkContext";
 
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
-  const { profile } = useProfile(); // get current user profile
+  const { profile } = useProfile();
+  const { networkId } = useNetworkContext();
   const role = profile?.role;
 
   const handleLogout = () => {
@@ -23,7 +25,13 @@ const Sidebar = () => {
       icon: "⚡",
       label: "Security Assessment Management",
     },
-    { path: "/device-management", icon: "📱", label: "Device Management" },
+    {
+      path: networkId
+        ? `/device-management?network_id=${networkId}`
+        : "/device-management",
+      icon: "📱",
+      label: "Device Management",
+    },
     { path: "/accounts-audit", icon: "📁", label: "Accounts & Audit", superadminOnly: true },
     { path: "/history", icon: "📊", label: "History" },
     { path: "/profile", icon: "👤", label: "Profile" },

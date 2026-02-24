@@ -12,6 +12,7 @@ import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
 import TestAuth from "./pages/TestAuth/TestAuth";
 import api, { setAccessToken, getAccessToken } from "./api/axios";
+import { NetworkProvider } from "./context/NetworkContext";
 import "./App.css";
 
 function App() {
@@ -47,6 +48,7 @@ function App() {
   const isAuthenticated = !!getAccessToken();
 
   return (
+    <NetworkProvider>
     <Router>
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
@@ -82,6 +84,7 @@ function App() {
         />
       </Routes>
     </Router>
+    </NetworkProvider>
   );
 }
 

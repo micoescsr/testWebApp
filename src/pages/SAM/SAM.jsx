@@ -13,8 +13,10 @@ import {
 } from "../../hooks/useSAM";
 import { triggerScan, sendMetadata } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
+import { useNetworkContext } from "../../context/NetworkContext";
 
 const SAM = () => {
+  const { setNetworkId } = useNetworkContext();
   const [activeTab, setActiveTab] = useState("vulnerabilities");
   const [lastScannedNetwork, setLastScannedNetwork] = useState(null);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
@@ -80,36 +82,24 @@ const SAM = () => {
   const handleSelectNetwork = async (net) => {
     setSelectedNetwork(net);
 
-    // Fetch metadata with encoded query and cancellation support
-    const controller = new AbortController();
+    // Fetch metadata using the authenticated axios instance
     try {
-      const url = `/api/webapp/network_metadata?bssid=${encodeURIComponent(
-        net.bssid || ""
-      )}`;
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) {
-        console.warn(`Metadata fetch failed: ${res.status}`);
-        setLocationMeta({ city: "", province: "", notes: "" });
-        return;
-      }
+      const { default: api } = await import("../../api/axios");
+      const res = await api.get("/webapp/network_metadata", {
+        params: { bssid: net.bssid || "" },
+      });
 
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        setLocationMeta({ city: "", province: "", notes: "" });
-        return;
-      }
-
-      const data = await res.json();
+      const data = res.data;
       setLocationMeta({
         city: data.city || "",
         province: data.province || "",
         notes: data.notes || "",
       });
     } catch (e) {
-      if (e.name === "AbortError") {
+      if (e.name === "CanceledError") {
         console.log("Metadata fetch aborted");
       } else {
-        console.error("Failed to load metadata:", e);
+        console.warn("Metadata fetch failed:", e?.response?.status || e.message);
       }
       setLocationMeta({ city: "", province: "", notes: "" });
     }
@@ -170,8 +160,8 @@ const SAM = () => {
       const saveData = saveRes.data;
       const networkId = saveData.network_id; // From Supabase upsert
 
-       // ✅ Store for later use by DeviceManagement
-      localStorage.setItem("lastNetworkId", networkId);
+       // Store in React context (in-memory, not localStorage)
+      setNetworkId(networkId);
 
       alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
       
