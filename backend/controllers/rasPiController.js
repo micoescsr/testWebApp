@@ -169,6 +169,7 @@ async function saveNetworkMetadataScan(req, res) {
     return res.status(201).json({
       status: "OK",
       network_id: network.network_id,
+      scan_id: scanRow?.scan_id || null,
       network,
     });
   } catch (err) {

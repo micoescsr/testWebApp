@@ -1,4 +1,4 @@
-// src/api/deviceApi.js - network_id aware + orchestrate/apply + portal/patch
+// src/api/deviceApi.js - network_id + scan_id aware; backend owns all config
 import axios from "axios";
 
 const api = axios.create({
@@ -22,15 +22,15 @@ export const getTermsHistory = (networkId) =>
 export const publishTerms = (content, version, networkId) =>
   api.post("/terms", { content, version, network_id: networkId });
 
-// ─── AP Toggle → orchestrate/apply via backend proxy ─────────────
-// payload: { network_id, ssid, bssid, channel, encryption_type, ap_password?, ap_status }
+// ─── AP Toggle → backend validates scan + loads config from DB ───
+// payload: { network_id, scan_id?, ap_status: "enable"|"disable", ap_password? }
+//   scan_id required for enable only
 export const toggleAP = (payload) =>
   api.post("/device/enable-ap", payload);
 
-// ─── Portal Patch → portal/patch via backend proxy ───────────────
-// payload: { network_id, bssid, ssid, announcement_text?, terms_text?, terms_version? }
-export const patchPortal = (payload) =>
-  api.post("/device/portal-patch", payload);
+// ─── AP State from DB (source of truth) ──────────────────────────
+export const getApState = (networkId) =>
+  api.get(`/device/ap-state/${networkId}`);
 
 // ─── Network Config (for AP panel display) ───────────────────────
 export const getNetworkConfig = (networkId) =>

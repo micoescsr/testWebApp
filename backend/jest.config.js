@@ -10,6 +10,7 @@ module.exports = {
     "middleware/**/*.js",
     "services/**/*.js",
     "validators/**/*.js",
+    "routes/**/*.js",
     "!**/node_modules/**",
   ],
   coverageDirectory: "coverage",

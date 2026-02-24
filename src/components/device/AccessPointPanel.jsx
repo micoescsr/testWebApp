@@ -1,4 +1,6 @@
-// components/device/AccessPointPanel.jsx - AP config display + toggle
+// components/device/AccessPointPanel.jsx - AP config + scan validation + toggle
+import { useNavigate } from "react-router-dom";
+
 const AccessPointPanel = ({
   accessPoint,
   networkConfig,
@@ -6,14 +8,18 @@ const AccessPointPanel = ({
   setApPassword,
   loading,
   error,
-  isEmpty,
+  scanError,        // "SCAN_REQUIRED" | "SCAN_TOO_OLD" | "SCAN_NETWORK_MISMATCH" | null
+  hasScanId,        // whether a scan_id is available in context
   onRetry,
-  onToggle,       // called with (apPassword) by this component
+  onToggle,         // called with (apPassword)
 }) => {
+  const navigate = useNavigate();
   const isEncrypted = networkConfig?.encryption_type !== "Open";
 
+  // Toggle is disabled while loading, or when enabling without a scan
+  const toggleDisabled = loading || (!accessPoint?.enabled && !hasScanId);
+
   const handleToggleClick = () => {
-    // Validate password for encrypted networks before enabling
     if (!accessPoint?.enabled && isEncrypted && !apPassword) {
       return alert("Enter AP password for encrypted network");
     }
@@ -22,7 +28,6 @@ const AccessPointPanel = ({
 
   return (
     <div className="right-panel">
-      {/* 👈 Toggle stays the same */}
       <div className="side-card">
         <h3>Device Access Point</h3>
         <div className="toggle-row">
@@ -31,18 +36,48 @@ const AccessPointPanel = ({
             <input
               type="checkbox"
               checked={accessPoint?.enabled ?? false}
-              disabled={loading}
+              disabled={toggleDisabled}
               onChange={handleToggleClick}
             />
             <span className="slider"></span>
           </label>
         </div>
+
+        {/* Scan required banner */}
+        {!hasScanId && !accessPoint?.enabled && (
+          <div className="state-message warning-state">
+            <p>Scan required to enable Access Point.</p>
+            <small>Run a scan to get the latest network configuration.</small>
+            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
+              Go to Scan
+            </button>
+          </div>
+        )}
+
+        {/* Scan validation errors from backend */}
+        {scanError === "SCAN_TOO_OLD" && (
+          <div className="state-message warning-state">
+            <p>Scan is outdated.</p>
+            <small>Run a new scan before enabling the access point.</small>
+            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
+              Scan Again
+            </button>
+          </div>
+        )}
+        {scanError === "SCAN_NETWORK_MISMATCH" && (
+          <div className="state-message warning-state">
+            <p>Scan does not match this network.</p>
+            <small>The selected scan belongs to a different network. Run a new scan.</small>
+            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
+              Scan Again
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="side-card">
         <h3>Access Point Info</h3>
 
-        {/* 👈 NEW: Always show scan config (even when disabled) */}
         <div className="config-section">
           <div className="info-row">
             <span>SSID</span>
@@ -60,8 +95,7 @@ const AccessPointPanel = ({
             <span>Encryption</span>
             <span>{networkConfig?.encryption_type || "N/A"}</span>
           </div>
-          
-          {/* 👈 NEW: Conditional AP Password input (only for encrypted) */}
+
           {isEncrypted && (
             <div className="info-row">
               <span>AP Password</span>
@@ -77,19 +111,18 @@ const AccessPointPanel = ({
           {!isEncrypted && (
             <div className="info-row">
               <span>AP Password</span>
-              <span>✅ Open network - no password</span>
+              <span>Open network — no password needed</span>
             </div>
           )}
         </div>
 
-        {/* 👈 Existing loading/error states */}
         {loading && (
           <div className="state-message loading-state">
-            <p>Loading AP status...</p>
+            <p>Updating AP status...</p>
           </div>
         )}
 
-        {error && !isEmpty && (
+        {error && !scanError && (
           <div className="state-message error-state">
             <p>{error}</p>
             <button onClick={onRetry} disabled={loading}>
@@ -98,48 +131,35 @@ const AccessPointPanel = ({
           </div>
         )}
 
-        {/* AP disabled */}
-        {!loading && !error && !isEmpty && accessPoint.enabled === false && (
+        {!loading && !error && !scanError && accessPoint?.enabled === false && (
           <div className="state-message empty-state">
             <p>Access point is currently disabled.</p>
             <small>
-              Enable to activate with above configuration +{isEncrypted ? ' password' : ''}
+              Enable to activate with above configuration{isEncrypted ? " + password" : ""}
             </small>
           </div>
         )}
 
-        {/* AP enabled but no config (404) */}
-        {!loading && !error && isEmpty && (
-          <div className="state-message empty-state">
-            <p>No access point status available.</p>
-            <small>Device may be configuring...</small>
-          </div>
+        {!loading && !error && accessPoint?.enabled === true && (
+          <>
+            <div className="info-row">
+              <span>Current Network</span>
+              <span>{accessPoint.currentNetwork ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Access Point Network</span>
+              <span>{accessPoint.accessPointNetwork ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Access Point Status</span>
+              <span>{accessPoint.status ?? "N/A"}</span>
+            </div>
+            <div className="info-row">
+              <span>Connected Clients</span>
+              <span>{accessPoint.connectedClients ?? "N/A"}</span>
+            </div>
+          </>
         )}
-
-        {/* AP enabled + runtime data */}
-        {!loading &&
-          !error &&
-          !isEmpty &&
-          accessPoint.enabled === true && (
-            <>
-              <div className="info-row">
-                <span>Current Network</span>
-                <span>{accessPoint.currentNetwork ?? "N/A"}</span>
-              </div>
-              <div className="info-row">
-                <span>Access Point Network</span>
-                <span>{accessPoint.accessPointNetwork ?? "N/A"}</span>
-              </div>
-              <div className="info-row">
-                <span>Access Point Status</span>
-                <span>{accessPoint.status ?? "N/A"}</span>
-              </div>
-              <div className="info-row">
-                <span>Connected Clients</span>
-                <span>{accessPoint.connectedClients ?? "N/A"}</span>
-              </div>
-            </>
-          )}
       </div>
     </div>
   );

@@ -2,8 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseClient } = require('../config/supabaseClient');
+const { validateScan, buildPortalPatchPayload } = require('../utils/scanValidation');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 
 // ─── Legacy toggle signal (keep for backward compat) ────────────
 router.post('/signal_ap', async (req, res) => {
@@ -20,126 +22,173 @@ router.post('/signal_ap', async (req, res) => {
 	}
 });
 
-// ─── AP Toggle → proxies to orchestrate/apply ───────────────────
+// ─── GET AP state from DB (source of truth) ─────────────────────
+// GET /api/device/ap-state/:networkId
+router.get('/ap-state/:networkId', async (req, res) => {
+	try {
+		const { networkId } = req.params;
+
+		const { data, error } = await supabaseClient
+			.from('networks')
+			.select('ap_enabled, portal_initialized')
+			.eq('network_id', networkId)
+			.single();
+
+		if (error) throw error;
+
+		return res.json({
+			ap_enabled: data.ap_enabled ?? false,
+			portal_initialized: data.portal_initialized ?? false,
+		});
+	} catch (err) {
+		console.error('deviceMgmt /ap-state error:', err);
+		return res.status(500).json({ error: 'Failed to fetch AP state', detail: err.message });
+	}
+});
+
+// ─── AP Toggle → orchestrate/apply ───────────────────────────────
 // POST /api/device/enable-ap
-// Body: { network_id, ssid, bssid, channel, encryption_type, ap_password?, ap_status }
-//   ap_status: "enable" | "disable"
+// Body: { network_id, scan_id?, ap_status, ap_password? }
+//   scan_id required only for enable (not disable)
+//   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
 router.post('/enable-ap', async (req, res) => {
 	try {
-		const { network_id, ssid, bssid, channel, encryption_type, ap_password, ap_status } = req.body;
+		const { network_id, scan_id, ap_status, ap_password } = req.body;
 
-		if (!network_id || !ssid || !bssid || channel === undefined || !encryption_type || !ap_status) {
+		if (!network_id || !ap_status || !['enable', 'disable'].includes(ap_status)) {
 			return res.status(400).json({
-				error: 'Missing required fields (network_id, ssid, bssid, channel, encryption_type, ap_status)',
+				error: 'Missing or invalid fields (network_id, ap_status: "enable"|"disable")',
 			});
 		}
 
-		// 1. Upsert network row in Supabase
-		const { data: network, error: upsertError } = await supabaseClient
-			.from('networks')
-			.upsert(
-				{ network_id, ssid, bssid, channel, encryption_status: encryption_type },
-				{ onConflict: 'network_id' }
-			)
-			.select('network_id')
+		// ── DISABLE path (no scan_id needed) ─────────────────────
+		if (ap_status === 'disable') {
+			// Load network config from DB
+			const { data: net, error: netErr } = await supabaseClient
+				.from('networks')
+				.select('ssid, bssid, channel, encryption_status')
+				.eq('network_id', network_id)
+				.single();
+			if (netErr) throw netErr;
+
+			const orchestratePayload = {
+				ssid: net.ssid,
+				bssid: net.bssid,
+				channel: net.channel,
+				encryption_type: net.encryption_status,
+				ap_status: 'disable',
+			};
+
+			console.log('Forwarding orchestrate/apply (disable):', orchestratePayload);
+			const fastapiRes = await fetch(`${FASTAPI_BASE}/orchestrate/apply`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(orchestratePayload),
+			});
+			const fastapiData = await fastapiRes.json().catch(() => null);
+			if (!fastapiRes.ok) {
+				throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
+			}
+
+			// Persist ap_enabled = false
+			await supabaseClient
+				.from('networks')
+				.update({ ap_enabled: false })
+				.eq('network_id', network_id);
+
+			return res.json({ status: 'success', ap_status: 'disable', fastapi: fastapiData });
+		}
+
+		// ── ENABLE path (scan_id required + validated) ───────────
+		if (!scan_id) {
+			return res.status(400).json({ error: 'SCAN_REQUIRED', message: 'A recent scan is required to enable the access point.' });
+		}
+
+		// 1. Load scan row from DB
+		const { data: scan, error: scanErr } = await supabaseClient
+			.from('scans')
+			.select('scan_id, network_id, created_at')
+			.eq('scan_id', scan_id)
 			.single();
 
-		if (upsertError) throw upsertError;
+		if (scanErr) {
+			// DB error → treat as scan not found
+			return res.status(400).json({ error: 'SCAN_REQUIRED', message: 'Scan not found. Run a new scan first.' });
+		}
 
-		// 2. Forward to FastAPI orchestrate/apply
+		// 2. Validate scan (exists + belongs to network + fresh)
+		const validation = validateScan(scan, network_id, SCAN_MAX_AGE_SECONDS);
+		if (!validation.valid) {
+			return res.status(400).json({
+				error: validation.error,
+				message: validation.message,
+				...(validation.extras || {}),
+			});
+		}
+
+		// 3. Load network config from DB (never trust frontend)
+		const { data: net, error: netErr } = await supabaseClient
+			.from('networks')
+			.select('ssid, bssid, channel, encryption_status, portal_initialized')
+			.eq('network_id', network_id)
+			.single();
+		if (netErr) throw netErr;
+
+		// 4. If portal not yet initialized → seed it FIRST (before enabling AP)
+		if (!net.portal_initialized) {
+			console.log('Portal not initialized — seeding captive portal content...');
+			const patchPayload = buildPortalPatchPayload(net.bssid, net.ssid);
+
+			const portalRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(patchPayload),
+			});
+			const portalData = await portalRes.json().catch(() => null);
+			if (!portalRes.ok) {
+				throw new Error(portalData?.detail || `portal/patch error: ${portalRes.status}`);
+			}
+
+			// Mark initialized in DB
+			await supabaseClient
+				.from('networks')
+				.update({ portal_initialized: true })
+				.eq('network_id', network_id);
+
+			console.log('Portal initialized successfully for', patchPayload.network_id);
+		}
+
+		// 5. Enable AP via orchestrate/apply (config from DB, not frontend)
 		const orchestratePayload = {
-			ssid,
-			bssid,
-			channel,
-			encryption_type,
+			ssid: net.ssid,
+			bssid: net.bssid,
+			channel: net.channel,
+			encryption_type: net.encryption_status,
 			...(ap_password && { ap_password }),
-			ap_status,   // "enable" or "disable"
+			ap_status: 'enable',
 		};
 
-		console.log('Forwarding to orchestrate/apply:', orchestratePayload);
-
+		console.log('Forwarding orchestrate/apply (enable):', orchestratePayload);
 		const fastapiRes = await fetch(`${FASTAPI_BASE}/orchestrate/apply`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(orchestratePayload),
 		});
-
 		const fastapiData = await fastapiRes.json().catch(() => null);
-
 		if (!fastapiRes.ok) {
 			throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
 		}
 
-		return res.json({ status: 'success', network_id, ap_status, fastapi: fastapiData });
+		// 6. Persist ap_enabled = true
+		await supabaseClient
+			.from('networks')
+			.update({ ap_enabled: true })
+			.eq('network_id', network_id);
+
+		return res.json({ status: 'success', ap_status: 'enable', network_id, fastapi: fastapiData });
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
 		return res.status(500).json({ error: 'AP toggle failed', detail: err.message });
-	}
-});
-
-// ─── Portal Patch (first initialization / hardcoded content) ────
-// POST /api/device/portal-patch
-// Body: { network_id, bssid, ssid, announcement_text?, terms_text?, terms_version? }
-router.post('/portal-patch', async (req, res) => {
-	try {
-		const { network_id, bssid, ssid, announcement_text, terms_text, terms_version } = req.body;
-
-		if (!bssid || !ssid) {
-			return res.status(400).json({ error: 'bssid and ssid are required' });
-		}
-
-		// FastAPI expects network_id as "BSSID | SSID"
-		const portalNetworkId = `${bssid} | ${ssid}`;
-		const now = Math.floor(Date.now() / 1000);
-
-		const patchPayload = {
-			network_id: portalNetworkId,
-			patch: {
-				portal_content: {
-					announcements: {
-						updated_at: now,
-						announcement_text: announcement_text || "Welcome to this secured network. Stay safe online.",
-					},
-					terms: {
-						version: terms_version || new Date().toISOString().slice(0, 10),
-						updated_at: now,
-						text: terms_text || "By connecting to this network, you agree to our terms of service and acceptable use policy.",
-					},
-					tips: {
-						updated_at: now,
-						items: [
-							"Use a VPN when possible.",
-							"Avoid banking on public Wi-Fi.",
-							"Keep your device software up to date.",
-						],
-					},
-				},
-				security: {
-					score: 0,
-					risk_level: "NOT YET ASSESSED",
-					updated_at: now,
-				},
-			},
-		};
-
-		console.log('Forwarding to portal/patch:', JSON.stringify(patchPayload, null, 2));
-
-		const fastapiRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(patchPayload),
-		});
-
-		const fastapiData = await fastapiRes.json().catch(() => null);
-
-		if (!fastapiRes.ok) {
-			throw new Error(fastapiData?.detail || `portal/patch error: ${fastapiRes.status}`);
-		}
-
-		return res.json({ status: 'success', network_id: portalNetworkId, fastapi: fastapiData });
-	} catch (err) {
-		console.error('deviceMgmt /portal-patch error:', err);
-		return res.status(500).json({ error: 'Portal patch failed', detail: err.message });
 	}
 });
 

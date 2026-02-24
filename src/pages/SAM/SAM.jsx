@@ -16,7 +16,7 @@ import FindingDetailModal from "../../components/modals/FindingDetailModal/Findi
 import { useNetworkContext } from "../../context/NetworkContext";
 
 const SAM = () => {
-  const { setNetworkId } = useNetworkContext();
+  const { setNetworkScan } = useNetworkContext();
   const [activeTab, setActiveTab] = useState("vulnerabilities");
   const [lastScannedNetwork, setLastScannedNetwork] = useState(null);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
@@ -159,9 +159,10 @@ const SAM = () => {
       // 👈 NEW: Get network_id from response + navigate!
       const saveData = saveRes.data;
       const networkId = saveData.network_id; // From Supabase upsert
+      const scanId = saveData.scan_id;        // From Supabase insert
 
-       // Store in React context (in-memory, not localStorage)
-      setNetworkId(networkId);
+       // Store both in React context (in-memory, not localStorage)
+      setNetworkScan(networkId, scanId);
 
       alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
       
