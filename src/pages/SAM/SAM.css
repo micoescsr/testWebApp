@@ -61,6 +61,7 @@
   width: 100%;
   border-collapse: collapse;
   background: #f9f9f9;
+  table-layout: fixed;
 }
 
 .sam-table th {
@@ -71,6 +72,7 @@
   text-align: left;
   padding: 14px 18px;
   border-bottom: 1px solid #e2e2e2;
+  width: 20%;
 }
 
 .sam-table td {
@@ -80,6 +82,18 @@
   background: #fff;
   vertical-align: middle;
 }
+
+/* Even column widths for 5-column layout */
+.sam-table th:nth-child(1),
+.sam-table td:nth-child(1) { width: 12%; text-align: center; }
+.sam-table th:nth-child(2),
+.sam-table td:nth-child(2) { width: 28%; }
+.sam-table th:nth-child(3),
+.sam-table td:nth-child(3) { width: 16%; text-align: center; }
+.sam-table th:nth-child(4),
+.sam-table td:nth-child(4) { width: 28%; }
+.sam-table th:nth-child(5),
+.sam-table td:nth-child(5) { width: 16%; text-align: right; padding-right: 22px; }
 
 .sam-table tbody tr {
   height: 56px;
