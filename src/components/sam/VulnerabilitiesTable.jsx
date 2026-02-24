@@ -107,7 +107,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
   const totalCount = vulnerabilities.length;
 
   // Column count for the group header colspan
-  const COL_COUNT = 6;
+  const COL_COUNT = 5;
 
   return (
     <div className="sam-card">
@@ -200,14 +200,6 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
                 SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
               </th>
               <th>OBSERVED CONFIGURATION</th>
-              <th
-                onClick={() => toggleSort("detectedTime")}
-                className="sortable"
-              >
-                DETECTED TIME{" "}
-                {sortBy.field === "detectedTime" &&
-                  (sortBy.dir === "desc" ? "↓" : "↑")}
-              </th>
               <th>ACTION</th>
             </tr>
           </thead>
@@ -258,7 +250,6 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
                           <td>{vuln.name}</td>
                           <td>{vuln.score ?? "N/A"}</td>
                           <td>{vuln.observedConfig || "N/A"}</td>
-                          <td>{formatDetectedTime(vuln.detectedTime)}</td>
                           <td
                             className="view-action"
                             onClick={() => onView(vuln)}
