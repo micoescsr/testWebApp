@@ -39,6 +39,13 @@ router.post(
   userController.activateUserWithTemp
 );
 
+// Deactivate profile + archive (superadmin only)
+router.post(
+  "/profiles/:id/deactivate",
+  authMiddleware.authJWT,
+  userController.deactivateUser
+);
+
 /** OPTIONAL TRIGGER FOR EASY QUERYING
  CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$

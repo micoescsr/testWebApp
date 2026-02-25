@@ -1,11 +1,17 @@
 // components/common/Modal/BaseModal.jsx
 import "./BaseModal.css";
 
-const BaseModal = ({ isOpen, onClose, header, children, footer }) => {
+const BaseModal = ({ isOpen, onClose, header, children, footer, disableOverlayClose = false }) => {
   if (!isOpen) return null;
 
+  const handleOverlayClick = () => {
+    if (!disableOverlayClose) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="base-modal-overlay" onClick={onClose}>
+    <div className="base-modal-overlay" onClick={handleOverlayClick}>
       <div
         className="base-modal-container"
         onClick={(e) => e.stopPropagation()}

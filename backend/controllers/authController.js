@@ -125,6 +125,48 @@ exports.login = async (req, res) => {
       }).catch(() => {});
     }
 
+    // ── Check temp password expiry ──────────────────────
+    // If user has must_change_password and temp_expires_at has passed,
+    // block login and tell them to request a new temp password.
+    if (json?.user?.id) {
+      const { data: prof } = await supabaseClient
+        .from("profiles")
+        .select("must_change_password, temp_expires_at")
+        .eq("id", json.user.id)
+        .maybeSingle();
+
+      if (prof?.must_change_password && prof?.temp_expires_at) {
+        const expiresAt = new Date(prof.temp_expires_at);
+        if (expiresAt < new Date()) {
+          // Temp PW expired — block login
+          await logAuditEvent({
+            req,
+            actorId: json.user.id,
+            eventName: "LOGIN_TEMP_EXPIRED",
+            eventStatus: "FAILED",
+            entityType: "AUTH",
+            entityIdUuid: json.user.id,
+            meta: { email, temp_expires_at: prof.temp_expires_at },
+          }).catch(() => {});
+
+          return res.status(401).json({
+            error: "Temporary password has expired. Please request a new one from your administrator.",
+            code: "TEMP_PASSWORD_EXPIRED",
+          });
+        }
+      }
+
+      // Include must_change_password flag in response so frontend can redirect
+      if (prof?.must_change_password) {
+        return res.json({
+          token: json.access_token,
+          user: json.user,
+          mustChangePassword: true,
+          tempExpiresAt: prof.temp_expires_at,
+        });
+      }
+    }
+
     res.json({ token: json.access_token, user: json.user });
   } catch (e) {
     res.status(500).json({ error: e.message });

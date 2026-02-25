@@ -8,11 +8,13 @@ const AccountsAuditModal = ({
   children,
   footer,
   onClose,
+  disableOverlayClose = false,
 }) => {
   return (
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
+      disableOverlayClose={disableOverlayClose}
       header={
         <>
           <h3 className="accounts-modal-title">{title}</h3>

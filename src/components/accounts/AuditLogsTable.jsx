@@ -32,8 +32,8 @@ function formatTimestamp(isoString) {
 function getEventModule(eventName) {
   if (!eventName) return "—";
   const upper = eventName.toUpperCase();
-  if (upper.includes("LOGIN") || upper.includes("LOGOUT") || upper.includes("AUTH") || upper.includes("REFRESH")) return "AUTH";
-  if (upper.includes("USER") || upper.includes("PROFILE") || upper.includes("ACTIVATE")) return "ACCOUNTS";
+  if (upper.includes("LOGIN") || upper.includes("LOGOUT") || upper.includes("AUTH") || upper.includes("REFRESH") || upper.includes("TEMP_EXPIRED")) return "AUTH";
+  if (upper.includes("USER") || upper.includes("PROFILE") || upper.includes("ACTIVATE") || upper.includes("DEACTIVATE")) return "ACCOUNTS";
   if (upper.includes("SCAN")) return "SCANS";
   if (upper.includes("NETWORK")) return "NETWORK";
   if (upper.includes("DEVICE")) return "DEVICE";
@@ -62,14 +62,70 @@ function formatEventName(name) {
     USER_UPDATE: "Edit User",
     USER_DELETE: "Delete User",
     USER_ACTIVATE: "Activate User",
+    USER_DEACTIVATE: "Deactivate User",
+    USER_RESET_SLOT: "Reset Slot",
     LOGIN_SUCCESS: "Login",
     LOGIN_FAILED: "Login Attempt",
+    LOGIN_TEMP_EXPIRED: "Temp PW Expired",
     LOGOUT: "Logout",
     PASSWORD_CHANGE: "Password Change",
     PASSWORD_RESET: "Password Reset",
     TOKEN_REFRESH: "Token Refresh",
   };
   return map[name.toUpperCase()] || name.replace(/_/g, " ");
+}
+
+/**
+ * Generates a one-line summary of what changed for inline display.
+ */
+function getChangeSummary(log) {
+  const { oldValues, newValues, meta, eventName } = log;
+  const upper = (eventName || "").toUpperCase();
+
+  // Special events
+  if (upper === "USER_DEACTIVATE") {
+    return meta?.anonymized ? "Archived & anonymized" : "Deactivated";
+  }
+  if (upper === "USER_ACTIVATE") {
+    return "Activated with temp password";
+  }
+  if (upper.includes("LOGIN")) return null;
+  if (upper.includes("SCAN")) return null;
+
+  // For edits, show changed fields
+  if (oldValues && newValues) {
+    const HIDDEN = ["id", "must_change_password", "temp_expires_at", "created_at", "updated_at"];
+    const changes = Object.keys(newValues).filter(k => {
+      if (HIDDEN.includes(k)) return false;
+      return JSON.stringify(oldValues[k]) !== JSON.stringify(newValues[k]);
+    });
+    if (changes.length === 0) return null;
+    if (changes.length <= 2) {
+      return changes.map(k => {
+        const label = k.replace(/_/g, " ");
+        return `${label}: ${oldValues[k] || "—"} → ${newValues[k] || "—"}`;
+      }).join(", ");
+    }
+    return `${changes.length} fields changed`;
+  }
+  return null;
+}
+
+/**
+ * Gets the target entity display (who/what was affected).
+ */
+function getTargetDisplay(log) {
+  const { oldValues, newValues, entityType, meta } = log;
+  // Try to get target from old or new values
+  const vals = oldValues || newValues;
+  if (vals) {
+    if (vals.username) return vals.username;
+    if (vals.email) return vals.email;
+    if (vals.first_name && vals.last_name) return `${vals.first_name} ${vals.last_name}`;
+  }
+  // For deactivated users, check meta
+  if (meta?.reason) return null;
+  return null;
 }
 
 /**
@@ -127,6 +183,8 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
             <tr>
               <th>USER</th>
               <th>EVENT</th>
+              <th>TARGET</th>
+              <th>DETAILS</th>
               <th>DATE</th>
               <th>TIME</th>
               <th>MODULE</th>
@@ -135,7 +193,7 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
           </thead>
           <tbody>
             <tr>
-              <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "#888" }}>
+              <td colSpan={8} style={{ textAlign: "center", padding: "32px", color: "#888" }}>
                 No audit logs found.
               </td>
             </tr>
@@ -152,6 +210,8 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
           <tr>
             <th>USER</th>
             <th>EVENT</th>
+            <th>TARGET</th>
+            <th>DETAILS</th>
             <th>DATE</th>
             <th>TIME</th>
             <th>MODULE</th>
@@ -164,6 +224,8 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
             const statusClass = (log.eventStatus || "").toLowerCase();
             const isExpanded = expandedId === log.id;
             const hasDetails = log.oldValues || log.newValues;
+            const target = getTargetDisplay(log);
+            const summary = getChangeSummary(log);
 
             return (
               <>
@@ -175,6 +237,14 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
                 >
                   <td>{getActorDisplay(log.actor)}</td>
                   <td>{formatEventName(log.eventName)}</td>
+                  <td style={{ color: target ? '#333' : '#aaa', fontSize: '0.85em' }}>
+                    {target || '—'}
+                  </td>
+                  <td style={{ fontSize: '0.8em', color: '#666', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={summary || undefined}
+                  >
+                    {summary || '—'}
+                  </td>
                   <td>{date}</td>
                   <td>{time}</td>
                   <td>
@@ -190,7 +260,7 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
                 </tr>
                 {isExpanded && (
                   <tr key={`${log.id}-details`} className="audit-detail-row">
-                    <td colSpan={6}>
+                    <td colSpan={8}>
                       <div className="audit-detail-content">
                         <div className="audit-detail-meta">
                           {log.actorIp && (
