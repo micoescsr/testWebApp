@@ -15,6 +15,7 @@ const captivePortalRoutes = require("./routes/captivePortalRoutes");
 //const scanRoutes = require('./routes/scanRoutes');
 const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 
 const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
@@ -49,6 +50,9 @@ app.use('/api/captivePortal', captivePortalRoutes);
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
+
+// 2) Audit routes (superadmin only, JWT + role enforced per-route)
+app.use("/api/audit", auditRoutes);
 
 // 2) Everything else under /api requires JWT + active profile
 //app.use("/api", authJWT, requireActiveProfile);

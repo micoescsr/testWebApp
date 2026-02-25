@@ -25,16 +25,6 @@ async function findAllProfiles(limit = 50) {
   return data.map(mapRowToProfile);
 }
 
-async function findAllProfiles(limit = 50) {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("*")
-    .limit(limit);
-
-  if (error) throw error;
-  return data.map(mapRowToProfile);
-}
-
 async function findProfileById(id) {
   const { data, error } = await supabaseClient
     .from("profiles")

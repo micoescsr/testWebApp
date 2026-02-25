@@ -36,6 +36,13 @@ const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
   logs: auditLogs,
   loading: auditLoading,
   error: auditError,
+  page: auditPage,
+  totalPages: auditTotalPages,
+  search: auditSearch,
+  statusFilter: auditStatusFilter,
+  handleSearch: handleAuditSearch,
+  handleStatusFilter: handleAuditStatusFilter,
+  goToPage: goToAuditPage,
 } = useAuditLogs();
 
   // If not loading and not superadmin, redirect
@@ -164,7 +171,24 @@ const cancelUserForm = () => {
       <div className="top-bar">
         <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
         {activeTab === "logs" && (
-          <input type="text" placeholder="Search" className="search-input" />
+          <div className="audit-filters">
+            <input
+              type="text"
+              placeholder="Search events..."
+              className="search-input"
+              value={auditSearch}
+              onChange={(e) => handleAuditSearch(e.target.value)}
+            />
+            <select
+              className="status-filter-select"
+              value={auditStatusFilter}
+              onChange={(e) => handleAuditStatusFilter(e.target.value)}
+            >
+              <option value="">All Statuses</option>
+              <option value="SUCCESS">Success</option>
+              <option value="FAILED">Failed</option>
+            </select>
+          </div>
         )}
       </div>
 
@@ -201,7 +225,12 @@ const cancelUserForm = () => {
           {!profileLoading && !auditLoading && auditError && <p className="error-text">{auditError}</p>}
 
           {!profileLoading && !auditLoading && !auditError && (
-            <AuditLogsTable logs={auditLogs} />
+            <AuditLogsTable
+              logs={auditLogs}
+              page={auditPage}
+              totalPages={auditTotalPages}
+              onPageChange={goToAuditPage}
+            />
           )}
         </>
       )}

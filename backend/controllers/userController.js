@@ -2,6 +2,7 @@
 const { createClient } = require("@supabase/supabase-js");
 const userRepository = require("../repositories/userRepository");
 const crypto = require("crypto"); // temp password generation
+const { logAuditEvent } = require("../utils/auditLogger");
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -95,9 +96,35 @@ async function updateUser(req, res) {
     const id = req.params.id;
     const updates = req.body;  // may contain { first_name, last_name, username, role, status }
 
+    // Capture old values for audit trail
+    const oldProfile = await userRepository.findProfileById(id);
+
     const updated = await userRepository.updateProfile(id, updates);
+
+    // Audit log
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_UPDATE",
+      eventStatus: "SUCCESS",
+      entityType: "USER",
+      entityIdUuid: id,
+      oldValues: oldProfile,
+      newValues: updates,
+    });
+
     res.json(updated);
   } catch (error) {
+    // Log failed attempt
+    await logAuditEvent({
+      req,
+      actorId: req.user?.id,
+      eventName: "USER_UPDATE",
+      eventStatus: "FAILED",
+      entityType: "USER",
+      entityIdUuid: req.params.id,
+      meta: { error: error.message },
+    }).catch(() => {});
     res.status(500).json({ error: "Failed to update user" });
   }
 }
@@ -157,12 +184,32 @@ async function activateUserWithTemp(req, res) {
       return res.status(400).json({ error: authError.message });
     }
 
+    // Audit log for activation
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_ACTIVATE",
+      eventStatus: "SUCCESS",
+      entityType: "USER",
+      entityIdUuid: id,
+      newValues: { status: "active", must_change_password: true },
+    });
+
     return res.json({
       profile: updatedProfile,
       tempPassword,
     });
   } catch (error) {
     console.error("activate-with-temp error:", error);
+    await logAuditEvent({
+      req,
+      actorId: req.user?.id,
+      eventName: "USER_ACTIVATE",
+      eventStatus: "FAILED",
+      entityType: "USER",
+      entityIdUuid: req.params.id,
+      meta: { error: error.message },
+    }).catch(() => {});
     return res.status(500).json({ error: "Failed to activate user with temp" });
   }
 }
@@ -179,14 +226,46 @@ async function deleteUser(req, res) {
 
     const id = req.params.id;
 
+    // Capture old profile for audit
+    let oldProfile = null;
+    try { oldProfile = await userRepository.findProfileById(id); } catch (_) {}
+
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
     if (authError) {
       console.error("auth.admin.deleteUser failed:", authError);
+      await logAuditEvent({
+        req,
+        actorId: currentUser.id,
+        eventName: "USER_DELETE",
+        eventStatus: "FAILED",
+        entityType: "USER",
+        entityIdUuid: id,
+        meta: { error: authError.message },
+      }).catch(() => {});
       return res.status(400).json({ error: authError.message });
     }
 
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_DELETE",
+      eventStatus: "SUCCESS",
+      entityType: "USER",
+      entityIdUuid: id,
+      oldValues: oldProfile,
+    });
+
     res.json({ message: "User deleted" });
   } catch (error) {
+    await logAuditEvent({
+      req,
+      actorId: req.user?.id,
+      eventName: "USER_DELETE",
+      eventStatus: "FAILED",
+      entityType: "USER",
+      entityIdUuid: req.params.id,
+      meta: { error: error.message },
+    }).catch(() => {});
     res.status(500).json({ error: "Failed to delete user" });
   }
 }
