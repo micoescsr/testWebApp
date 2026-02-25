@@ -84,6 +84,13 @@ api.interceptors.response.use(
       refreshQueue.forEach(({ reject }) => reject(refreshErr));
       refreshQueue = [];
       setAccessToken(null);
+
+      // Clear persisted session state so stale IDs don't survive
+      try {
+        const { clearSessionState } = await import("../hooks/useSessionState");
+        clearSessionState();
+      } catch (_) { /* module may not be available in edge cases */ }
+
       // Only redirect if not already on a public page
       const publicPaths = ["/login", "/forgot-password", "/reset-password"];
       if (!publicPaths.includes(window.location.pathname)) {

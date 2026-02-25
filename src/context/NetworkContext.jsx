@@ -1,7 +1,11 @@
 // context/NetworkContext.jsx
-// In-memory store for network_id + scan_id after a scan.
-// Replaces localStorage so sensitive IDs never touch disk storage.
-import { createContext, useContext, useState, useMemo } from "react";
+// Persists network_id + scan_id in sessionStorage so they survive refresh.
+// Stored as a single atomic key ("wf:networkScan") to prevent partial writes.
+// sessionStorage is tab-scoped and clears on tab close — no disk leakage.
+import { createContext, useContext, useMemo, useCallback } from "react";
+import { useSessionState } from "../hooks/useSessionState";
+
+const STORAGE_KEY = "wf:networkScan";
 
 const NetworkContext = createContext({
   networkId: null,
@@ -9,21 +13,54 @@ const NetworkContext = createContext({
   setNetworkId: () => {},
   setScanId: () => {},
   setNetworkScan: () => {},
+  clearNetworkScan: () => {},
 });
 
 export const NetworkProvider = ({ children }) => {
-  const [networkId, setNetworkId] = useState(null);
-  const [scanId, setScanId] = useState(null);
+  // Single atomic state: { networkId, scanId }
+  const [scan, setScan] = useSessionState(STORAGE_KEY, {
+    networkId: null,
+    scanId: null,
+  });
+
+  const setNetworkId = useCallback(
+    (nId) =>
+      setScan((prev) => ({
+        ...prev,
+        networkId: nId ?? null,
+        // Reset scanId when network changes to prevent mismatch
+        scanId: nId !== prev.networkId ? null : prev.scanId,
+      })),
+    [setScan]
+  );
+
+  const setScanId = useCallback(
+    (sId) => setScan((prev) => ({ ...prev, scanId: sId ?? null })),
+    [setScan]
+  );
 
   // Convenience: set both at once (used after scan save)
-  const setNetworkScan = (nId, sId) => {
-    setNetworkId(nId);
-    setScanId(sId);
-  };
+  const setNetworkScan = useCallback(
+    (nId, sId) => setScan({ networkId: nId ?? null, scanId: sId ?? null }),
+    [setScan]
+  );
+
+  // Logout / full reset
+  const clearNetworkScan = useCallback(
+    () => setScan({ networkId: null, scanId: null }),
+    [setScan]
+  );
 
   const value = useMemo(
-    () => ({ networkId, scanId, setNetworkId, setScanId, setNetworkScan }),
-    [networkId, scanId]
+    () => ({
+      networkId: scan.networkId,
+      scanId: scan.scanId,
+      setNetworkId,
+      setScanId,
+      setNetworkScan,
+      clearNetworkScan,
+    }),
+    [scan.networkId, scan.scanId, setNetworkId, setScanId, setNetworkScan, clearNetworkScan]
   );
 
   return (

@@ -7,6 +7,7 @@ import { useDevice } from "../../hooks/useDevice";
 import { useProfile } from "../../hooks/useProfile";
 import { useNetworkContext } from "../../context/NetworkContext";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
+import { useSessionState } from "../../hooks/useSessionState";
 import {
   getAnnouncement,
   publishAnnouncement,
@@ -21,7 +22,7 @@ const DeviceManagement = () => {
   const networkId = ctxNetworkId || searchParams.get("network_id");
   const scanId = ctxScanId || searchParams.get("scan_id");
 
-  const [activeTab, setActiveTab] = useState("announcement");
+  const [activeTab, setActiveTab] = useSessionState("wf:dmTab", "announcement");
   const [isEditing, setIsEditing] = useState(false);
   const [apPassword, setApPassword] = useState("");
 
