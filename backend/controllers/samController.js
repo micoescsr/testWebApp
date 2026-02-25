@@ -36,7 +36,7 @@ async function getThreatDetail(req, res) {
     let q = supabaseClient
       .from("vulnerability_threat_details")
       .select(
-        "vt_code, vt_name, vt_kind, vt_cvss_base_score, vt_severity_rating"
+        "vt_code, vt_name, vt_kind, vt_cvss_base_score, vt_severity_rating, vt_cvss_vector_string"
       );
 
     // Prefer exact vt_code lookup when possible
@@ -63,7 +63,7 @@ async function getThreatDetail(req, res) {
       severity: detail.vt_severity_rating ?? "N/A",
       name: detail.vt_name ?? key,
       cvss: detail.vt_cvss_base_score ?? "N/A",
-      cvssVector: "N/A",
+      cvssVector: detail.vt_cvss_vector_string ?? "N/A",
       description: defaultDescription(detail.vt_name, detail.vt_code),
       recommendations: defaultRecommendations(),
     });
@@ -73,4 +73,54 @@ async function getThreatDetail(req, res) {
   }
 }
 
-module.exports = { getThreatDetail };
+async function getVulnDetail(req, res) {
+  try {
+    const raw = (req.params.idOrName || "").trim();
+    if (!raw) return res.status(400).json({ error: "idOrName is required" });
+
+    const key = decodeURIComponent(raw);
+
+    let q = supabaseClient
+      .from("vulnerability_threat_details")
+      .select(
+        "vt_code, vt_name, vt_kind, vt_cvss_base_score, vt_severity_rating, vt_cvss_vector_string"
+      );
+
+    // Prefer exact vt_code lookup when possible
+    if (looksLikeVtCode(key)) {
+      q = q.eq("vt_code", key);
+    } else {
+      // fallback: match by name (case-insensitive)
+      q = q.ilike("vt_name", key);
+    }
+
+    const { data: detail, error } = await q.maybeSingle();
+    if (error) throw error;
+
+    if (!detail) {
+      // Not found in DB — return a generic detail built from the name
+      return res.json({
+        severity: "N/A",
+        name: key,
+        cvss: "N/A",
+        cvssVector: "N/A",
+        description: defaultDescription(key, null),
+        recommendations: defaultRecommendations(),
+      });
+    }
+
+    return res.json({
+      severity: detail.vt_severity_rating ?? "N/A",
+      name: detail.vt_name ?? key,
+      cvss: detail.vt_cvss_base_score ?? "N/A",
+      cvssVector: detail.vt_cvss_vector_string ?? "N/A",
+      description: defaultDescription(detail.vt_name, detail.vt_code),
+      recommendations: defaultRecommendations(),
+    });
+  } catch (err) {
+    console.error("getVulnDetail error:", err);
+    return res.status(500).json({ error: "Failed to load vulnerability detail" });
+  }
+}
+
+module.exports = { getThreatDetail, getVulnDetail };

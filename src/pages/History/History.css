@@ -20,12 +20,34 @@
   margin-bottom: 20px;
 }
 
+/* Top bar layout: tabs + search + indicator */
+.history-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.history-tab-indicator {
+  padding: 8px 18px;
+  border-radius: 8px;
+  background-color: #111827;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: default;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
 /* Search bar */
 .history-search-bar {
   position: relative;
   display: flex;
   align-items: center;
-  margin-bottom: 16px;
+  flex: 1;
   max-width: 420px;
 }
 
@@ -106,7 +128,9 @@
   background-color: #fff;
   cursor: pointer;
   font-size: 13px;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
   max-width: 320px;
   white-space: nowrap;
   overflow: hidden;
@@ -228,6 +252,118 @@
 .history-table td:nth-child(4) {
   width: 20%;
   text-align: right;
+}
+
+/* Summary table: 6 columns */
+.history-table-summary th:nth-child(1),
+.history-table-summary td:nth-child(1) {
+  width: 22%;
+}
+
+.history-table-summary th:nth-child(2),
+.history-table-summary td:nth-child(2) {
+  width: 22%;
+}
+
+.history-table-summary th:nth-child(3),
+.history-table-summary td:nth-child(3) {
+  width: 20%;
+}
+
+.history-table-summary th:nth-child(4),
+.history-table-summary td:nth-child(4) {
+  width: 10%;
+  text-align: center;
+}
+
+.history-table-summary th:nth-child(5),
+.history-table-summary td:nth-child(5) {
+  width: 10%;
+  text-align: center;
+}
+
+.history-table-summary th:nth-child(6),
+.history-table-summary td:nth-child(6) {
+  width: 16%;
+  text-align: center;
+}
+
+/* Risk score chip — colors aligned with .severity pattern */
+.risk-score-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.risk-score-chip.critical {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.risk-score-chip.high {
+  background-color: #fff7ed;
+  color: #f97316;
+  border-color: #fed7aa;
+}
+
+.risk-score-chip.medium {
+  background-color: #fefce8;
+  color: #eab308;
+  border-color: #fde68a;
+}
+
+.risk-score-chip.low {
+  background-color: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+
+.risk-score-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+/* View button */
+.view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid #d1d5db;
+  background-color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.view-btn:hover {
+  background-color: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+
+.view-btn-arrow {
+  font-size: 10px;
+}
+
+/* Empty cell */
+.history-empty-cell {
+  text-align: center;
+  padding: 40px 12px;
+  color: #9ca3af;
+  font-size: 14px;
 }
 
 .expand-btn {
@@ -388,7 +524,7 @@
   .history-table,
   .inner-table {
     display: block;
-    overflow-x: auto;  /* allow horizontal scroll */
+    overflow-x: auto; /* allow horizontal scroll */
   }
 
   .history-table th,

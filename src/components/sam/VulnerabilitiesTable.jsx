@@ -1,10 +1,68 @@
 // components/sam/VulnerabilitiesTable.jsx
+import { useState, useMemo, Fragment } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
-const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
+const formatDetectedTime = (iso) => {
+  if (!iso) return "N/A";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+};
+
+/** Return a grouping key rounded to the minute so rows from the same scan batch stay together */
+const getGroupKey = (iso) => {
+  if (!iso) return "N/A";
+  const d = new Date(iso);
+  // round to the nearest minute
+  d.setSeconds(0, 0);
+  return d.toISOString();
+};
+
+/**
+ * Groups an array of rows by scan_id (unique per scan session).
+ * Falls back to detected time if scan_id is missing.
+ * Returns an ordered array of { key, label, rows }.
+ */
+const groupByScan = (rows) => {
+  const map = new Map();
+  for (const row of rows) {
+    // Use scan_id if available, otherwise fall back to timestamp
+    const key = row.scan_id != null ? String(row.scan_id) : getGroupKey(row.detectedTime);
+    if (!map.has(key)) {
+      map.set(key, { key, label: formatDetectedTime(row.detectedTime), rows: [] });
+    }
+    map.get(key).rows.push(row);
+  }
+  return Array.from(map.values());
+};
+
+const ChevronIcon = ({ expanded }) => (
+  <svg
+    className={`group-chevron ${expanded ? "expanded" : ""}`}
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
+
+const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
   const hasVulns =
     Array.isArray(vulnerabilities) && vulnerabilities.length > 0;
 
@@ -29,21 +87,29 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
     itemsPerPage: 10,
   });
 
-  const formatDetectedTime = (iso) => {
-    if (!iso) return "N/A";
-    const d = new Date(iso);
-    return new Intl.DateTimeFormat("en-PH", {
-      timeZone: "Asia/Manila",
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
+  // --- Grouping & expand/collapse state ---
+  const groups = useMemo(() => groupByScan(currentRows), [currentRows]);
+
+  // Track which groups are expanded (by group key). Default: all expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+
+  const toggleGroup = (key) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   const activeCount = rows.length;
   const totalCount = vulnerabilities.length;
+
+  // Column count for the group header colspan
+  const COL_COUNT = 5;
 
   return (
     <div className="sam-card">
@@ -136,40 +202,67 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
                 SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
               </th>
               <th>OBSERVED CONFIGURATION</th>
-              <th
-                onClick={() => toggleSort("detectedTime")}
-                className="sortable"
-              >
-                DETECTED TIME{" "}
-                {sortBy.field === "detectedTime" &&
-                  (sortBy.dir === "desc" ? "↓" : "↑")}
-              </th>
               <th>ACTION</th>
             </tr>
           </thead>
 
           {hasVulns && (
             <tbody>
-              {currentRows.map((vuln) => (
-                <tr key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}>
-                  <td>
-                    <span
-                      className={`severity ${String(
-                        vuln.severity || ""
-                      ).toLowerCase()}`}
+              {groups.map((group) => {
+                const isExpanded = !collapsedGroups.has(group.key);
+                return (
+                  <Fragment key={group.key}>
+                    {/* ── Group header row ── */}
+                    <tr
+                      className="group-header-row"
+                      onClick={() => toggleGroup(group.key)}
                     >
-                      {vuln.severity ?? "N/A"}
-                    </span>
-                  </td>
-                  <td>{vuln.name}</td>
-                  <td>{vuln.score ?? "N/A"}</td>
-                  <td>{vuln.observedConfig || "N/A"}</td>
-                  <td>{formatDetectedTime(vuln.detectedTime)}</td>
-                  <td className="view-action" onClick={() => onView(vuln)}>
-                    VIEW
-                  </td>
-                </tr>
-              ))}
+                      <td colSpan={COL_COUNT}>
+                        <div className="group-header-content">
+                          <ChevronIcon expanded={isExpanded} />
+                          <span className="group-label">
+                            {group.label}
+                          </span>
+                          <span className="group-count">
+                            ({group.rows.length}{" "}
+                            {group.rows.length === 1
+                              ? "vulnerability"
+                              : "vulnerabilities"})
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* ── Child vulnerability rows ── */}
+                    {isExpanded &&
+                      group.rows.map((vuln) => (
+                        <tr
+                          key={`${vuln.id ?? vuln.name}-${vuln.detectedTime ?? ""}`}
+                          className="group-child-row"
+                        >
+                          <td>
+                            <span
+                              className={`severity ${String(
+                                vuln.severity || ""
+                              ).toLowerCase()}`}
+                            >
+                              {vuln.severity ?? "N/A"}
+                            </span>
+                          </td>
+                          <td>{vuln.name}</td>
+                          <td>{vuln.score ?? "N/A"}</td>
+                          <td>{vuln.observedConfig || "N/A"}</td>
+                          <td
+                            className="view-action"
+                            onClick={() => onView(vuln)}
+                          >
+                            View Details
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           )}
         </table>
@@ -190,7 +283,20 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
         <div className="sam-actions">
           <button className="export-btn">📎 Export</button>
-          <button className="clear-btn">🗑 Clear List</button>
+          <button
+            className="clear-btn"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Are you sure you want to clear the list?\n\nDon't worry — all scanned results are still saved and can be viewed on the History page."
+                )
+              ) {
+                onClear?.();
+              }
+            }}
+          >
+            🗑 Clear List
+          </button>
         </div>
       </div>
     </div>
