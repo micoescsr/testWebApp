@@ -28,13 +28,15 @@ const getGroupKey = (iso) => {
 };
 
 /**
- * Groups an array of rows by detected time (minute-level).
+ * Groups an array of rows by scan_id (unique per scan session).
+ * Falls back to detected time if scan_id is missing.
  * Returns an ordered array of { key, label, rows }.
  */
-const groupByDetectedTime = (rows) => {
+const groupByScan = (rows) => {
   const map = new Map();
   for (const row of rows) {
-    const key = getGroupKey(row.detectedTime);
+    // Use scan_id if available, otherwise fall back to timestamp
+    const key = row.scan_id != null ? String(row.scan_id) : getGroupKey(row.detectedTime);
     if (!map.has(key)) {
       map.set(key, { key, label: formatDetectedTime(row.detectedTime), rows: [] });
     }
@@ -60,7 +62,7 @@ const ChevronIcon = ({ expanded }) => (
   </svg>
 );
 
-const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
+const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
   const hasVulns =
     Array.isArray(vulnerabilities) && vulnerabilities.length > 0;
 
@@ -86,7 +88,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
   });
 
   // --- Grouping & expand/collapse state ---
-  const groups = useMemo(() => groupByDetectedTime(currentRows), [currentRows]);
+  const groups = useMemo(() => groupByScan(currentRows), [currentRows]);
 
   // Track which groups are expanded (by group key). Default: all expanded.
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
@@ -281,7 +283,20 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView }) => {
 
         <div className="sam-actions">
           <button className="export-btn">📎 Export</button>
-          <button className="clear-btn">🗑 Clear List</button>
+          <button
+            className="clear-btn"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Are you sure you want to clear the list?\n\nDon't worry — all scanned results are still saved and can be viewed on the History page."
+                )
+              ) {
+                onClear?.();
+              }
+            }}
+          >
+            🗑 Clear List
+          </button>
         </div>
       </div>
     </div>

@@ -14,6 +14,40 @@ const getRiskLabel = (score) => {
 };
 
 /**
+ * Format an ISO/epoch timestamp into a readable local time string.
+ */
+const formatTimestamp = (ts) => {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return String(ts);
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+/**
+ * Compute a human-readable duration string from two timestamps.
+ */
+const computeDuration = (start, end) => {
+  if (!start || !end) return "—";
+  const ms = new Date(end) - new Date(start);
+  if (Number.isNaN(ms) || ms < 0) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return `${min}m ${sec}s`;
+  const hr = Math.floor(min / 60);
+  const remainMin = min % 60;
+  return `${hr}h ${remainMin}m`;
+};
+
+/**
  * Right-side drawer showing scan-level KPIs + tabbed finding cards.
  *
  * Props:
@@ -54,9 +88,13 @@ const ScanDetailsDrawer = ({
   const ssid = scan.ssid || "—";
   const bssid = scan.bssid || "—";
   const channel = scan.channel != null ? String(scan.channel) : "—";
-  const scanStart = scan.scan_start || scan.scanStart || "—";
-  const scanEnd = scan.scan_end || scan.scanEnd || "—";
-  const scanDuration = scan.scan_duration || scan.scanDuration || "—";
+
+  const rawStart = scan.scan_start || scan.scanStart || null;
+  const rawEnd = scan.scan_end || scan.scanEnd || null;
+  const scanStart = formatTimestamp(rawStart);
+  const scanEnd = formatTimestamp(rawEnd);
+  const scanDuration =
+    scan.scan_duration || scan.scanDuration || computeDuration(rawStart, rawEnd);
   const clientsConnected =
     scan.num_clients != null
       ? String(scan.num_clients)
@@ -223,7 +261,7 @@ const ScanDetailsDrawer = ({
                           )
                         }
                       >
-                        View Full JSON
+                        View Details
                       </button>
                     </div>
                   );
@@ -304,7 +342,7 @@ const ScanDetailsDrawer = ({
                           )
                         }
                       >
-                        View Full JSON
+                        View Details
                       </button>
                     </div>
                   );
