@@ -695,3 +695,11 @@
     width: 100%;
   }
 }
+
+/* Linked-hover glow for interrelated items */
+.hover-highlight {
+  background-color: rgba(251, 191, 36, 0.12); /* soft amber */
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.55);
+  border-radius: 4px;
+  transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}

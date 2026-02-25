@@ -16,40 +16,133 @@ import {
 import { COLORS } from "../../data/dashboardData";
 import LegendForScore from "./LegendForScore";
 
-const SummarySection = ({ showLegend, toggleLegend, data }) => {
+const SummarySection = ({
+  showLegend,
+  toggleLegend,
+  data,
+  hoverContext,
+  setHoverContext,
+  clearHoverContext,
+}) => {
   if (!data) return null;
-  const { riskScoreData, severityData, threatsData, commonVulnsData } = data;
+  const { riskScoreData, severityData } = data;
+
+  // Mock top risks table; replace with backend later
+  const topRisks = [
+    { ssid: "Nacho_Wi-Fi", risk: 80, severityCount: 10, clients: 22 },
+    { ssid: "StarboxFreeWiFi", risk: 78, severityCount: 9, clients: 18 },
+    { ssid: "NenengsFreeWiFi", risk: 75, severityCount: 8, clients: 15 },
+    { ssid: "JubileeFreeWiFi", risk: 73, severityCount: 7, clients: 11 },
+    { ssid: "ManamFreeWiFi", risk: 71, severityCount: 6, clients: 9 },
+  ];
+
+  // Mock open vs encrypted; replace with real encryption stats
+  const networkEncryptionData = [
+    { name: "Open", value: 14 },
+    { name: "Encrypted", value: 12 },
+  ];
+
+  const isCard = (key) =>
+    hoverContext &&
+    hoverContext.dimension === "card" &&
+    hoverContext.key === key;
+
+  const isHoveredNetwork = (ssid) =>
+    hoverContext &&
+    hoverContext.dimension === "network" &&
+    hoverContext.key === ssid;
+
+  const isHoveredEncryption = (name) =>
+    hoverContext &&
+    hoverContext.dimension === "encryption" &&
+    hoverContext.key === name;
 
   return (
     <>
-      {/* Stat cards */}
+      {/* Stat cards (drive related charts) */}
       <div className="dash-stats-row">
-        <div className="stat-card">
+        {/* Last Scan ↔ Risk Gauge */}
+        <div
+          className={`stat-card ${
+            isCard("last_scan") ? "hover-highlight" : ""
+          }`}
+          onMouseEnter={() =>
+            setHoverContext({ dimension: "card", key: "last_scan" })
+          }
+          onMouseLeave={clearHoverContext}
+        >
           <p className="stat-label">Last Scan</p>
           <p className="stat-value">11/14/2025</p>
         </div>
-        <div className="stat-card">
+
+        {/* Open Networks ↔ Networks by Encryption (pie) */}
+        <div
+          className={`stat-card ${
+            isCard("open_networks") ? "hover-highlight" : ""
+          }`}
+          onMouseEnter={() =>
+            setHoverContext({ dimension: "card", key: "open_networks" })
+          }
+          onMouseLeave={clearHoverContext}
+        >
           <p className="stat-label">Open Networks</p>
           <p className="stat-value">14</p>
         </div>
-        <div className="stat-card">
+
+        {/* Encrypted Networks ↔ Networks by Encryption (pie) */}
+        <div
+          className={`stat-card ${
+            isCard("encrypted_networks") ? "hover-highlight" : ""
+          }`}
+          onMouseEnter={() =>
+            setHoverContext({
+              dimension: "card",
+              key: "encrypted_networks",
+            })
+          }
+          onMouseLeave={clearHoverContext}
+        >
           <p className="stat-label">Encrypted Networks</p>
           <p className="stat-value">12</p>
         </div>
-        <div className="stat-card">
-          <p className="stat-label">Scanned Vulnerabilities</p>
-          <p className="stat-value">30</p>
+
+        {/* Total vulns/threats ↔ Severity by Kind */}
+        <div
+          className={`stat-card ${
+            isCard("total_findings") ? "hover-highlight" : ""
+          }`}
+          onMouseEnter={() =>
+            setHoverContext({ dimension: "card", key: "total_findings" })
+          }
+          onMouseLeave={clearHoverContext}
+        >
+          <p className="stat-label">Total Vulnerabilities/Threats</p>
+          <p className="stat-value">52</p>
         </div>
-        <div className="stat-card">
-          <p className="stat-label">Detected Threats</p>
-          <p className="stat-value">22</p>
+
+        {/* Total clients ↔ Top risks table */}
+        <div
+          className={`stat-card ${
+            isCard("total_clients") ? "hover-highlight" : ""
+          }`}
+          onMouseEnter={() =>
+            setHoverContext({ dimension: "card", key: "total_clients" })
+          }
+          onMouseLeave={clearHoverContext}
+        >
+          <p className="stat-label">Total Clients</p>
+          <p className="stat-value">120</p>
         </div>
       </div>
 
-      {/* Middle charts row */}
+      {/* Main row: Risk Gauge + Severity by Kind + Top Risks */}
       <div className="dash-main-row">
-        {/* Risk score radial chart */}
-        <div className="panel">
+        {/* Risk Gauge */}
+        <div
+          className={`panel ${
+            isCard("last_scan") ? "hover-highlight" : ""
+          }`}
+        >
           <div className="panel-header">
             <h2>Wi-Fi Security Risk Score</h2>
             <div className="panel-actions">
@@ -77,7 +170,7 @@ const SummarySection = ({ showLegend, toggleLegend, data }) => {
                     background
                     dataKey="value"
                     cornerRadius={50}
-                    fill="#ef4444"
+                    fill="#f97316"
                   />
                   <text
                     x="50%"
@@ -99,90 +192,117 @@ const SummarySection = ({ showLegend, toggleLegend, data }) => {
           </div>
         </div>
 
-        {/* Severity rankings bar chart */}
-        <div className="panel">
+        {/* Severity by Kind (VULN vs THREAT) */}
+        <div
+          className={`panel ${
+            isCard("total_findings") ? "hover-highlight" : ""
+          }`}
+        >
           <div className="panel-header">
-            <h2>Severity Rankings</h2>
+            <div>
+              <h2>Severity by Kind</h2>
+              <span style={{ fontSize: 11, color: "#6b7280" }}>
+                Vulnerabilities vs threats per severity rating
+              </span>
+            </div>
           </div>
           <div className="panel-body">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={severityData}>
-                <XAxis dataKey="name" />
+              <BarChart
+                data={severityData}
+                onMouseLeave={clearHoverContext}
+              >
+                <XAxis dataKey="severity" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#f97316" />
+                <Bar
+                  dataKey="vulnerabilities"
+                  name="Vulnerabilities"
+                  fill={COLORS[0]}
+                  onMouseOver={(data) =>
+                    setHoverContext({
+                      dimension: "severity_kind",
+                      key: {
+                        severity: data.severity,
+                        kind: "VULNERABILITY",
+                      },
+                    })
+                  }
+                />
+                <Bar
+                  dataKey="threats"
+                  name="Threats"
+                  fill={COLORS[1]}
+                  onMouseOver={(data) =>
+                    setHoverContext({
+                      dimension: "severity_kind",
+                      key: { severity: data.severity, kind: "THREAT" },
+                    })
+                  }
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Top 5 high-risk networks */}
-        <div className="panel">
+        {/* Top Risks Table */}
+        <div
+          className={`panel ${
+            isCard("total_clients") ? "hover-highlight" : ""
+          }`}
+        >
           <div className="panel-header">
             <h2>Top 5 High-Risk Networks</h2>
           </div>
           <div className="panel-body top-networks">
             <div className="top-row top-head">
               <span>SSID</span>
-              <span>SCORE</span>
+              <span>RISK %</span>
+              <span>SEVERITIES</span>
+              <span>CLIENTS</span>
             </div>
-            {[
-              { ssid: "Nacho_Wi-Fi", score: 80 },
-              { ssid: "StarboxFreeWiFi", score: 78 },
-              { ssid: "NenengsFreeWiFi", score: 75 },
-              { ssid: "JubileeFreeWiFi", score: 73 },
-              { ssid: "ManamFreeWiFi", score: 71 },
-            ].map((item) => (
-              <div key={item.ssid} className="top-row">
+            {topRisks.map((item) => (
+              <div
+                key={item.ssid}
+                className={`top-row ${
+                  isHoveredNetwork(item.ssid) ? "hover-highlight" : ""
+                }`}
+                onMouseEnter={() =>
+                  setHoverContext({
+                    dimension: "network",
+                    key: item.ssid,
+                  })
+                }
+                onMouseLeave={clearHoverContext}
+              >
                 <span>{item.ssid}</span>
-                <span className="score-link">{item.score}</span>
+                <span className="score-link">{item.risk}</span>
+                <span>{item.severityCount}</span>
+                <span>{item.clients}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Bottom row */}
+      {/* Bottom row: Network Pie + metric note */}
       <div className="dash-bottom-row">
-        {/* Common vulnerabilities */}
-        <div className="panel">
+        <div
+          className={`panel ${
+            isCard("open_networks") || isCard("encrypted_networks")
+              ? "hover-highlight"
+              : ""
+          }`}
+        >
           <div className="panel-header">
-            <h2>Common Vulnerabilities</h2>
-            <select className="small-select">
-              <option>High - Low</option>
-            </select>
-          </div>
-          <div className="panel-body">
-            <div className="vuln-list">
-              {commonVulnsData.map((v) => (
-                <div key={v.name} className="vuln-item">
-                  <div className="vuln-label-row">
-                    <span>{v.name}</span>
-                    <span className="vuln-count">{v.count}</span>
-                  </div>
-                  <div className="vuln-bar-bg">
-                    <div
-                      className="vuln-bar-fill"
-                      style={{ width: `${(v.count / 12) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Threat breakdown */}
-        <div className="panel">
-          <div className="panel-header">
-            <h2>Threat Breakdown</h2>
+            <h2>Networks by Encryption</h2>
           </div>
           <div className="panel-body threat-row">
             <div className="threat-chart">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart onMouseLeave={clearHoverContext}>
                   <Pie
-                    data={threatsData}
+                    data={networkEncryptionData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
@@ -190,11 +310,24 @@ const SummarySection = ({ showLegend, toggleLegend, data }) => {
                     innerRadius={60}
                     outerRadius={80}
                     paddingAngle={3}
+                    onMouseOver={(data) =>
+                      setHoverContext({
+                        dimension: "encryption",
+                        key: data.name,
+                      })
+                    }
                   >
-                    {threatsData.map((entry, index) => (
+                    {networkEncryptionData.map((entry, index) => (
                       <Cell
                         key={entry.name}
                         fill={COLORS[index % COLORS.length]}
+                        opacity={
+                          hoverContext &&
+                          hoverContext.dimension === "encryption" &&
+                          !isHoveredEncryption(entry.name)
+                            ? 0.4
+                            : 1
+                        }
                       />
                     ))}
                   </Pie>
@@ -202,8 +335,13 @@ const SummarySection = ({ showLegend, toggleLegend, data }) => {
               </ResponsiveContainer>
             </div>
             <div className="threat-legend">
-              {threatsData.map((t, index) => (
-                <div key={t.name} className="threat-row-item">
+              {networkEncryptionData.map((t, index) => (
+                <div
+                  key={t.name}
+                  className={`threat-row-item ${
+                    isHoveredEncryption(t.name) ? "hover-highlight" : ""
+                  }`}
+                >
                   <span
                     className="legend-dot"
                     style={{
@@ -211,14 +349,24 @@ const SummarySection = ({ showLegend, toggleLegend, data }) => {
                     }}
                   />
                   <span className="legend-label">{t.name}</span>
-                  <span className="legend-value">
-                    {t.value.toFixed(2)}%
-                  </span>
+                  <span className="legend-value">{t.value}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
+
+{/*         <div className="panel">
+          <div className="panel-header">
+            <h2>Metric Notes</h2>
+          </div>
+          <div className="panel-body">
+            <p style={{ fontSize: 12, color: "#6b7280" }}>
+              Wi-Fi Risk Score weights severity and vt_kind (threats vs
+              vulnerabilities) plus encryption and client counts.
+            </p>
+          </div>
+        </div> */}
       </div>
     </>
   );

@@ -140,3 +140,254 @@
 .auth-helper-text a:hover {
   text-decoration: underline;
 }
+
+/* src/pages/Auth/Auth.css 
+.password-errors {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #dc2626;
+}
+.password-errors li {
+  margin-bottom: 2px;
+}
+
+.password-checklist {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.password-checklist-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.password-checklist-item.valid {
+  color: #16a34a;
+}
+.password-checklist-item.invalid {
+  color: #dc2626;
+}*/
+
+/* Form Inputs */
+.auth-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.auth-form input:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Error state for inputs */
+.auth-form input.input-error {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.auth-form input.input-error:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+/* Error and Success Messages */
+.error-text {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.error-text::before {
+  content: "⚠";
+  font-size: 14px;
+}
+
+.success-text {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #f0fdf4;
+  border-left: 3px solid #16a34a;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #166534;
+}
+
+.password-errors {
+  margin: 12px 0 0;
+  padding: 12px;
+  background-color: #fef2f2;
+  border-left: 3px solid #dc2626;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.password-errors li {
+  margin-bottom: 4px;
+  list-style: none;
+}
+
+.password-errors li::before {
+  content: "• ";
+  color: #dc2626;
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.password-errors li:last-child {
+  margin-bottom: 0;
+}
+
+.password-checklist {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.password-checklist-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.password-checklist-item:last-child {
+  margin-bottom: 0;
+}
+
+.checklist-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: bold;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.checklist-label {
+  line-height: 1.4;
+}
+
+/* Neutral state (before user starts typing) */
+.password-checklist-item.neutral .checklist-icon {
+  background-color: #e5e7eb;
+  color: #6b7280;
+}
+
+.password-checklist-item.neutral .checklist-label {
+  color: #6b7280;
+}
+
+/* Valid state (requirement met) */
+.password-checklist-item.valid .checklist-icon {
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.password-checklist-item.valid .checklist-label {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+/* Invalid state (user typing but requirement not met) */
+.password-checklist-item.invalid .checklist-icon {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.password-checklist-item.invalid .checklist-label {
+  color: #dc2626;
+}
+
+/* Password input wrapper and toggle button */
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding: 10px 70px 10px 12px !important; /* Override auth-form input padding */
+}
+
+/* Specific class for inputs with toggle buttons */
+.password-input {
+  padding-right: 70px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: color 0.2s ease;
+  border-radius: 4px;
+}
+
+.password-toggle-btn:hover {
+  color: #374151;
+  background-color: #f3f4f6;
+}
+
+.password-toggle-btn:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.password-toggle-btn svg {
+  display: block;
+}
+
+/* Show/Hide text button styles */
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.password-toggle:hover {
+  color: #111827;
+}

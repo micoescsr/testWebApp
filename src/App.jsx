@@ -1,3 +1,4 @@
+// src/App.jsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Sidebar from "./layouts/Sidebar";
 import Dashboard from "./pages/Dashboard/Dashboard";
@@ -10,28 +11,32 @@ import Login from "./pages/Login/Login";
 import "./App.css";
 import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
+import UserMenu from "./components/common/UserMenu/UserMenu";
 
 function App() {
   return (
-
     <Router>
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
-
+        
         {/* Login screen without sidebar */}
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-
-        {/* Everything else with sidebar */}
+        
+        {/* Everything else with sidebar and floating UserMenu */}
         <Route
           path="/*"
           element={
             <div className="app">
               <Sidebar />
+              
+              {/* Floating UserMenu - fixed position top-right */}
+              <UserMenu />
+              
+              {/* Main content with padding to avoid UserMenu overlap */}
               <main className="main-content">
                 <Routes>
-                  {/* <Route path="/" element={<Navigate to="/dashboard" replace />} /> */}
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/security-assessment" element={<SAM />} />
                   <Route path="/device-management" element={<DeviceManagement />} />

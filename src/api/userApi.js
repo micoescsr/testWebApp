@@ -17,7 +17,6 @@ export const activateUserWithTemp = (id, userData) => {
 };
 // ADDED 3:27 PM FEB 11 --- END
 
-
 /* // CREATE user
 export const createUser = (userData) => {
   return api.post("webApp/users/profiles", userData);
