@@ -3,6 +3,15 @@ const rasPiService = require("../services/rasPiService");
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const { supabaseClient } = require("../config/supabaseClient");
 
+function getRiskLabel(score) {
+  const s = Number(score) || 0;
+  if (s === 0) return "NONE";
+  if (s <= 39) return "LOW";
+  if (s <= 69) return "MEDIUM";
+  if (s <= 89) return "HIGH";
+  return "CRITICAL";
+}
+
   // --- 1. TRIGGER SCAN: ONLY TALKS TO FASTAPI, NO DB ---
 async function triggerScan(req, res) {
   try {
@@ -110,6 +119,7 @@ async function saveNetworkMetadataScan(req, res) {
 
     // 2. Insert scan (linked to network_id)
     let scanRow = null;
+    let riskScoreValue = 0;
     if (scan) {
       const { data: scanInsert, error: scanErr } = await supabaseClient
         .from("scans")
@@ -140,34 +150,41 @@ async function saveNetworkMetadataScan(req, res) {
           .maybeSingle();
         if (detailErr) throw detailErr;
 
-        // vulnRows.push({
-        //   scan_id: scanRow.scan_id,
-        //   // use the canonical name from details if available, otherwise fallback
-        //   vt_name: detail?.vt_name || key,      // e.g. "Management Frame Protection" or "mfp"
-        //   vt_status: finding.status,            // "DETECTED"
-        //   vt_value: finding.value,              // "Disabled"
-        //   vt_detail_id: detail?.vt_detail_id || null,
-        //   // Mark these rows explicitly as vulnerability findings so they can be filtered
-        //   // Normalize to lowercase for consistent querying
-        //   vt_kind: (detail?.vt_kind || 'vulnerability').toLowerCase(),
-        //   severity_score: detail?.vt_cvss_base_score ?? null,
-        // });
+        // ✅ Guard: if vt_code not found in details, skip (won't be counted anyway)
+        if (!detail?.vt_detail_id) {
+          console.warn(
+            "[saveNetworkMetadataScan] Missing vt_detail_id for vt_code:",
+            finding.id,
+            "skipping row."
+          );
+          continue;
+        }
+
+        const vtKindUpper = (detail?.vt_kind || "VULNERABILITY").toUpperCase();
+        const statusUpper = String(finding.status || "").toUpperCase();
+
+        // ✅ Threat counts as present only if occurrence_count >= 1
+        const occurrenceCount =
+          vtKindUpper === "THREAT" && statusUpper === "DETECTED" ? 1 : 0;
 
         vulnRows.push({
           scan_id: scanRow.scan_id,
-          vt_name: detail?.vt_name || key,
-          vt_status: finding.status,            // "DETECTED"
-          vt_value: finding.value,
-          vt_detail_id: detail?.vt_detail_id || null,
 
-          // keep for UI filtering (your other endpoint uses ilike "vulnerability")
-          vt_kind: (detail?.vt_kind || "VULNERABILITY").toLowerCase(),
+          // canonical name if available, else fallback
+          vt_name: detail.vt_name || key,
+          vt_status: finding.status, // "DETECTED"
+          vt_value: finding.value,   // e.g. "Disabled"
 
-          severity_score: detail?.vt_cvss_base_score ?? null,
+          vt_detail_id: detail.vt_detail_id,
 
-          // ✅ IMPORTANT: threats should have occurrence_count >= 1 if detected
-          occurrence_count:
-            (detail?.vt_kind === "THREAT" && finding.status === "DETECTED") ? 1 : 0,
+          // keep your existing lowercase convention
+          vt_kind: vtKindUpper.toLowerCase(), // "vulnerability" or "threat"
+
+          // optional; scoring uses details table, but good for UI/debug
+          severity_score: detail.vt_cvss_base_score ?? null,
+
+          // ✅ important for threats
+          occurrence_count: occurrenceCount,
 
           first_seen_at: new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
@@ -184,11 +201,25 @@ async function saveNetworkMetadataScan(req, res) {
       } else {
         console.log("[saveNetworkMetadataScan] no vuln rows to insert");
       }
+
+      // ✅ Compute + persist risk score AFTER inserting findings (once per scan)
+      const { data: riskScore, error: riskErr } = await supabaseClient.rpc(
+        "compute_scan_risk",
+        { p_scan_id: scanRow.scan_id }
+      );
+      if (riskErr) throw riskErr;
+
+      riskScoreValue = riskScore ?? 0;
+      console.log("[saveNetworkMetadataScan] risk score computed:", riskScoreValue);
+      
     }
 
     return res.status(201).json({
       status: "OK",
       network_id: network.network_id,
+      scan_id: scanRow?.scan_id ?? null,
+      risk_score: riskScoreValue,
+      risk_label: getRiskLabel(riskScoreValue),
       network,
     });
   } catch (err) {
