@@ -39,6 +39,7 @@ const SAM = () => {
     vulnDetail,
     vulnDetailLoading,
     reloadVulnerabilities,
+    clearVulnerabilities,
   } = useVulnerabilities(null); // don't auto-load on select; load after explicit scan
 
   const {
@@ -288,6 +289,10 @@ const SAM = () => {
           <VulnerabilitiesTable
             vulnerabilities={vulnerabilities}
             onView={openVulnDetail}
+            onClear={() => {
+              const bssid = selectedNetwork?.bssid || lastScannedNetwork?.bssid;
+              clearVulnerabilities(bssid);
+            }}
           />
         )}
       </div>

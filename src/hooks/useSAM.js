@@ -123,6 +123,16 @@ export const useVulnerabilities = (bssid) => {
   const [vulnDetailLoading, setVulnDetailLoading] = useState(false);
   const [vulnError, setVulnError] = useState(null);
 
+  /** Clear vulnerabilities from the SAM view for a given BSSID.
+   *  Persists a timestamp in localStorage so old results stay hidden after refresh. */
+  const clearVulnerabilities = (targetBssid) => {
+    if (targetBssid) {
+      const key = `sam_cleared_${targetBssid.toUpperCase()}`;
+      localStorage.setItem(key, new Date().toISOString());
+    }
+    setVulnerabilities([]);
+  };
+
   const loadVulnerabilities = async (targetBssid) => {
     // if there is no selected network, show nothing
     if (!targetBssid) {
@@ -134,11 +144,9 @@ export const useVulnerabilities = (bssid) => {
       setVulnsLoading(true);
       setVulnError(null);
 
-      /* const url = bssid
-        ? `/api/webApp/vulnerabilities_latest?bssid=${encodeURIComponent(
-            bssid
-          )}`
-        : `/api/webApp/vulnerabilities_latest`; */
+      // Check if the user previously cleared results for this BSSID
+      const clearedKey = `sam_cleared_${targetBssid.toUpperCase()}`;
+      const clearedAfter = localStorage.getItem(clearedKey);
 
       const url = `/api/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
         targetBssid
@@ -167,15 +175,25 @@ export const useVulnerabilities = (bssid) => {
         return "LOW";
       };
 
-      const mapped = (body.rows || []).map((r) => ({
+      let mapped = (body.rows || []).map((r) => ({
         id: r.vt_id ?? r.id,
         name: r.vt_name ?? r.name,
         score: r.severity_score ?? r.score,
         observedConfig: r.vt_value ?? r.observedConfig,
         detectedTime: r.scan_start ?? r.detectedTime,
+        scan_id: r.scan_id ?? null,
         bssid: r.bssid,
         severity: r.severity ?? deriveSeverity(r.severity_score),
       }));
+
+      // Filter out vulnerabilities that were detected before the user cleared the list
+      if (clearedAfter) {
+        const clearedMs = new Date(clearedAfter).getTime();
+        mapped = mapped.filter((v) => {
+          const detectedMs = v.detectedTime ? new Date(v.detectedTime).getTime() : 0;
+          return detectedMs > clearedMs;
+        });
+      }
 
       setVulnerabilities(mapped);
       console.log("[loadVulnerabilities] mapped rows:", mapped.length, mapped);
@@ -208,31 +226,59 @@ export const useVulnerabilities = (bssid) => {
   detectedTime,   // scan_start
 } */
 
-  const fetchVulnDetail = async (vulnIdOrName) => {
+  const fetchVulnDetail = async (vulnRow) => {
     try {
       setVulnDetailLoading(true);
       setVulnError(null);
-      
-      // ✅ SAFE FALLBACK (WORKS NOW)
-    setVulnDetail({
-      severity: vulnRow?.severity ?? "N/A",
-      name: vulnRow?.name ?? "Unknown Vulnerability",
-      cvss: vulnRow?.score ?? "N/A",
-      cvssVector: vulnRow?.cvssVector ?? "N/A",
-      description:
-        vulnRow?.description ??
-        "Detailed information for this vulnerability is not yet available.",
-      recommendations: vulnRow?.recommendations ?? { nist: [], owasp: [] },
-      observedConfig: vulnRow?.observedConfig ?? "N/A",
-      detectedTime: vulnRow?.detectedTime ?? null,
-    });
-  } catch (err) {
-    console.error("fetchVulnDetail error:", err);
-    setVulnError(err.message || "Failed to load vulnerability detail");
-  } finally {
-    setVulnDetailLoading(false);
+
+      // Try fetching rich details from DB via API
+      // Prefer name (matches vt_name) over id (numeric DB row ID)
+      const lookupKey = vulnRow?.name || vulnRow?.id;
+      if (lookupKey) {
+        try {
+          const res = await getVulnerabilityDetail(lookupKey);
+          if (res?.data) {
+            setVulnDetail({
+              severity: res.data.severity ?? vulnRow?.severity ?? "N/A",
+              name: res.data.name ?? vulnRow?.name ?? "Unknown Vulnerability",
+              cvss: res.data.cvss ?? vulnRow?.score ?? "N/A",
+              cvssVector: res.data.cvssVector ?? "N/A",
+              description: res.data.description ?? defaultVulnDescription(vulnRow),
+              recommendations: res.data.recommendations ?? { nist: [], owasp: [] },
+              observedConfig: vulnRow?.observedConfig ?? "N/A",
+              detectedTime: vulnRow?.detectedTime ?? null,
+            });
+            return; // success — done
+          }
+        } catch (apiErr) {
+          console.warn("API detail fetch failed, using local fallback:", apiErr);
+        }
+      }
+
+      // Fallback: build detail from the row data we already have
+      setVulnDetail({
+        severity: vulnRow?.severity ?? "N/A",
+        name: vulnRow?.name ?? "Unknown Vulnerability",
+        cvss: vulnRow?.score ?? "N/A",
+        cvssVector: "N/A",
+        description: defaultVulnDescription(vulnRow),
+        recommendations: { nist: [], owasp: [] },
+        observedConfig: vulnRow?.observedConfig ?? "N/A",
+        detectedTime: vulnRow?.detectedTime ?? null,
+      });
+    } catch (err) {
+      console.error("fetchVulnDetail error:", err);
+      setVulnError(err.message || "Failed to load vulnerability detail");
+    } finally {
+      setVulnDetailLoading(false);
+    }
+  };
+
+  /** Helper to generate a default description from the row data */
+  function defaultVulnDescription(row) {
+    if (!row) return "Detailed information for this vulnerability is not yet available.";
+    return `${row.name || "This vulnerability"} was detected during analysis. Observed configuration: ${row.observedConfig || "N/A"}. Review and apply the recommendations to mitigate risk.`;
   }
-};
 
   return {
     vulnerabilities, //real data from backend
@@ -242,6 +288,7 @@ export const useVulnerabilities = (bssid) => {
     vulnDetailLoading,
     fetchVulnDetail,
     reloadVulnerabilities: loadVulnerabilities, // <-- new
+    clearVulnerabilities, // <-- clear SAM view
   };
   
 };

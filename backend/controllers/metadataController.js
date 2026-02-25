@@ -192,6 +192,7 @@ async function getVulnerabilitiesLatest(req, res) {
           observedConfig: item.vt_value,
           
           // Use the variables we extracted above
+          scan_id: scanObj?.scan_id ?? null,
           detectedTime: scanObj?.scan_start,
           network_id: scanObj?.network_id ?? null,
           bssid: netObj?.bssid ?? null,

@@ -321,10 +321,22 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 
 app.get('/api/history/vulnerabilities', async (req, res) => {
   try {
-    // 1) Get all scans (you can add WHERE user_id = ... later)
+    // 1) Get all scans joined with networks for SSID/BSSID/channel/num_clients
     const { data: scans, error: scansError } = await supabaseClient
       .from('scans')
-      .select('scan_id, created_at, scan_data')
+      .select(`
+        scan_id,
+        created_at,
+        scan_start,
+        scan_end,
+        scan_data,
+        networks (
+          ssid,
+          bssid,
+          channel,
+          num_clients
+        )
+      `)
       .order('created_at', { ascending: false });
 
     if (scansError) throw scansError;
@@ -335,7 +347,20 @@ app.get('/api/history/vulnerabilities', async (req, res) => {
 
     const { data: findings, error: findingsError } = await supabaseClient
       .from('vulnerabilities_threat')
-      .select('scan_id, vt_name, vt_kind, severity_score')
+      .select(`
+        scan_id,
+        vt_name,
+        vt_kind,
+        vt_status,
+        vt_value,
+        severity_score,
+        detail:vulnerability_threat_details (
+          vt_code,
+          vt_name,
+          vt_severity_rating,
+          vt_cvss_base_score
+        )
+      `)
       .in('scan_id', scanIds)
       .eq('vt_kind', 'vulnerability');
 
@@ -351,22 +376,31 @@ app.get('/api/history/vulnerabilities', async (req, res) => {
     // 4) Map to frontend shape
     const result = scans.map(scan => {
       const items = byScan.get(scan.scan_id) || [];
+      const net = scan.networks || {};
 
-      // Example: assume scan_data has ssid or network name
       const ssid =
+        net.ssid ||
         scan.scan_data?.ssid ||
         scan.scan_data?.network_name ||
         `Scan ${scan.scan_id}`;
 
       return {
         id: scan.scan_id,
-        datetime: scan.created_at,          // you can format this client-side
+        datetime: scan.created_at,
         ssid,
-        summary: items.length,              // number of vulns in this scan
+        bssid: net.bssid || scan.scan_data?.bssid || null,
+        channel: net.channel ?? scan.scan_data?.channel ?? null,
+        scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
+        scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
+        num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
+        summary: items.length,
         details: items.map(i => ({
-          severity: 'UNKNOWN',              // or derive from vt_value / vt_status
-          name: i.vt_name || i.vt_kind,
-          score: i.severity_score ?? 0,
+          id: i.detail?.vt_code ?? null,
+          severity: i.detail?.vt_severity_rating ?? 'UNKNOWN',
+          name: i.detail?.vt_name || i.vt_name || i.vt_kind,
+          score: i.detail?.vt_cvss_base_score ?? i.severity_score ?? 0,
+          status: i.vt_status || null,
+          value: i.vt_value || null,
         })),
       };
     });
@@ -382,7 +416,19 @@ app.get('/api/history/threats', async (req, res) => {
   try {
     const { data: scans, error: scansError } = await supabaseClient
       .from('scans')
-      .select('scan_id, created_at, scan_data')
+      .select(`
+        scan_id,
+        created_at,
+        scan_start,
+        scan_end,
+        scan_data,
+        networks (
+          ssid,
+          bssid,
+          channel,
+          num_clients
+        )
+      `)
       .order('created_at', { ascending: false });
 
     if (scansError) throw scansError;
@@ -396,6 +442,7 @@ app.get('/api/history/threats', async (req, res) => {
         scan_id,
         vt_name,
         vt_kind,
+        vt_status,
         severity_score,
         detail:vulnerability_threat_details(
           vt_code,
@@ -416,8 +463,10 @@ app.get('/api/history/threats', async (req, res) => {
 
     const result = scans.map(scan => {
       const items = byScan.get(scan.scan_id) || [];
+      const net = scan.networks || {};
 
       const ssid =
+        net.ssid ||
         scan.scan_data?.ssid ||
         scan.scan_data?.network_name ||
         `Scan ${scan.scan_id}`;
@@ -426,12 +475,18 @@ app.get('/api/history/threats', async (req, res) => {
         id: scan.scan_id,
         datetime: scan.created_at,
         ssid,
+        bssid: net.bssid || scan.scan_data?.bssid || null,
+        channel: net.channel ?? scan.scan_data?.channel ?? null,
+        scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
+        scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
+        num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
         summary: items.length,
         threats: items.map(i => ({
           code: i.detail?.vt_code ?? null,
           severity: i.detail?.vt_severity_rating ?? 'UNKNOWN',
           name: i.vt_name || i.vt_kind,
           score: i.detail?.vt_cvss_base_score ?? i.severity_score ?? 0,
+          status: i.vt_status || null,
           occurrences: 1,
           window: '',
         })),

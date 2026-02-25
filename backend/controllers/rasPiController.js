@@ -140,17 +140,37 @@ async function saveNetworkMetadataScan(req, res) {
           .maybeSingle();
         if (detailErr) throw detailErr;
 
+        // vulnRows.push({
+        //   scan_id: scanRow.scan_id,
+        //   // use the canonical name from details if available, otherwise fallback
+        //   vt_name: detail?.vt_name || key,      // e.g. "Management Frame Protection" or "mfp"
+        //   vt_status: finding.status,            // "DETECTED"
+        //   vt_value: finding.value,              // "Disabled"
+        //   vt_detail_id: detail?.vt_detail_id || null,
+        //   // Mark these rows explicitly as vulnerability findings so they can be filtered
+        //   // Normalize to lowercase for consistent querying
+        //   vt_kind: (detail?.vt_kind || 'vulnerability').toLowerCase(),
+        //   severity_score: detail?.vt_cvss_base_score ?? null,
+        // });
+
         vulnRows.push({
           scan_id: scanRow.scan_id,
-          // use the canonical name from details if available, otherwise fallback
-          vt_name: detail?.vt_name || key,      // e.g. "Management Frame Protection" or "mfp"
+          vt_name: detail?.vt_name || key,
           vt_status: finding.status,            // "DETECTED"
-          vt_value: finding.value,              // "Disabled"
+          vt_value: finding.value,
           vt_detail_id: detail?.vt_detail_id || null,
-          // Mark these rows explicitly as vulnerability findings so they can be filtered
-          // Normalize to lowercase for consistent querying
-          vt_kind: (detail?.vt_kind || 'vulnerability').toLowerCase(),
+
+          // keep for UI filtering (your other endpoint uses ilike "vulnerability")
+          vt_kind: (detail?.vt_kind || "VULNERABILITY").toLowerCase(),
+
           severity_score: detail?.vt_cvss_base_score ?? null,
+
+          // ✅ IMPORTANT: threats should have occurrence_count >= 1 if detected
+          occurrence_count:
+            (detail?.vt_kind === "THREAT" && finding.status === "DETECTED") ? 1 : 0,
+
+          first_seen_at: new Date().toISOString(),
+          last_seen_at: new Date().toISOString(),
         });
       }
 
