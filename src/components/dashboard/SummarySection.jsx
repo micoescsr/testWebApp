@@ -25,22 +25,20 @@ const SummarySection = ({
   clearHoverContext,
 }) => {
   if (!data) return null;
-  const { riskScoreData, severityData } = data;
 
-  // Mock top risks table; replace with backend later
-  const topRisks = [
-    { ssid: "Nacho_Wi-Fi", risk: 80, severityCount: 10, clients: 22 },
-    { ssid: "StarboxFreeWiFi", risk: 78, severityCount: 9, clients: 18 },
-    { ssid: "NenengsFreeWiFi", risk: 75, severityCount: 8, clients: 15 },
-    { ssid: "JubileeFreeWiFi", risk: 73, severityCount: 7, clients: 11 },
-    { ssid: "ManamFreeWiFi", risk: 71, severityCount: 6, clients: 9 },
-  ];
-
-  // Mock open vs encrypted; replace with real encryption stats
-  const networkEncryptionData = [
-    { name: "Open", value: 14 },
-    { name: "Encrypted", value: 12 },
-  ];
+  const {
+    // stat cards
+    lastScan,
+    openNetworks,
+    encryptedNetworks,
+    totalFindings,
+    totalClients,
+    // charts
+    riskScoreData,
+    severityData,
+    topRisks,
+    networkEncryptionData,
+  } = data;
 
   const isCard = (key) =>
     hoverContext &&
@@ -57,6 +55,9 @@ const SummarySection = ({
     hoverContext.dimension === "encryption" &&
     hoverContext.key === name;
 
+  const formatShortDate = (value) =>
+    value ? new Date(value).toLocaleDateString() : "N/A";
+
   return (
     <>
       {/* Stat cards (drive related charts) */}
@@ -72,7 +73,7 @@ const SummarySection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Last Scan</p>
-          <p className="stat-value">11/14/2025</p>
+          <p className="stat-value">{formatShortDate(lastScan)}</p>
         </div>
 
         {/* Open Networks ↔ Networks by Encryption (pie) */}
@@ -86,7 +87,7 @@ const SummarySection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Open Networks</p>
-          <p className="stat-value">14</p>
+          <p className="stat-value">{openNetworks ?? 0}</p>
         </div>
 
         {/* Encrypted Networks ↔ Networks by Encryption (pie) */}
@@ -103,7 +104,7 @@ const SummarySection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Encrypted Networks</p>
-          <p className="stat-value">12</p>
+          <p className="stat-value">{encryptedNetworks ?? 0}</p>
         </div>
 
         {/* Total vulns/threats ↔ Severity by Kind */}
@@ -117,7 +118,7 @@ const SummarySection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Total Vulnerabilities/Threats</p>
-          <p className="stat-value">52</p>
+          <p className="stat-value">{totalFindings ?? 0}</p>
         </div>
 
         {/* Total clients ↔ Top risks table */}
@@ -131,7 +132,7 @@ const SummarySection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Total Clients</p>
-          <p className="stat-value">120</p>
+          <p className="stat-value">{totalClients ?? 0}</p>
         </div>
       </div>
 
@@ -179,7 +180,7 @@ const SummarySection = ({
                     dominantBaseline="middle"
                     className="radial-label"
                   >
-                    {riskScoreData[0]?.value ?? 0}%
+                    {riskScoreData?.[0]?.value ?? 0}%
                     <tspan x="50%" dy="1.5em" className="radial-sub">
                       High Risk
                     </tspan>
@@ -219,11 +220,12 @@ const SummarySection = ({
                   dataKey="vulnerabilities"
                   name="Vulnerabilities"
                   fill={COLORS[0]}
-                  onMouseOver={(data) =>
+                  onMouseOver={(payload) =>
+                    payload &&
                     setHoverContext({
                       dimension: "severity_kind",
                       key: {
-                        severity: data.severity,
+                        severity: payload.severity,
                         kind: "VULNERABILITY",
                       },
                     })
@@ -233,10 +235,11 @@ const SummarySection = ({
                   dataKey="threats"
                   name="Threats"
                   fill={COLORS[1]}
-                  onMouseOver={(data) =>
+                  onMouseOver={(payload) =>
+                    payload &&
                     setHoverContext({
                       dimension: "severity_kind",
-                      key: { severity: data.severity, kind: "THREAT" },
+                      key: { severity: payload.severity, kind: "THREAT" },
                     })
                   }
                 />
@@ -256,36 +259,32 @@ const SummarySection = ({
           </div>
           <div className="panel-body top-networks">
             <div className="top-row top-head">
-              <span>SSID</span>
-              <span>RISK %</span>
-              <span>SEVERITIES</span>
-              <span>CLIENTS</span>
+              <span className="col-ssid">SSID</span>
+              <span className="col-risk">RISK %</span>
+              <span className="col-sev">SEVERITIES</span>
+              <span className="col-clients">CLIENTS</span>
             </div>
-            {topRisks.map((item) => (
+            {topRisks?.map((item) => (
               <div
                 key={item.ssid}
-                className={`top-row ${
-                  isHoveredNetwork(item.ssid) ? "hover-highlight" : ""
-                }`}
+                className={`top-row ${isHoveredNetwork(item.ssid) ? "hover-highlight" : ""}`}
                 onMouseEnter={() =>
-                  setHoverContext({
-                    dimension: "network",
-                    key: item.ssid,
-                  })
+                  setHoverContext({ dimension: "network", key: item.ssid })
                 }
                 onMouseLeave={clearHoverContext}
               >
-                <span>{item.ssid}</span>
-                <span className="score-link">{item.risk}</span>
-                <span>{item.severityCount}</span>
-                <span>{item.clients}</span>
+                <span className="col-ssid">{item.ssid}</span>
+                <span className="col-risk score-link">{item.risk}</span>
+                <span className="col-sev">{item.severityCount}</span>
+                <span className="col-clients">{item.clients}</span>
               </div>
             ))}
           </div>
+
         </div>
       </div>
 
-      {/* Bottom row: Network Pie + metric note */}
+      {/* Bottom row: Network Pie */}
       <div className="dash-bottom-row">
         <div
           className={`panel ${
@@ -310,14 +309,15 @@ const SummarySection = ({
                     innerRadius={60}
                     outerRadius={80}
                     paddingAngle={3}
-                    onMouseOver={(data) =>
+                    onMouseOver={(payload) =>
+                      payload?.name &&
                       setHoverContext({
                         dimension: "encryption",
-                        key: data.name,
+                        key: payload.name,
                       })
                     }
                   >
-                    {networkEncryptionData.map((entry, index) => (
+                    {networkEncryptionData?.map((entry, index) => (
                       <Cell
                         key={entry.name}
                         fill={COLORS[index % COLORS.length]}
@@ -335,7 +335,7 @@ const SummarySection = ({
               </ResponsiveContainer>
             </div>
             <div className="threat-legend">
-              {networkEncryptionData.map((t, index) => (
+              {networkEncryptionData?.map((t, index) => (
                 <div
                   key={t.name}
                   className={`threat-row-item ${
@@ -355,18 +355,6 @@ const SummarySection = ({
             </div>
           </div>
         </div>
-
-{/*         <div className="panel">
-          <div className="panel-header">
-            <h2>Metric Notes</h2>
-          </div>
-          <div className="panel-body">
-            <p style={{ fontSize: 12, color: "#6b7280" }}>
-              Wi-Fi Risk Score weights severity and vt_kind (threats vs
-              vulnerabilities) plus encryption and client counts.
-            </p>
-          </div>
-        </div> */}
       </div>
     </>
   );

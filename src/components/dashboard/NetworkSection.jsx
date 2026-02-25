@@ -31,22 +31,22 @@ const NetworkSection = ({
   if (!data) return null;
 
   const {
+    // stat cards
+    lastScan,
+    currentRiskScore,
+    prevScore,
+    prevScanDate,
+    encryption,
+    numClients,
+    totalVulns,
+    totalThreats,
+    // charts
     riskScoreData,
     severityData,
+    kindSplitData,
     commonVulnsData,
+    clientsRiskTrendData,
   } = data;
-
-  const kindSplitData = [
-    { name: "THREAT", value: 2 },
-    { name: "VULNERABILITY", value: 3 },
-  ];
-
-  const clientsRiskTrendData = [
-    { scan: "Scan 1", clients: 8, risk: 70 },
-    { scan: "Scan 2", clients: 10, risk: 75 },
-    { scan: "Scan 3", clients: 12, risk: 78 },
-    { scan: "Scan 4", clients: 15, risk: 82 },
-  ];
 
   const isCard = (key) =>
     hoverContext &&
@@ -65,6 +65,19 @@ const NetworkSection = ({
     hoverContext.key.severity === sev &&
     hoverContext.key.kind === kind;
 
+  const formatDate = (value) =>
+    value ? new Date(value).toLocaleString() : "N/A";
+
+  const formatShortDate = (value) =>
+    value ? new Date(value).toLocaleDateString() : "N/A";
+
+  const computeDaysAgo = (prev) => {
+    if (!prev) return "N/A";
+    const diffMs = Date.now() - new Date(prev).getTime();
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return days <= 0 ? "today" : `${days}d ago`;
+  };
+
   return (
     <>
       {/* Per-network stat cards */}
@@ -80,7 +93,7 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Last Scan</p>
-          <p className="stat-value">11/14/2025</p>
+          <p className="stat-value">{formatShortDate(lastScan)}</p>
         </div>
 
         {/* Previous status ↔ Gauge/Trend */}
@@ -95,8 +108,12 @@ const NetworkSection = ({
         >
           <div className="stat-indicator"></div>
           <p className="stat-label">Status as of previous scan</p>
-          <p className="stat-value">80%</p>
-          <p className="stat-sublabel">7d ago</p>
+          <p className="stat-value">
+            {prevScore != null ? `${prevScore}%` : "N/A"}
+          </p>
+          <p className="stat-sublabel">
+            {computeDaysAgo(prevScanDate)}
+          </p>
         </div>
 
         {/* Encryption ↔ Threat/Vuln donut */}
@@ -110,7 +127,9 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Network Encryption</p>
-          <p className="stat-value">OPEN</p>
+          <p className="stat-value">
+            {(encryption || "Unknown").toUpperCase()}
+          </p>
         </div>
 
         {/* Vulns ↔ Severity bar + issues list */}
@@ -124,7 +143,7 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Scanned Vulnerabilities</p>
-          <p className="stat-value">5</p>
+          <p className="stat-value">{totalVulns ?? 0}</p>
         </div>
 
         {/* Threats ↔ Threat/Vuln donut */}
@@ -138,7 +157,7 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Detected Threats</p>
-          <p className="stat-value">2</p>
+          <p className="stat-value">{totalThreats ?? 0}</p>
         </div>
 
         {/* Clients ↔ Clients vs Risk line */}
@@ -152,7 +171,7 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Connected Clients</p>
-          <p className="stat-value">12</p>
+          <p className="stat-value">{numClients ?? 0}</p>
         </div>
       </div>
 
@@ -202,7 +221,7 @@ const NetworkSection = ({
                     dominantBaseline="middle"
                     className="radial-label"
                   >
-                    {riskScoreData[0]?.value ?? 0}%
+                    {riskScoreData?.[0]?.value ?? 0}%
                     <tspan x="50%" dy="1.5em" className="radial-sub">
                       High Risk
                     </tspan>
@@ -239,17 +258,22 @@ const NetworkSection = ({
                     innerRadius={60}
                     outerRadius={80}
                     paddingAngle={3}
-                    onMouseOver={(data) =>
+                    onMouseOver={(payload) =>
+                      payload?.name &&
                       setHoverContext({
                         dimension: "kind",
-                        key: data.name,
+                        key: payload.name,
                       })
                     }
                   >
-                    {kindSplitData.map((entry, index) => (
+                    {kindSplitData?.map((entry) => (
                       <Cell
                         key={entry.name}
-                        fill={entry.name === "VULNERABILITY" ? COLORS[0] : COLORS[1]}
+                        fill={
+                          entry.name === "VULNERABILITY"
+                            ? COLORS[0]
+                            : COLORS[1]
+                        }
                         opacity={
                           hoverContext &&
                           hoverContext.dimension === "kind" &&
@@ -264,7 +288,7 @@ const NetworkSection = ({
               </ResponsiveContainer>
             </div>
             <div className="threat-legend">
-              {kindSplitData.map((k, index) => (
+              {kindSplitData?.map((k) => (
                 <div
                   key={k.name}
                   className={`threat-row-item ${
@@ -274,7 +298,8 @@ const NetworkSection = ({
                   <span
                     className="legend-dot"
                     style={{
-                      backgroundColor: k.name === "VULNERABILITY" ? COLORS[0] : COLORS[1],
+                      backgroundColor:
+                        k.name === "VULNERABILITY" ? COLORS[0] : COLORS[1],
                     }}
                   />
                   <span className="legend-label">{k.name}</span>
@@ -314,7 +339,7 @@ const NetworkSection = ({
                   name="Vulnerabilities"
                   fill={COLORS[0]}
                 >
-                  {severityData.map((entry) => (
+                  {severityData?.map((entry) => (
                     <Cell
                       key={`vuln-${entry.severity}`}
                       fill={COLORS[0]}
@@ -326,8 +351,8 @@ const NetworkSection = ({
                               entry.severity,
                               "VULNERABILITY"
                             ) ||
-                            hoverContext.dimension === "kind" &&
-                              hoverContext.key === "VULNERABILITY"
+                            (hoverContext.dimension === "kind" &&
+                              hoverContext.key === "VULNERABILITY")
                             ? 1
                             : 0.4
                           : 1
@@ -349,11 +374,12 @@ const NetworkSection = ({
                   name="Threats"
                   fill={COLORS[1]}
                 >
-                  {severityData.map((entry) => (
+                  {severityData?.map((entry) => (
                     <Cell
                       key={`threat-${entry.severity}`}
                       fill={COLORS[1]}
-                      opacity={
+                      opacity=
+                      {
                         hoverContext &&
                         (hoverContext.dimension === "kind" ||
                           hoverContext.dimension === "severity_kind")
@@ -361,8 +387,8 @@ const NetworkSection = ({
                               entry.severity,
                               "THREAT"
                             ) ||
-                            hoverContext.dimension === "kind" &&
-                              hoverContext.key === "THREAT"
+                            (hoverContext.dimension === "kind" &&
+                              hoverContext.key === "THREAT")
                             ? 1
                             : 0.4
                           : 1
@@ -434,7 +460,7 @@ const NetworkSection = ({
           </div>
           <div className="panel-body">
             <div className="vuln-list-detailed">
-              {commonVulnsData.map((v) => (
+              {commonVulnsData?.map((v) => (
                 <div key={v.name} className="vuln-item-detailed">
                   <div className="vuln-severity-badge">{v.severity}</div>
                   <div className="vuln-details">

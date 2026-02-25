@@ -1,5 +1,13 @@
 // components/dashboard/DashboardHeader.jsx
-const DashboardHeader = ({ viewMode, setViewMode, isSummary }) => (
+const DashboardHeader = ({
+  viewMode,
+  setViewMode,
+  isSummary,
+  networks,
+  scanOptions = [],
+  selectedScanId,
+  setSelectedScanId,
+}) => (
   <div className={isSummary ? "dash-header-summary" : "dash-header"}>
     <h1>Dashboard</h1>
 
@@ -10,16 +18,27 @@ const DashboardHeader = ({ viewMode, setViewMode, isSummary }) => (
           value={viewMode}
           onChange={(e) => setViewMode(e.target.value)}
         >
-          <option>Summary</option>
-          <option>Nacho_WiFi</option>
+          <option value="Summary">Summary</option>
+          {networks.map((n) => (
+            <option key={n.network_id} value={n.network_id}>
+              {n.ssid}
+            </option>
+          ))}
         </select>
       </div>
 
       {!isSummary && (
         <div className="filter-group">
           <label>DATE</label>
-          <select>
-            <option>Nov 14, 2025</option>
+          <select
+            value={selectedScanId ?? ""}
+            onChange={(e) => setSelectedScanId(Number(e.target.value))}
+          >
+            {scanOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
           </select>
         </div>
       )}
