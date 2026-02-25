@@ -26,7 +26,7 @@ function ForgotPassword() {
 
       setStatus({
         loading: false,
-        message: "Password reset email sent. Please check your inbox.",
+        message: "If an account exists for this email, a reset link has been sent.",
         error: "",
       });
     } catch (err) {
