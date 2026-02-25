@@ -4,6 +4,9 @@ import { useState } from "react";
 import "./Sidebar.css";
 import { useProfile } from "../hooks/useProfile";
 import { useNetworkContext } from "../context/NetworkContext";
+import { logout as apiLogout } from "../api/authApi";
+import { setAccessToken } from "../api/axios";
+import { clearSessionState } from "../hooks/useSessionState";
 
 
 const Sidebar = () => {
@@ -13,8 +16,12 @@ const Sidebar = () => {
   const { networkId, scanId } = useNetworkContext();
   const role = profile?.role;
 
-  const handleLogout = () => {
-    // TODO later: clear auth token here
+  const handleLogout = async () => {
+    try {
+      await apiLogout();          // POST /auth/logout — clears HttpOnly refresh cookie
+    } catch (_) { /* best-effort: cookie may already be gone */ }
+    setAccessToken(null);          // clear in-memory Bearer token
+    clearSessionState();           // wipe all wf:* sessionStorage keys
     navigate("/login");
   };
 
