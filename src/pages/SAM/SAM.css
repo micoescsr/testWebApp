@@ -61,6 +61,7 @@
   width: 100%;
   border-collapse: collapse;
   background: #f9f9f9;
+  table-layout: fixed;
 }
 
 .sam-table th {
@@ -71,6 +72,7 @@
   text-align: left;
   padding: 14px 18px;
   border-bottom: 1px solid #e2e2e2;
+  width: 20%;
 }
 
 .sam-table td {
@@ -80,6 +82,18 @@
   background: #fff;
   vertical-align: middle;
 }
+
+/* Even column widths for 5-column layout */
+.sam-table th:nth-child(1),
+.sam-table td:nth-child(1) { width: 12%; text-align: center; }
+.sam-table th:nth-child(2),
+.sam-table td:nth-child(2) { width: 28%; }
+.sam-table th:nth-child(3),
+.sam-table td:nth-child(3) { width: 16%; text-align: center; }
+.sam-table th:nth-child(4),
+.sam-table td:nth-child(4) { width: 28%; }
+.sam-table th:nth-child(5),
+.sam-table td:nth-child(5) { width: 16%; text-align: right; padding-right: 22px; }
 
 .sam-table tbody tr {
   height: 56px;
@@ -301,8 +315,8 @@
 }
 
 .network-item.active {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #e5e7eb; /* light gray to indicate selection */
+  color: #111827;
   font-weight: 600;
 }
 
@@ -674,6 +688,9 @@
   flex-wrap: wrap;
   gap: 6px;
   margin: 8px 0 4px;
+  padding: 8px 18px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .filter-chip {
@@ -698,4 +715,58 @@
 th.sortable {
   cursor: pointer;
   user-select: none;
+}
+
+/* ===========================
+   Grouped-by-time rows
+=========================== */
+
+/* Parent header row for each detected-time group */
+.group-header-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header-row td {
+  background: #f0f2f5 !important;
+  padding: 12px 18px !important;
+  border-bottom: 1px solid #d9dce1;
+}
+
+.group-header-row:hover td {
+  background: #e4e7ec !important;
+}
+
+.group-header-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+}
+
+.group-count {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+/* Chevron icon rotation */
+.group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: #374151;
+}
+
+.group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+/* Child rows: subtle left border to indicate hierarchy */
+.group-child-row td:first-child {
+  border-left: 3px solid #2563eb;
 }

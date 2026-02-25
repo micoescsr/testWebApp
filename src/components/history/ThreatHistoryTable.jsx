@@ -7,11 +7,21 @@ const SORT_OPTIONS = [
   { key: "summary-asc", label: "Summary Counts (Lowest)" },
 ];
 
+/**
+ * Derive a risk label from a numeric score.
+ */
+const getRiskLabel = (score) => {
+  const n = Number(score) || 0;
+  if (n === 0) return "NONE";
+  if (n <= 39) return "LOW";
+  if (n <= 69) return "MEDIUM";
+  if (n <= 89) return "HIGH";
+  return "CRITICAL";
+};
+
 const ThreatHistoryTable = ({
   data,
-  expandedRow,
-  onToggleExpand,
-  onViewDetail,
+  onView,
   activeSorts,
   sortDropdownOpen,
   sortDropdownRef,
@@ -53,74 +63,63 @@ const ThreatHistoryTable = ({
         </div>
       </div>
 
-      <table className="history-table">
+      <table className="history-table history-table-summary">
         <thead>
           <tr>
             <th>DATE & TIME</th>
-            <th>SSID (TARGET NETWORK)</th>
-            <th>SUMMARY COUNTS</th>
+            <th>NETWORK</th>
+            <th>RISK SCORE</th>
+            <th>VULNS</th>
+            <th>THREATS</th>
             <th>ACTION</th>
           </tr>
         </thead>
 
         <tbody>
-          {data.map((item) => (
-            <>
-              <tr key={item.id}>
-                <td>{item.datetime}</td>
-                <td>{item.ssid}</td>
-                <td>{item.summary}</td>
-                <td
-                  className="expand-btn"
-                  onClick={() => onToggleExpand(item.id)}
-                >
-                  {expandedRow === item.id ? "Collapse ▲" : "Expand ▼"}
-                </td>
-              </tr>
+          {data.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="history-empty-cell">
+                No threat scan history found.
+              </td>
+            </tr>
+          ) : (
+            data.map((item) => {
+              const vulns = item.details || item.vulnerabilities || [];
+              const threats = item.threats || [];
+              const allScores = [
+                ...vulns.map((v) => Number(v.score || v.cvss) || 0),
+                ...threats.map((t) => Number(t.score || t.cvss) || 0),
+              ];
+              const riskScore =
+                item.riskScore ??
+                (allScores.length ? Math.max(...allScores) : 0);
+              const riskLabel = item.riskLabel || getRiskLabel(riskScore);
+              const vulnCount = item.vulnCount ?? vulns.length;
+              const threatCount = item.threatCount ?? threats.length;
 
-              {expandedRow === item.id && (
-                <tr className="expanded-row">
-                  <td colSpan={4}>
-                    <table className="inner-table">
-                      <thead>
-                        <tr>
-                          <th>SEVERITY LEVEL</th>
-                          <th>THREAT NAME</th>
-                          <th>SEVERITY SCORE</th>
-                          <th>OCCURRENCES</th>
-                          <th>DETECTION WINDOW</th>
-                          <th>ACTION</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {item.threats.map((threat, index) => (
-                          <tr key={`${item.id}-${index}`}>
-                            <td>
-                              <span
-                                className={`severity ${threat.severity.toLowerCase()}`}
-                              >
-                                {threat.severity}
-                              </span>
-                            </td>
-                            <td>{threat.name}</td>
-                            <td>{threat.score}</td>
-                            <td>{threat.occurrences}</td>
-                            <td>{threat.window}</td>
-                            <td
-                              className="view-action"
-                              onClick={() => onViewDetail(threat.code || threat.name)}
-                            >
-                              VIEW
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              return (
+                <tr key={item.id}>
+                  <td>{item.datetime}</td>
+                  <td>{item.ssid || "—"}</td>
+                  <td>
+                    <span
+                      className={`risk-score-chip ${riskLabel.toLowerCase()}`}
+                    >
+                      <span className="risk-score-dot" />
+                      {riskScore} {riskLabel}
+                    </span>
+                  </td>
+                  <td>{vulnCount}</td>
+                  <td>{threatCount}</td>
+                  <td>
+                    <button className="view-btn" onClick={() => onView(item)}>
+                      VIEW <span className="view-btn-arrow">▶</span>
+                    </button>
                   </td>
                 </tr>
-              )}
-            </>
-          ))}
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>

@@ -2,11 +2,11 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import Tabs from "../../components/common/Tabs/Tabs";
 import Pagination from "../../components/common/Pagination/Pagination";
-import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 import VulnerabilityHistoryTable from "../../components/history/VulnerabilityHistoryTable";
 import ThreatHistoryTable from "../../components/history/ThreatHistoryTable";
+import ScanDetailsDrawer from "../../components/history/ScanDetailsDrawer";
+import RawEvidenceModal from "../../components/modals/RawEvidenceModal/RawEvidenceModal";
 import { useSAMHistory } from "../../hooks/useSAMHistory";
-import { useThreats, useVulnerabilities } from "../../hooks/useSAM";
 import { usePagination } from "../../hooks/usePagination";
 import "./History.css";
 
@@ -22,9 +22,18 @@ const SORT_OPTIONS = [
 
 const History = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
-  const [expandedRow, setExpandedRow] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedScan, setSelectedScan] = useState(null);
+  const [activeDrawerTab, setActiveDrawerTab] = useState("vuln");
+
+  // Raw Evidence Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedFinding, setSelectedFinding] = useState(null);
+  const [selectedFindingType, setSelectedFindingType] =
+    useState("vulnerability");
 
   // Multi-select sort: ordered list of selected sort keys (first = primary)
   const [activeSorts, setActiveSorts] = useState(["datetime-desc"]);
@@ -34,7 +43,10 @@ const History = () => {
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target)) {
+      if (
+        sortDropdownRef.current &&
+        !sortDropdownRef.current.contains(e.target)
+      ) {
         setSortDropdownOpen(false);
       }
     };
@@ -43,8 +55,6 @@ const History = () => {
   }, []);
 
   const { vulnHistory, threatHistory } = useSAMHistory();
-  const { vulnDetail, vulnDetailLoading, fetchVulnDetail } = useVulnerabilities();
-  const { threatDetail, threatDetailLoading, fetchThreatDetail } = useThreats();
 
   // Multi-level sort comparator — applies sorts in order (first selected = primary)
   const multiSortComparator = (a, b) => {
@@ -65,6 +75,21 @@ const History = () => {
     return 0;
   };
 
+  // Format ISO datetimes into a readable local string for display in tables
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
   // Filter + sort data
   const filteredVulnHistory = useMemo(() => {
     let data = vulnHistory;
@@ -73,7 +98,7 @@ const History = () => {
       data = data.filter(
         (item) =>
           item.ssid?.toLowerCase().includes(q) ||
-          item.datetime?.toLowerCase().includes(q)
+          item.datetime?.toLowerCase().includes(q),
       );
     }
     return [...data].sort(multiSortComparator);
@@ -86,7 +111,7 @@ const History = () => {
       data = data.filter(
         (item) =>
           item.ssid?.toLowerCase().includes(q) ||
-          item.datetime?.toLowerCase().includes(q)
+          item.datetime?.toLowerCase().includes(q),
       );
     }
     return [...data].sort(multiSortComparator);
@@ -101,28 +126,29 @@ const History = () => {
     { label: "Threats", value: "threats" },
   ];
 
-  const toggleExpand = (id) => {
-    setExpandedRow(expandedRow === id ? null : id);
+  // --- Drawer handlers ---
+  const openDrawer = (scanRow) => {
+    setSelectedScan(scanRow);
+    setActiveDrawerTab(activeTab === "threats" ? "threat" : "vuln");
+    setDrawerOpen(true);
   };
 
-  const openVulnModal = async (vulnName) => {
-    await fetchVulnDetail(vulnName);
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setSelectedScan(null);
+  };
+
+  // --- Raw Evidence Modal handlers ---
+  const openJsonModal = (finding, type) => {
+    setSelectedFinding(finding);
+    setSelectedFindingType(type);
     setModalOpen(true);
   };
 
-  const openThreatModal = async (threatName) => {
-    await fetchThreatDetail(threatName);
-    setModalOpen(true);
+  const closeModal = () => {
+    setModalOpen(false);
+    setSelectedFinding(null);
   };
-
-  const closeModal = () => setModalOpen(false);
-
-  const currentDetail =
-    activeTab === "vulnerabilities" ? vulnDetail : threatDetail;
-  const detailLoading =
-    activeTab === "vulnerabilities"
-      ? vulnDetailLoading
-      : threatDetailLoading;
 
   // Toggle a sort option on/off. Prevents selecting conflicting directions for same field.
   const handleToggleSort = (key) => {
@@ -139,31 +165,28 @@ const History = () => {
       return [...withoutConflict, key];
     });
 
-    setExpandedRow(null);
     vulnPager.resetPage();
     threatPager.resetPage();
   };
 
   const handleTabChange = (value) => {
     setActiveTab(value);
-    setExpandedRow(null);
     setSearchQuery("");
     setActiveSorts(["datetime-desc"]);
     setSortDropdownOpen(false);
+    closeDrawer();
     vulnPager.resetPage();
     threatPager.resetPage();
   };
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
-    setExpandedRow(null);
     vulnPager.resetPage();
     threatPager.resetPage();
   };
 
   const clearSearch = () => {
     setSearchQuery("");
-    setExpandedRow(null);
     vulnPager.resetPage();
     threatPager.resetPage();
   };
@@ -174,71 +197,77 @@ const History = () => {
     .filter(Boolean)
     .join(", ");
 
+  // Build the modal title/subtitle from the selected finding
+  const modalTitle =
+    selectedFindingType === "threat"
+      ? "Threat Detection Payload"
+      : "Vulnerability Raw Payload";
+  const modalSubtitle = selectedFinding
+    ? `${selectedFinding.id || selectedFinding.code || "—"} — ${selectedFinding.name || "Unknown"}`
+    : "";
+
   return (
     <div className="history-page">
       <h1 className="page-title">History</h1>
 
-      <Tabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-      />
-
-      {/* Search bar */}
-      <div className="history-search-bar">
-        <svg
-          className="history-search-icon"
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          type="text"
-          className="history-search-input"
-          placeholder={`Search ${activeTab === "vulnerabilities" ? "vulnerabilities" : "threats"} by SSID or date...`}
-          value={searchQuery}
-          onChange={handleSearchChange}
-        />
-        {searchQuery && (
-          <button
-            className="history-search-clear"
-            onClick={clearSearch}
-            aria-label="Clear search"
+      <div className="history-top-bar">
+        {/* Search bar */}
+        <div className="history-search-bar">
+          <svg
+            className="history-search-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            className="history-search-input"
+            placeholder={`Search ${activeTab === "vulnerabilities" ? "vulnerabilities" : "threats"} by SSID or date...`}
+            value={searchQuery}
+            onChange={handleSearchChange}
+          />
+          {searchQuery && (
+            <button
+              className="history-search-clear"
+              onClick={clearSearch}
+              aria-label="Clear search"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        )}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {activeTab === "vulnerabilities" && (
         <>
           <VulnerabilityHistoryTable
-            data={vulnPager.currentItems}
-            expandedRow={expandedRow}
-            onToggleExpand={toggleExpand}
-            onViewDetail={openVulnModal}
+            data={vulnPager.currentItems.map((item) => ({
+              ...item,
+              datetime: formatDate(item.datetime),
+            }))}
+            onView={openDrawer}
             activeSorts={activeSorts}
             sortDropdownOpen={sortDropdownOpen}
             sortDropdownRef={sortDropdownRef}
@@ -259,10 +288,11 @@ const History = () => {
       {activeTab === "threats" && (
         <>
           <ThreatHistoryTable
-            data={threatPager.currentItems}
-            expandedRow={expandedRow}
-            onToggleExpand={toggleExpand}
-            onViewDetail={openThreatModal}
+            data={threatPager.currentItems.map((item) => ({
+              ...item,
+              datetime: formatDate(item.datetime),
+            }))}
+            onView={openDrawer}
             activeSorts={activeSorts}
             sortDropdownOpen={sortDropdownOpen}
             sortDropdownRef={sortDropdownRef}
@@ -280,13 +310,25 @@ const History = () => {
         </>
       )}
 
-      {modalOpen && currentDetail && (
-        <FindingDetailModal
-          onClose={closeModal}
-          vulnerability={currentDetail}
-          loading={detailLoading}
-        />
-      )}
+      {/* Right-side Scan Details Drawer */}
+      <ScanDetailsDrawer
+        open={drawerOpen}
+        onClose={closeDrawer}
+        scan={selectedScan}
+        initialTab={activeDrawerTab}
+        onOpenJsonModal={openJsonModal}
+      />
+
+      {/* Raw Evidence Modal */}
+      <RawEvidenceModal
+        open={modalOpen}
+        onClose={closeModal}
+        title={modalTitle}
+        subtitle={modalSubtitle}
+        finding={selectedFinding}
+        scanContext={selectedScan}
+        type={selectedFindingType}
+      />
     </div>
   );
 };
