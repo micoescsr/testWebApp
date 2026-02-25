@@ -99,6 +99,15 @@ async function updateUser(req, res) {
     // Capture old values for audit trail
     const oldProfile = await userRepository.findProfileById(id);
 
+    // AUTH-008: If status is changing to active without temp PW issuance,
+    // clear the must_change_password flag and temp_expires_at so existing PW stays valid
+    const oldStatus = (oldProfile?.status || "").toLowerCase().trim();
+    const newStatus = (updates.status || "").toLowerCase().trim();
+    if (oldStatus !== "active" && newStatus === "active") {
+      updates.must_change_password = false;
+      updates.temp_expires_at = null;
+    }
+
     const updated = await userRepository.updateProfile(id, updates);
 
     // Audit log
@@ -198,6 +207,7 @@ async function activateUserWithTemp(req, res) {
     return res.json({
       profile: updatedProfile,
       tempPassword,
+      tempExpiresAt: updatedProfile.temp_expires_at,
     });
   } catch (error) {
     console.error("activate-with-temp error:", error);
@@ -270,6 +280,86 @@ async function deleteUser(req, res) {
   }
 }
 
+// Superadmin-only: Deactivate account and archive profile data
+async function deactivateUser(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+
+    const currentRole = await getCurrentUserRole(currentUser.id);
+    if (currentRole !== "superadmin") {
+      return res.status(403).json({ error: "Superadmin only" });
+    }
+
+    const id = req.params.id;
+    const { anonymize = true } = req.body;
+
+    // Prevent self-deactivation
+    if (id === currentUser.id) {
+      return res.status(400).json({ error: "Cannot deactivate your own account" });
+    }
+
+    // Capture full profile snapshot for archival before any changes
+    const archivedProfile = await userRepository.findProfileById(id);
+    if (!archivedProfile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    // Build update payload
+    const updates = {
+      status: "inactive",
+      must_change_password: false,
+      temp_expires_at: null,
+    };
+
+    if (anonymize) {
+      updates.first_name = "Deactivated";
+      updates.last_name = "User";
+      updates.username = `deactivated_${id.slice(0, 8)}`;
+      updates.email = null;
+    }
+
+    const updated = await userRepository.updateProfile(id, updates);
+
+    // Audit log with full archived snapshot in old_values for compliance
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_DEACTIVATE",
+      eventStatus: "SUCCESS",
+      entityType: "USER",
+      entityIdUuid: id,
+      oldValues: archivedProfile,
+      newValues: updates,
+      meta: {
+        anonymized: anonymize,
+        archived: true,
+        reason: "Admin deactivated account via Reset Slot",
+      },
+    });
+
+    return res.json({
+      message: "Account deactivated and archived",
+      profile: updated,
+      archived: true,
+    });
+  } catch (error) {
+    console.error("deactivateUser error:", error);
+    await logAuditEvent({
+      req,
+      actorId: req.user?.id,
+      eventName: "USER_DEACTIVATE",
+      eventStatus: "FAILED",
+      entityType: "USER",
+      entityIdUuid: req.params.id,
+      meta: { error: error.message },
+    }).catch(() => {});
+    return res.status(500).json({ error: "Failed to deactivate user" });
+  }
+}
+
 // Export ALL at bottom (Node sees defined functions)
 module.exports = { 
   //createUser, 
@@ -278,4 +368,5 @@ module.exports = {
   deleteUser,
   getCurrentProfile, // NEW
   activateUserWithTemp,
+  deactivateUser,
 };

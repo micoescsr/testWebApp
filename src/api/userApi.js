@@ -17,6 +17,11 @@ export const activateUserWithTemp = (id, userData) => {
 };
 // ADDED 3:27 PM FEB 11 --- END
 
+// Deactivate account + archive profile
+export const deactivateUser = (id, { anonymize = true } = {}) => {
+  return api.post(`webapp/users/profiles/${id}/deactivate`, { anonymize });
+};
+
 
 /* // CREATE user
 export const createUser = (userData) => {
