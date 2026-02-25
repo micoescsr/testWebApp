@@ -1,5 +1,7 @@
 
 // backend/controllers/authController.js
+const { logAuditEvent } = require("../utils/auditLogger");
+const { supabaseClient } = require("../config/supabaseClient");
 
 // ── cookie options ──────────────────────────────────────
 function refreshCookieOpts() {
@@ -84,7 +86,43 @@ exports.login = async (req, res) => {
     const json = await r.json();
     if (!r.ok) {
       const msg = json?.error_description || json?.error || "Login failed";
+
+      // Audit: failed login — look up profile by email for FK
+      let failedActorId = json?.user?.id || null;
+      if (!failedActorId && email) {
+        const { data: prof } = await supabaseClient
+          .from("profiles")
+          .select("id")
+          .eq("email", email)
+          .maybeSingle();
+        failedActorId = prof?.id || null;
+      }
+      if (failedActorId) {
+        await logAuditEvent({
+          req,
+          actorId: failedActorId,
+          eventName: "LOGIN_FAILED",
+          eventStatus: "FAILED",
+          entityType: "AUTH",
+          entityIdUuid: failedActorId,
+          meta: { email, reason: msg },
+        }).catch(() => {});
+      }
+      // If no profile exists for this email, skip audit (can't satisfy FK)
+
       return res.status(401).json({ error: msg });
+    }
+
+    // Audit: successful login
+    if (json?.user?.id) {
+      await logAuditEvent({
+        req,
+        actorId: json.user.id,
+        eventName: "LOGIN_SUCCESS",
+        eventStatus: "SUCCESS",
+        entityType: "AUTH",
+        entityIdUuid: json.user.id,
+      }).catch(() => {});
     }
 
     res.json({ token: json.access_token, user: json.user });

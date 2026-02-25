@@ -107,6 +107,211 @@
   font-weight: 600;
 }
 
+/* --- Audit Filters Bar --- */
+.audit-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-filter-select {
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  min-width: 130px;
+}
+
+.status-filter-select:focus {
+  outline: none;
+  border-color: #000;
+}
+
+/* --- Audit Table Enhancements --- */
+.audit-table .audit-row.expandable {
+  cursor: pointer;
+}
+
+.audit-table .audit-row.expandable:hover td {
+  background-color: #f8f9fb;
+}
+
+.audit-table .audit-row.expanded td {
+  background-color: #f0f4ff;
+  border-bottom: none;
+}
+
+/* Module badges */
+.module-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.module-auth {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.module-accounts {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.module-scans {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.module-network {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.module-device {
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.module-portal {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.module-system {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+/* --- Expandable Detail Row --- */
+.audit-detail-row td {
+  padding: 0 !important;
+  background-color: #f8fafd !important;
+  border-top: none !important;
+}
+
+.audit-detail-content {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.audit-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-chip {
+  font-size: 12px;
+  background: #e5e7eb;
+  padding: 3px 10px;
+  border-radius: 12px;
+  color: #374151;
+}
+
+.detail-chip strong {
+  margin-right: 3px;
+}
+
+/* --- Changes Diff View --- */
+.changes-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.diff-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.diff-field {
+  font-weight: 600;
+  color: #374151;
+  text-transform: capitalize;
+  min-width: 80px;
+}
+
+.diff-old {
+  color: #dc2626;
+  text-decoration: line-through;
+  background: #fef2f2;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.diff-arrow {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.diff-new {
+  color: #16a34a;
+  background: #f0fdf4;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.diff-empty {
+  color: #9ca3af;
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* --- Pagination --- */
+.audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.pagination-btn {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* --- Error text --- */
+.error-text {
+  color: #dc2626;
+  padding: 16px;
+  text-align: center;
+  font-size: 14px;
+}
+
 /* --- Form Styles --- */
 .user-form {
   display: flex;

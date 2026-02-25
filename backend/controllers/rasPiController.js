@@ -2,6 +2,7 @@
 const rasPiService = require("../services/rasPiService");
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const { supabaseClient } = require("../config/supabaseClient");
+const { logAuditEvent } = require("../utils/auditLogger");
 
   // --- 1. TRIGGER SCAN: ONLY TALKS TO FASTAPI, NO DB ---
 async function triggerScan(req, res) {
@@ -23,9 +24,34 @@ async function triggerScan(req, res) {
     });
 
     const fastapiData = await r.json();
+
+    // Audit: scan triggered
+    if (req.user?.id) {
+      await logAuditEvent({
+        req,
+        actorId: req.user.id,
+        eventName: "SCAN_TRIGGER",
+        eventStatus: r.ok ? "SUCCESS" : "FAILED",
+        entityType: "SCAN",
+        entityIdUuid: req.user.id,
+        meta: { ssid, bssid, channel, fastapiStatus: r.status },
+      }).catch(() => {});
+    }
+
     return res.status(r.status).json(fastapiData);
   } catch (err) {
     console.error("triggerScan error:", err);
+    if (req.user?.id) {
+      await logAuditEvent({
+        req,
+        actorId: req.user.id,
+        eventName: "SCAN_TRIGGER",
+        eventStatus: "FAILED",
+        entityType: "SCAN",
+        entityIdUuid: req.user.id,
+        meta: { error: err.message },
+      }).catch(() => {});
+    }
     return res.status(502).json({ status: "ERROR", error: "Scan failed" });
   }
 }
@@ -166,6 +192,24 @@ async function saveNetworkMetadataScan(req, res) {
       }
     }
 
+    // Audit: scan results saved successfully
+    if (req.user?.id) {
+      await logAuditEvent({
+        req,
+        actorId: req.user.id,
+        eventName: "SCAN_SAVE",
+        eventStatus: "SUCCESS",
+        entityType: "SCAN",
+        entityIdUuid: req.user.id,
+        newValues: {
+          network_id: network.network_id,
+          scan_id: scanRow?.scan_id || null,
+          ssid,
+          bssid,
+        },
+      }).catch(() => {});
+    }
+
     return res.status(201).json({
       status: "OK",
       network_id: network.network_id,
@@ -174,6 +218,17 @@ async function saveNetworkMetadataScan(req, res) {
     });
   } catch (err) {
     console.error("Save network/metadata/scan error:", err);
+    if (req.user?.id) {
+      await logAuditEvent({
+        req,
+        actorId: req.user.id,
+        eventName: "SCAN_SAVE",
+        eventStatus: "FAILED",
+        entityType: "SCAN",
+        entityIdUuid: req.user.id,
+        meta: { error: err.message },
+      }).catch(() => {});
+    }
     return res.status(500).json({
       status: "ERROR",
       error: "Failed to save network data",
