@@ -19,6 +19,16 @@ const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
 const { supabaseClient } = require("./config/supabaseClient");
 
+// Risk-score label (0–100 scale) — mirrors rasPiController.getRiskLabel
+function getRiskLabel(score) {
+  const s = Number(score) || 0;
+  if (s === 0) return "NONE";
+  if (s <= 39) return "LOW";
+  if (s <= 69) return "MEDIUM";
+  if (s <= 89) return "HIGH";
+  return "CRITICAL";
+}
+
 const app = express();
 const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
 
@@ -330,6 +340,7 @@ app.get('/api/history/vulnerabilities', async (req, res) => {
         scan_start,
         scan_end,
         scan_data,
+        risk_score,
         networks (
           ssid,
           bssid,
@@ -393,6 +404,8 @@ app.get('/api/history/vulnerabilities', async (req, res) => {
         scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
         scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
         num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
+        riskScore: scan.risk_score ?? 0,
+        riskLabel: getRiskLabel(scan.risk_score ?? 0),
         summary: items.length,
         details: items.map(i => ({
           id: i.detail?.vt_code ?? null,
@@ -422,6 +435,7 @@ app.get('/api/history/threats', async (req, res) => {
         scan_start,
         scan_end,
         scan_data,
+        risk_score,
         networks (
           ssid,
           bssid,
@@ -480,6 +494,8 @@ app.get('/api/history/threats', async (req, res) => {
         scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
         scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
         num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
+        riskScore: scan.risk_score ?? 0,
+        riskLabel: getRiskLabel(scan.risk_score ?? 0),
         summary: items.length,
         threats: items.map(i => ({
           code: i.detail?.vt_code ?? null,

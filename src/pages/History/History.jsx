@@ -211,8 +211,6 @@ const History = () => {
       <h1 className="page-title">History</h1>
 
       <div className="history-top-bar">
-        <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
-
         {/* Search bar */}
         <div className="history-search-bar">
           <svg
@@ -260,10 +258,6 @@ const History = () => {
             </button>
           )}
         </div>
-
-        <button className="history-tab-indicator" onClick={() => {}} disabled>
-          {activeTab === "vulnerabilities" ? "Vulnerabilities" : "Threats"}
-        </button>
       </div>
 
       {activeTab === "vulnerabilities" && (
