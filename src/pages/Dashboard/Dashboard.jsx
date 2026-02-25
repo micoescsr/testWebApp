@@ -7,18 +7,22 @@ import NetworkSection from "../../components/dashboard/NetworkSection";
 
 const Dashboard = () => {
   const {
-    viewMode,
-    setViewMode,
-    isSummary,
-    showLegend,
-    toggleLegend,
-    loading,
-    error,
-    summary,
-    networkData,
-    hoverContext,
-    setHoverContext,
-    clearHoverContext,
+  viewMode,
+  setViewMode,
+  isSummary,
+  showLegend,
+  toggleLegend,
+  loading,
+  error,
+  summary,
+  networkData,
+  hoverContext,
+  setHoverContext,
+  clearHoverContext,
+  networks,
+  scanOptions,
+  selectedScanId,
+  setSelectedScanId,
   } = useDashboard();
 
   return (
@@ -27,6 +31,10 @@ const Dashboard = () => {
         viewMode={viewMode}
         setViewMode={setViewMode}
         isSummary={isSummary}
+        networks={networks}
+        scanOptions={scanOptions}
+        selectedScanId={selectedScanId}
+        setSelectedScanId={setSelectedScanId}
       />
 
       {loading && <p>Loading...</p>}

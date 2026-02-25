@@ -703,3 +703,40 @@
   border-radius: 4px;
   transition: box-shadow 0.15s ease, background-color 0.15s ease;
 }
+
+.top-networks {
+  font-size: 13px;
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.top-head {
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+/* column widths */
+.col-ssid {
+  flex: 2;
+  text-align: left;
+}
+
+.col-risk,
+.col-sev,
+.col-clients {
+  flex: 1;
+  text-align: right;
+}
+
+/* optional: clickable risk % style you already use */
+.score-link {
+  color: #2563eb;
+  cursor: pointer;
+}
