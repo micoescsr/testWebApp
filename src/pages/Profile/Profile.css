@@ -101,3 +101,26 @@
     font-size: 12px;
   }
 }
+
+.password-errors {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #dc2626;
+}
+.password-errors li {
+  margin-bottom: 2px;
+}
+
+.password-checklist {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.password-checklist-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 2px;
+}

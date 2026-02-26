@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
+import { validatePassword } from "../../passwordValidation";
+import PasswordChecklist from "../../pages/Auth/PasswordChecklist";
 import "./Auth.css";
 
 function ResetPassword() {
@@ -13,6 +15,9 @@ function ResetPassword() {
     error: "",
     submitting: false,
   });
+  const [passwordErrors, setPasswordErrors] = useState([]);
+  const [showPassword, setShowPassword] = useState(false);
+
 
   // Listen for Supabase auth state changes.
   // When a user clicks the reset link, Supabase JS processes the URL hash
@@ -53,6 +58,18 @@ function ResetPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setPasswordErrors([]);
+
+    const { valid, errors } = validatePassword(password);
+    if (!valid) {
+      setPasswordErrors(errors);
+      setStatus((prev) => ({
+        ...prev,
+        submitting: false,
+      }));
+      return;
+    }
+
     setStatus((prev) => ({
       ...prev,
       submitting: true,
@@ -133,19 +150,44 @@ function ResetPassword() {
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="password">New password</label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={6}
-              placeholder="Enter a strong password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={status.submitting}
-            />
+            <div className="password-input-wrapper">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                placeholder="Enter a strong password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={status.submitting}
+                className="password-input"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+            <PasswordChecklist password={password} />
           </div>
 
-          <button className="auth-button" type="submit" disabled={status.submitting}>
+
+
+          {passwordErrors.length > 0 && (
+            <ul className="password-errors">
+              {passwordErrors.map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            className="auth-button"
+            type="submit"
+            disabled={status.submitting}
+          >
             {status.submitting ? "Updating..." : "Update password"}
           </button>
         </form>

@@ -18,9 +18,9 @@ const AccountsAuditModal = ({
       header={
         <>
           <h3 className="accounts-modal-title">{title}</h3>
-          <button className="accounts-modal-close" onClick={onClose}>
+{/*           <button className="accounts-modal-close" onClick={onClose}>
             ✕
-          </button>
+          </button> */}
         </>
       }
       footer={footer}

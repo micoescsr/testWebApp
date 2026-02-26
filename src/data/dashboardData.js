@@ -1,19 +1,26 @@
 // data/dashboardData.js
+
 export const riskScoreData = [{ name: "Wi-Fi Risk", value: 89 }];
 export const riskScoreDataPerNetwork = [{ name: "Wi-Fi Risk", value: 78 }];
 
+/**
+ * Summary view: combined severity (all kinds) for now
+ */
 export const severityData = [
-  { name: "Critical", value: 8 },
-  { name: "High", value: 6 },
-  { name: "Medium", value: 4 },
-  { name: "Low", value: 1 },
+  { severity: "Critical", vulnerabilities: 5, threats: 3 },
+  { severity: "High",     vulnerabilities: 6, threats: 2 },
+  { severity: "Medium",   vulnerabilities: 4, threats: 1 },
+  { severity: "Low",      vulnerabilities: 1, threats: 0 },
 ];
 
+/**
+ * Per-network view: example split for one network
+ */
 export const severityDataPerNetwork = [
-  { name: "Critical", value: 1 },
-  { name: "High", value: 3 },
-  { name: "Medium", value: 2 },
-  { name: "Low", value: 0 },
+  { severity: "Critical", vulnerabilities: 1, threats: 1 },
+  { severity: "High",     vulnerabilities: 3, threats: 0 },
+  { severity: "Medium",   vulnerabilities: 2, threats: 1 },
+  { severity: "Low",      vulnerabilities: 0, threats: 0 },
 ];
 
 export const threatsData = [
@@ -47,4 +54,5 @@ export const detectedThreatsData = [
   { name: "Deauthentication", count: 5 },
 ];
 
-export const COLORS = ["#2563eb", "#818cf8", "#22c55e", "#f97316"];
+export const COLORS = ["#2563eb", "#f97316", "#22c55e", "#818cf8"];
+// Here: 0 = Vulnerabilities (blue), 1 = Threats (orange)
