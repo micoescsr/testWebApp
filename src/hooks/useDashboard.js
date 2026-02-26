@@ -17,11 +17,15 @@ import {
 } from "../data/dashboardData";
 
 export const useDashboard = () => {
-  // UI state
   const [viewMode, setViewMode] = useState("Summary"); // "Summary" or SSID
   const [showLegend, setShowLegend] = useState(false);
   const isSummary = viewMode === "Summary";
   const toggleLegend = () => setShowLegend((prev) => !prev);
+
+  // SHARED HOVER STATE FOR LINKED HIGHLIGHTING
+  // dimension can be: "network", "severity", "kind", "encryption", "time", etc.
+  const [hoverContext, setHoverContext] = useState(null);
+  const clearHoverContext = () => setHoverContext(null);
 
   // Data state (initialized with mock data)
   const [summary, setSummary] = useState({
@@ -42,7 +46,6 @@ export const useDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Ready for DB: just uncomment when backend is implemented
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -77,5 +80,8 @@ export const useDashboard = () => {
     error,
     summary,
     networkData,
+    hoverContext,
+    setHoverContext,
+    clearHoverContext,
   };
 };

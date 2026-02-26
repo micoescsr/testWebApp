@@ -22,13 +22,3 @@ export const deactivateUser = (id, { anonymize = true } = {}) => {
   return api.post(`webapp/users/profiles/${id}/deactivate`, { anonymize });
 };
 
-
-/* // CREATE user
-export const createUser = (userData) => {
-  return api.post("webapp/users/profiles", userData);
-};
-
-// DELETE user
-export const deleteUser = (id) => {
-  return api.delete(`webapp/users/profiles/${id}`);
-}; */

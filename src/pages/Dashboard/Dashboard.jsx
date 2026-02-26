@@ -16,6 +16,9 @@ const Dashboard = () => {
     error,
     summary,
     networkData,
+    hoverContext,
+    setHoverContext,
+    clearHoverContext,
   } = useDashboard();
 
   return (
@@ -36,12 +39,18 @@ const Dashboard = () => {
               showLegend={showLegend}
               toggleLegend={toggleLegend}
               data={summary}
+              hoverContext={hoverContext}
+              setHoverContext={setHoverContext}
+              clearHoverContext={clearHoverContext}
             />
           ) : (
             <NetworkSection
               showLegend={showLegend}
               toggleLegend={toggleLegend}
               data={networkData}
+              hoverContext={hoverContext}
+              setHoverContext={setHoverContext}
+              clearHoverContext={clearHoverContext}
             />
           )}
         </>
