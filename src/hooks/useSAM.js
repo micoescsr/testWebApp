@@ -15,36 +15,38 @@ import { mappedThreats } from "../data/mockThreats";
     const [error, setError] = useState(null);
     const [cached, setCached] = useState(false) ;
 
-  useEffect(() => {
-    const fetchNetworks = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const fetchNetworks = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const res = await fetch("http://localhost:3000/api/rasPi/networks_list/");
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status} testing error`);
-        }
-
-        const body = await res.json(); // { status, networks, cached }
-
-        if (body.status !== "OK") {
-          throw new Error(body.error || "Backend returned ERROR");
-        }
-
-        setNetworks(body.networks || []);
-        setCached(body.cached ?? false);
-      } catch (err) {
-        setError(err.message || "Failed to load networks");
-      } finally {
-        setLoading(false);
+      const res = await fetch("http://localhost:3000/api/rasPi/networks_list/");
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} testing error`);
       }
-    };
 
+      const body = await res.json(); // { status, networks, cached }
+
+      if (body.status !== "OK") {
+        throw new Error(body.error || "Backend returned ERROR");
+      }
+
+      setNetworks(body.networks || []);
+      setCached(body.cached ?? false);
+    } catch (err) {
+      setError(err.message || "Failed to load networks");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchNetworks();
   }, []);
 
-  return { networks, loading, error, cached };
+  const refetchNetworks = () => fetchNetworks();
+
+  return { networks, loading, error, cached, refetchNetworks };
 };
 
 /* =========================

@@ -61,6 +61,7 @@ const SAM = () => {
     networks,
     loading: networksLoading,
     error: networksError,
+    refetchNetworks,
   } = useNetworks();
 
   // --- POLLING HOOK ---
@@ -427,6 +428,7 @@ const SAM = () => {
           availableNetworks={networks}
           networksLoading={networksLoading}
           networksError={networksError}
+          onRefreshNetworks={refetchNetworks}
           onScan={handleScan}
           onSaveNetwork={saveSelectedNetwork}
           lastScan={lastScan}
