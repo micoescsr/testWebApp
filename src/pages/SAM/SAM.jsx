@@ -425,6 +425,8 @@ const SAM = () => {
           lastScannedNetwork={lastScannedNetwork}
           onSelectNetwork={handleSelectNetwork}
           availableNetworks={networks}
+          networksLoading={networksLoading}
+          networksError={networksError}
           onScan={handleScan}
           onSaveNetwork={saveSelectedNetwork}
           lastScan={lastScan}
