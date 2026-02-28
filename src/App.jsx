@@ -17,11 +17,6 @@ import { NetworkProvider } from "./context/NetworkContext";
 import "./App.css";
 //import UserMenu from "./components/common/UserMenu/UserMenu";
 
-import TestAuth from "./pages/TestAuth/TestAuth";
-import api, { setAccessToken, getAccessToken } from "./api/axios";
-import { NetworkProvider } from "./context/NetworkContext";
-import "./App.css";
-
 function App() {
   const [authReady, setAuthReady] = useState(false);
 
