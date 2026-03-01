@@ -15,6 +15,21 @@ const { logAuditEvent } = require('../utils/auditLogger');
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 
+// ─── Portal patch constants ──────────────────────────────────────
+const VALID_UPDATE_TYPES = new Set(['announcement', 'terms', 'tips', 'risk', 'active', 'bulk']);
+const ALLOWED_PAYLOAD_KEYS = new Set(['announcement', 'terms', 'tips', 'risk', 'is_active']);
+const VALID_RISK_BUCKETS = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+
+// Keys allowed per update_type (besides is_active which is always optional)
+const KEYS_BY_UPDATE_TYPE = {
+	announcement: new Set(['announcement', 'is_active']),
+	terms: new Set(['terms', 'is_active']),
+	tips: new Set(['tips', 'is_active']),
+	risk: new Set(['risk', 'is_active']),
+	active: new Set(['is_active']),
+	bulk: ALLOWED_PAYLOAD_KEYS, // all allowed
+};
+
 // ─── Helper: release the AP apply lock ───────────────────────────
 async function releaseApLock(networkId) {
 	try {
@@ -522,6 +537,257 @@ router.get('/network/:networkId/state', async (req, res) => {
 	} catch (err) {
 		console.error('deviceMgmt /network/:networkId/state error:', err);
 		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: err.message });
+	}
+});
+
+// ─── Validate patch payload shape per section ────────────────────
+function validatePatchPayload(payload) {
+	// Check top-level keys against allowlist
+	const payloadKeys = Object.keys(payload);
+	for (const key of payloadKeys) {
+		if (!ALLOWED_PAYLOAD_KEYS.has(key)) {
+			return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `Payload key "${key}" is not allowed.`, field: key };
+		}
+	}
+
+	// announcement shape
+	if (payload.announcement) {
+		const ann = payload.announcement;
+		if (typeof ann !== 'object' || Array.isArray(ann)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'announcement must be an object.' };
+		}
+		const allowedAnn = new Set(['content', 'is_active']);
+		for (const k of Object.keys(ann)) {
+			if (!allowedAnn.has(k)) return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `announcement.${k} is not allowed.`, field: `announcement.${k}` };
+		}
+		if (ann.content !== undefined && (typeof ann.content !== 'string' || ann.content.length > 2000)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'announcement.content must be a string (max 2000 chars).' };
+		}
+		if (ann.is_active !== undefined && typeof ann.is_active !== 'boolean') {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'announcement.is_active must be a boolean.' };
+		}
+	}
+
+	// terms shape
+	if (payload.terms) {
+		const t = payload.terms;
+		if (typeof t !== 'object' || Array.isArray(t)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms must be an object.' };
+		}
+		const allowedTerms = new Set(['version', 'content', 'is_active']);
+		for (const k of Object.keys(t)) {
+			if (!allowedTerms.has(k)) return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `terms.${k} is not allowed.`, field: `terms.${k}` };
+		}
+		if (t.version !== undefined && (typeof t.version !== 'string' || t.version.length > 32)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.version must be a string (max 32 chars).' };
+		}
+		if (t.content !== undefined && (typeof t.content !== 'string' || t.content.length > 10000)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.content must be a string (max 10000 chars).' };
+		}
+		if (t.is_active !== undefined && typeof t.is_active !== 'boolean') {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.is_active must be a boolean.' };
+		}
+	}
+
+	// tips shape
+	if (payload.tips) {
+		const tips = payload.tips;
+		if (!Array.isArray(tips)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'tips must be an array.' };
+		}
+		if (tips.length > 20) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'tips array exceeds maximum of 20 items.' };
+		}
+		const allowedTip = new Set(['tip_text', 'sort_order', 'is_active']);
+		for (let i = 0; i < tips.length; i++) {
+			const tip = tips[i];
+			if (typeof tip !== 'object' || Array.isArray(tip)) {
+				return { valid: false, error: 'INVALID_PATCH_SHAPE', message: `tips[${i}] must be an object.` };
+			}
+			for (const k of Object.keys(tip)) {
+				if (!allowedTip.has(k)) return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `tips[${i}].${k} is not allowed.`, field: `tips[${i}].${k}` };
+			}
+			if (typeof tip.tip_text !== 'string' || tip.tip_text.length === 0 || tip.tip_text.length > 300) {
+				return { valid: false, error: 'INVALID_PATCH_SHAPE', message: `tips[${i}].tip_text is required (string, max 300 chars).` };
+			}
+			if (tip.sort_order !== undefined && (typeof tip.sort_order !== 'number' || !Number.isInteger(tip.sort_order))) {
+				return { valid: false, error: 'INVALID_PATCH_SHAPE', message: `tips[${i}].sort_order must be an integer.` };
+			}
+			if (tip.is_active !== undefined && typeof tip.is_active !== 'boolean') {
+				return { valid: false, error: 'INVALID_PATCH_SHAPE', message: `tips[${i}].is_active must be a boolean.` };
+			}
+			// Default sort_order
+			if (tip.sort_order === undefined) tip.sort_order = i + 1;
+		}
+	}
+
+	// risk shape
+	if (payload.risk) {
+		const r = payload.risk;
+		if (typeof r !== 'object' || Array.isArray(r)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'risk must be an object.' };
+		}
+		const allowedRisk = new Set(['bucket']);
+		for (const k of Object.keys(r)) {
+			if (!allowedRisk.has(k)) return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `risk.${k} is not allowed.`, field: `risk.${k}` };
+		}
+		if (!r.bucket || !VALID_RISK_BUCKETS.has(r.bucket)) {
+			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: `risk.bucket must be one of: ${[...VALID_RISK_BUCKETS].join(', ')}.` };
+		}
+	}
+
+	// is_active shape
+	if (payload.is_active !== undefined && typeof payload.is_active !== 'boolean') {
+		return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'is_active must be a boolean.' };
+	}
+
+	return { valid: true };
+}
+
+// ─── Client-Driven Captive Portal Partial Update ─────────────────
+// POST /api/device/portal/update
+// Body: { network_id, update_type, reason?, payload }
+router.post('/portal/update', async (req, res) => {
+	const requestId = crypto.randomUUID();
+	const { network_id, update_type, reason: rawReason, payload: patch } = req.body;
+	const actorId = req.user?.id || null;
+	const reason = rawReason || 'manual_update';
+
+	// ── Input validation ────────────────────────────────────────
+	if (!network_id) {
+		return res.status(400).json({ error: 'INVALID_INPUT', message: 'network_id is required.' });
+	}
+	if (!update_type || !VALID_UPDATE_TYPES.has(update_type)) {
+		return res.status(400).json({ error: 'INVALID_INPUT', message: `update_type must be one of: ${[...VALID_UPDATE_TYPES].join(', ')}.` });
+	}
+	if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).length === 0) {
+		return res.status(400).json({ error: 'EMPTY_PATCH', message: 'payload must be a non-empty object.' });
+	}
+
+	// ── update_type consistency check ───────────────────────────
+	const allowedKeysForType = KEYS_BY_UPDATE_TYPE[update_type];
+	for (const key of Object.keys(patch)) {
+		if (!allowedKeysForType.has(key)) {
+			return res.status(400).json({
+				error: 'UPDATE_TYPE_MISMATCH',
+				message: `Key "${key}" is not allowed for update_type "${update_type}".`,
+				allowed: [...allowedKeysForType],
+			});
+		}
+	}
+
+	// ── Shape + allowlist validation ─────────────────────────────
+	const shapeCheck = validatePatchPayload(patch);
+	if (!shapeCheck.valid) {
+		return res.status(400).json({
+			error: shapeCheck.error,
+			message: shapeCheck.message,
+			...(shapeCheck.field ? { field: shapeCheck.field } : {}),
+		});
+	}
+
+	try {
+		// ── Load network row ───────────────────────────────────────
+		const { data: net, error: netErr } = await supabaseClient
+			.from('networks')
+			.select('ap_enabled, risk_score_version, portal_last_patched_version')
+			.eq('network_id', network_id)
+			.maybeSingle();
+
+		if (netErr) throw netErr;
+		if (!net) {
+			return res.status(404).json({ error: 'NETWORK_NOT_FOUND', message: 'Network not found.' });
+		}
+		if (!net.ap_enabled) {
+			return res.status(409).json({ error: 'AP_NOT_ENABLED', message: 'AP must be enabled before updating the portal.' });
+		}
+
+		// ── Risk patch debounce ────────────────────────────────────
+		if (update_type === 'risk' && Number(net.portal_last_patched_version) >= Number(net.risk_score_version)) {
+			await logAuditEvent({
+				req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SKIPPED',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, update_type, reason: 'already_up_to_date' },
+			});
+			return res.json({ ok: true, skipped: true, reason: 'already_up_to_date' });
+		}
+
+		// ── Build FastAPI payload (only validated fields) ───────────
+		const fastapiPayload = { network_id, ...patch };
+		const patchedKeys = Object.keys(patch);
+
+		const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+		logFastApiCall(`portal/patch (${update_type})`, portalUrl, fastapiPayload, null);
+
+		const fastapiRes = await fetch(portalUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(fastapiPayload),
+		});
+		const fastapiData = await fastapiRes.json().catch(() => null);
+
+		logFastApiCall(`portal/patch RESPONSE (${update_type})`, portalUrl, fastapiPayload, {
+			status: fastapiRes.status,
+			body: fastapiData,
+		});
+
+		if (!fastapiRes.ok) {
+			await logAuditEvent({
+				req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+			});
+			throw httpError(502, 'FASTAPI_PORTAL_PATCH_FAILED', fastapiData?.detail || 'FastAPI portal/patch failed', {
+				fastapi_status: fastapiRes.status,
+				fastapi_body: fastapiData,
+			});
+		}
+
+		// ── DB stamping ────────────────────────────────────────────
+		const stampUpdate = { portal_last_patched_at: new Date().toISOString() };
+		let stampedVersion = null;
+
+		if (patch.risk) {
+			// Re-read current risk_score_version to avoid stale stamp
+			const { data: latestNet } = await supabaseClient
+				.from('networks')
+				.select('risk_score_version')
+				.eq('network_id', network_id)
+				.single();
+			stampedVersion = Number(latestNet?.risk_score_version ?? net.risk_score_version);
+			stampUpdate.portal_last_patched_version = stampedVersion;
+		}
+
+		await supabaseClient
+			.from('networks')
+			.update(stampUpdate)
+			.eq('network_id', network_id);
+
+		// ── Audit: success ────────────────────────────────────────
+		await logAuditEvent({
+			req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
+			entityType: 'NETWORK', entityIdUuid: network_id,
+			meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, stamped_version: stampedVersion },
+		});
+
+		return res.json({
+			ok: true,
+			network_id,
+			patched: true,
+			stamped: {
+				portal_last_patched_at: stampUpdate.portal_last_patched_at,
+				portal_last_patched_version: stampedVersion,
+			},
+			fastapi: fastapiData,
+		});
+	} catch (err) {
+		console.error('deviceMgmt /portal/update error:', err);
+		const status = err.status || 500;
+		return res.status(status).json({
+			error: err.code || 'PORTAL_UPDATE_FAILED',
+			message: err.message,
+			...(err.extra || {}),
+		});
 	}
 });
 

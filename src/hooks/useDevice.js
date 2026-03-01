@@ -143,6 +143,18 @@ export const useDevice = (networkId, scanId) => {
         case "PORTAL_PATCH_FAILED":
           setError(backendMsg || "Failed to initialize captive portal. Try again.");
           break;
+        case "AP_NOT_ENABLED":
+          setError(backendMsg || "AP must be enabled before updating the portal.");
+          break;
+        case "FASTAPI_PORTAL_PATCH_FAILED":
+          setError(backendMsg || "Failed to update captive portal content. Try again.");
+          break;
+        case "EMPTY_PATCH":
+        case "UNSAFE_PATCH_FIELD":
+        case "UPDATE_TYPE_MISMATCH":
+        case "INVALID_PATCH_SHAPE":
+          setError(backendMsg || "Invalid portal update request.");
+          break;
         default:
           setError(backendMsg || "Failed to toggle access point. Check device connection.");
           break;

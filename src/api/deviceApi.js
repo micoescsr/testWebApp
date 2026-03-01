@@ -56,6 +56,12 @@ export const getNetworkConfig = (networkId) =>
 export const getNetworkState = (networkId) =>
   api.get(`/device/network/${networkId}/state`);
 
-// ─── Network Config (for AP panel display) ───────────────────────
-export const getNetworkConfig = (networkId) =>
-  api.get(`/rasPi/networks/${networkId}`);
+// ─── Portal Partial Update (client-driven, allowlisted) ──────────
+// update_type: 'announcement'|'terms'|'tips'|'risk'|'active'|'bulk'
+export const updatePortal = (networkId, updateType, payload, reason = 'manual_update') =>
+  api.post('/device/portal/update', {
+    network_id: networkId,
+    update_type: updateType,
+    reason,
+    payload,
+  });
