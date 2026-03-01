@@ -34,7 +34,6 @@ const SAM = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [lastScan, setLastScan] = useState(null);
-  const [detectionPausedByRefresh, setDetectionPausedByRefresh] = useState(false);
   const [locationMeta, setLocationMeta] = useState({
     city: "",
     province: "",
@@ -64,13 +63,15 @@ const SAM = () => {
     refetchNetworks,
   } = useNetworks();
 
-  // --- POLLING HOOK ---
+  // --- POLLING HOOK (persistent detection state) ---
   const {
     detectionStatus,
     setDetectionStatus,
     detectionResults,
     liveThreats,
     displayThreats,
+    failureReason,
+    refreshStatus,
     resetDetection,
   } = useThreatDetection();
 
@@ -141,11 +142,9 @@ const SAM = () => {
       reloadVulnerabilities(normalizedBssid);
     }
 
-    // Force DETECTING → IDLE on refresh (no resume yet)
-    if (detectionStatus === "DETECTING" || detectionStatus === "SCANNING") {
-      resetDetection();
-      setDetectionPausedByRefresh(true);
-    }
+    // Detection state is now persistent (backed by detection_state table).
+    // The useThreatDetection hook bootstraps from /detect/status on mount,
+    // so no forced IDLE reset is needed here.
   }, [networksLoading, networks]);
 
   useEffect(() => {
@@ -222,7 +221,6 @@ const SAM = () => {
 
     // 1. STOP previous detection & set scanning state
     resetDetection();
-    setDetectionPausedByRefresh(false);    // clear refresh-paused banner
     setDetectionStatus("SCANNING");
 
     try {
@@ -256,8 +254,9 @@ const SAM = () => {
 
       alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
       
-      // 4. Start Detection Phase
-      setDetectionStatus("DETECTING");
+      // 4. Detection auto-started by backend (detectStateService.startOrSwitch)
+      //    Refresh UI state from the backend's detection_state row.
+      await refreshStatus();
       const normalizedBssid = (selectedNetwork.bssid || "").toUpperCase();
       console.log("Reloading vulnerabilities for BSSID:", normalizedBssid);
       await reloadVulnerabilities(normalizedBssid);
@@ -339,29 +338,20 @@ const SAM = () => {
       <div className="sam-main">
         <h1 className="page-title">Security Assessment Management</h1>
 
-        {/* STATUS BANNER */}
-        {detectionPausedByRefresh && detectionStatus === "IDLE" && (
+        {/* FAILED BANNER */}
+        {detectionStatus === "FAILED" && (
           <div
-            className="status-banner paused"
+            className="status-banner failed"
             style={{
-              background: "#fef3cd",
-              color: "#856404",
+              background: "#fde8e8",
+              color: "#991b1b",
               padding: "10px",
               marginBottom: "10px",
               borderRadius: "4px",
-              border: "1px solid #856404",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
+              border: "1px solid #991b1b",
             }}
           >
-            <span>Detection was paused due to page refresh. Start detection again to continue monitoring.</span>
-            <button
-              onClick={() => setDetectionPausedByRefresh(false)}
-              style={{ background: "none", border: "none", cursor: "pointer", fontWeight: "bold", fontSize: "16px" }}
-            >
-              ✕
-            </button>
+            Detection failed: {failureReason || "Unknown error"}. Run a new scan to restart.
           </div>
         )}
 

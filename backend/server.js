@@ -16,6 +16,8 @@ const captivePortalRoutes = require("./routes/captivePortalRoutes");
 const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
+const detectRoutes = require('./routes/detectRoutes');
+const detectStateService = require('./services/detectStateService');
 
 const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
@@ -64,6 +66,9 @@ app.use("/api/auth", authRoutes); // /api/auth/login
 // 2) Audit routes (superadmin only, JWT + role enforced per-route)
 app.use("/api/audit", auditRoutes);
 
+// 3) Detection lifecycle + poll (JWT-protected per-route)
+app.use("/api/detect", detectRoutes);
+
 // 2) Everything else under /api requires JWT + active profile
 //app.use("/api", authJWT, requireActiveProfile);
 
@@ -97,77 +102,7 @@ app.get("/api/device/status", async (req, res) => {
   }
 });
 
-app.get("/api/detect/poll", async (req, res) => {
-  const maxItems = Number(req.query.max_items ?? 50);
-
-  try {
-    const r = await fetch(
-      `${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`,
-      {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      }
-    );
-
-    const data = await r.json().catch(() => null);
-
-    if (r.ok && data) {
-      if (data.results && data.results.length > 0) {
-        console.log(
-          "🔥 THREAT DETECTED [Express]:",
-          JSON.stringify(data.results, null, 2)
-        );
-      } else {
-        process.stdout.write(".");
-      }
-
-      const defsByCode = await loadThreatDefinitions(supabaseClient);
-      const threatRows = mapPollResultsToThreatRows(
-        data.results || [],
-        defsByCode
-      );
-
-      console.log(
-        "Mapped threatRows:",
-        JSON.stringify(threatRows, null, 2)
-      );
-
-      // ✅ get BSSID from first result and normalize
-      const firstResult = (data.results || [])[0] || null;
-      const targetBssid = firstResult?.bssid
-        ? firstResult.bssid.toUpperCase()
-        : null;
-
-      console.log("Using targetBssid for persistence:", targetBssid);
-
-
-      // optional save:
-      //await persistThreatRows(threatRows, data.target_bssid, supabaseClient);
-      await persistThreatRows(threatRows, targetBssid, supabaseClient); //tangina kung ito may salarin papatayin ko to
-      
-
-      return res.status(200).json({
-        ...data,
-        threatRows,
-      });
-    }
-
-    return res.status(200).json({
-      running: false,
-      results: [],
-      threatRows: [],
-      last_error: `FastAPI error: ${r.status}`,
-    });
-  } catch (err) {
-    console.error("Poll Proxy Exception:", err.message);
-    return res.status(200).json({
-      running: false,
-      results: [],
-      threatRows: [],
-      last_error: "Backend unavailable",
-    });
-  }
-});
+// Old /api/detect/poll handler removed — now in controllers/detectController.js via detectRoutes
 
 
 async function loadThreatDefinitions(supabaseClient) {
@@ -634,8 +569,15 @@ function killPort(port) {
 let retried = false;
 
 function startServer() {
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, async () => {
     console.log(`API running on http://localhost:${PORT}`);
+    // Ensure detection_state row exists on startup
+    try {
+      await detectStateService.ensureRow();
+      console.log("[startup] detection_state row ensured");
+    } catch (err) {
+      console.error("[startup] Failed to ensure detection_state row:", err.message);
+    }
   });
 
   server.on('error', (err) => {
