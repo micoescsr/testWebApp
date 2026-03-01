@@ -1,6 +1,8 @@
 // hooks/useDevice.js - DB-driven AP state + admin state from /network/:id/state
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toggleAP, getNetworkConfig, getNetworkState, updatePortal } from "../api/deviceApi";
+
+const STATE_POLL_INTERVAL = 12_000; // 12 seconds — just inside 15s portal cooldown
 
 export const useDevice = (networkId, scanId) => {
   // Network config fetched from DB (display only — never sent to enable-ap)
@@ -53,11 +55,38 @@ export const useDevice = (networkId, scanId) => {
     }
   }, [networkId]);
 
+  // On mount: fetch config + admin state
   useEffect(() => {
     fetchNetworkConfig();
     fetchAdminState();
     setScanError(null);
   }, [fetchNetworkConfig, fetchAdminState]);
+
+  // ─── Low-frequency poll when AP is enabled ───────────────────
+  // Keeps risk badge, portal_out_of_date, and scan freshness current
+  // without requiring user interaction. Stops when AP is off or unmounted.
+  const pollRef = useRef(null);
+
+  useEffect(() => {
+    // Clear any existing interval first
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+
+    if (apEnabled && networkId) {
+      pollRef.current = setInterval(() => {
+        fetchAdminState();
+      }, STATE_POLL_INTERVAL);
+    }
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [apEnabled, networkId, fetchAdminState]);
 
   // ─── Portal update helper (for "Update Portal" button) ───────
   const handleUpdatePortal = async () => {
@@ -66,7 +95,8 @@ export const useDevice = (networkId, scanId) => {
       setLoading(true);
       setError(null);
       const bucket = adminState?.risk_state?.risk_bucket || "LOW";
-      await updatePortal(networkId, "risk", { risk: { bucket } }, "risk_score_changed");
+      // User-triggered → reason='manual_update'; risk-only patch
+      await updatePortal(networkId, "risk", { risk: { bucket } }, "manual_update");
       await fetchAdminState();
     } catch (err) {
       console.error("Portal update failed:", err);
