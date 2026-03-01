@@ -51,8 +51,11 @@ const DeviceManagement = () => {
     error,
     scanError,
     hasScanId,
+    adminState,
     refetch,
+    refetchState,
     handleToggleAccessPoint,
+    handleUpdatePortal,
   } = useDevice(networkId, scanId);
 
   const safeActiveTab = activeTab;
@@ -275,8 +278,10 @@ const DeviceManagement = () => {
           error={error}
           scanError={scanError}
           hasScanId={hasScanId}
+          adminState={adminState}
           onRetry={refetch}
           onToggle={handleToggleAccessPoint}
+          onUpdatePortal={handleUpdatePortal}
         />
       </div>
     </div>
