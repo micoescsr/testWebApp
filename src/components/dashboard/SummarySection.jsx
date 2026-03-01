@@ -16,6 +16,14 @@ import {
 import { COLORS } from "../../data/dashboardData";
 import LegendForScore from "./LegendForScore";
 
+const getRiskLabel = (score) => {
+  if (score === 0 || score == null) return "None";
+  if (score >= 90) return "Critical";
+  if (score >= 70) return "High";
+  if (score >= 40) return "Medium";
+  return "Low"; // 1–39
+};
+
 const SummarySection = ({
   showLegend,
   toggleLegend,
@@ -39,6 +47,10 @@ const SummarySection = ({
     topRisks,
     networkEncryptionData,
   } = data;
+
+const riskScore = riskScoreData?.[0]?.value ?? 0;
+const riskLabel = getRiskLabel(riskScore);
+
 
   const isCard = (key) =>
     hoverContext &&
@@ -180,11 +192,12 @@ const SummarySection = ({
                     dominantBaseline="middle"
                     className="radial-label"
                   >
-                    {riskScoreData?.[0]?.value ?? 0}%
+                    {riskScore}%
                     <tspan x="50%" dy="1.5em" className="radial-sub">
-                      High Risk
+                      {riskLabel} Risk
                     </tspan>
                   </text>
+
                 </RadialBarChart>
               </ResponsiveContainer>
             ) : (

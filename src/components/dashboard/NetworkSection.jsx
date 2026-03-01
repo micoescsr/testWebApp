@@ -20,6 +20,14 @@ import {
 import { COLORS } from "../../data/dashboardData";
 import LegendForScore from "./LegendForScore";
 
+const getRiskLabel = (score) => {
+  if (score === 0 || score == null) return "None";
+  if (score >= 90) return "Critical";
+  if (score >= 70) return "High";
+  if (score >= 40) return "Medium";
+  return "Low";
+};
+
 const NetworkSection = ({
   showLegend,
   toggleLegend,
@@ -47,6 +55,9 @@ const NetworkSection = ({
     commonVulnsData,
     clientsRiskTrendData,
   } = data;
+
+const netRisk = riskScoreData?.[0]?.value ?? 0;
+const netRiskLabel = getRiskLabel(netRisk);
 
   const isCard = (key) =>
     hoverContext &&
@@ -221,9 +232,9 @@ const NetworkSection = ({
                     dominantBaseline="middle"
                     className="radial-label"
                   >
-                    {riskScoreData?.[0]?.value ?? 0}%
+                    {netRisk}%
                     <tspan x="50%" dy="1.5em" className="radial-sub">
-                      High Risk
+                      {netRiskLabel} Risk
                     </tspan>
                   </text>
                 </RadialBarChart>
