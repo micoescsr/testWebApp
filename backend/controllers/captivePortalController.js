@@ -93,17 +93,28 @@ async function seedDefaultContent(networkId) {
  * @returns {{ risk_level, ui_color, description, risk_percentage }}
  */
 async function lookupRiskClassification(score) {
-	const { data, error } = await supabaseClient
-		.from('risk_classification')
-		.select('risk_level, ui_color, description, risk_percentage')
-		.gte('risk_percentage', score)
-		.order('risk_percentage', { ascending: true })
-		.limit(1)
-		.maybeSingle();
+	try {
+		const { data, error } = await supabaseClient
+			.from('risk_classification')
+			.select('risk_level, ui_color, description, risk_percentage')
+			.gte('risk_percentage', score)
+			.order('risk_percentage', { ascending: true })
+			.limit(1)
+			.maybeSingle();
 
-	if (error) throw error;
+		if (error) throw error;
 
-	return data;
+		if (data) return data;
+	} catch (err) {
+		console.warn('[lookupRiskClassification] Falling back to default — table may not exist:', err.message);
+	}
+
+	// Fallback when table is missing or no matching row
+	const s = Number(score) || 0;
+	if (s <= 39) return { risk_level: 'LOW', ui_color: '#22c55e', description: 'Low risk', risk_percentage: 39 };
+	if (s <= 69) return { risk_level: 'MEDIUM', ui_color: '#f59e0b', description: 'Medium risk', risk_percentage: 69 };
+	if (s <= 89) return { risk_level: 'HIGH', ui_color: '#ef4444', description: 'High risk', risk_percentage: 89 };
+	return { risk_level: 'CRITICAL', ui_color: '#dc2626', description: 'Critical risk', risk_percentage: 100 };
 }
 
 /**
