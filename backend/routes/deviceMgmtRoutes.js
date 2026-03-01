@@ -1,6 +1,7 @@
 // routes/deviceMgmtRoutes.js
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { supabaseClient } = require('../config/supabaseClient');
 const {
 	validateScan,
@@ -9,9 +10,34 @@ const {
 	buildPortalPatchPayload,
 } = require('../utils/scanValidation');
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
+const { logAuditEvent } = require('../utils/auditLogger');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
+
+// ─── Helper: release the AP apply lock ───────────────────────────
+async function releaseApLock(networkId) {
+	try {
+		await supabaseClient
+			.from('networks')
+			.update({ ap_apply_in_progress: false })
+			.eq('network_id', networkId);
+	} catch (e) {
+		console.error('[releaseApLock] Failed to release lock for', networkId, e.message);
+	}
+}
+
+// ─── Helper: log FastAPI call details ────────────────────────────
+function logFastApiCall(label, url, payload, response) {
+	console.log(`\n${'═'.repeat(3)} FastAPI ${label} ${'═'.repeat(3)}`);
+	console.log('URL:', url);
+	console.log('Payload:', JSON.stringify(payload, null, 2));
+	if (response) {
+		console.log('Response status:', response.status);
+		console.log('Response body:', JSON.stringify(response.body, null, 2));
+	}
+	console.log('═'.repeat(40));
+}
 
 // ─── Legacy toggle signal (keep for backward compat) ────────────
 router.post('/signal_ap', async (req, res) => {
@@ -58,16 +84,50 @@ router.get('/ap-state/:networkId', async (req, res) => {
 //   scan_id required only for enable (not disable)
 //   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
 router.post('/enable-ap', async (req, res) => {
-	try {
-		const { network_id, scan_id, ap_status, ap_password } = req.body;
+	const requestId = crypto.randomUUID();
+	const { network_id, scan_id, ap_status, ap_password } = req.body;
+	const actorId = req.user?.id || null;
+	let lockAcquired = false;
 
-		if (!network_id || !ap_status || !['enable', 'disable'].includes(ap_status)) {
-			return res.status(400).json({
-				error: 'Missing or invalid fields (network_id, ap_status: "enable"|"disable")',
-			});
+	// ── Basic input validation ───────────────────────────────────
+	if (!network_id || !ap_status || !['enable', 'disable'].includes(ap_status)) {
+		return res.status(400).json({
+			error: 'Missing or invalid fields (network_id, ap_status: "enable"|"disable")',
+		});
+	}
+
+	try {
+		// ── Step 0: Atomic concurrency lock ──────────────────────
+		// Single UPDATE that checks + sets in one query to avoid races
+		const { data: lockRow, error: lockErr } = await supabaseClient
+			.from('networks')
+			.update({ ap_apply_in_progress: true })
+			.eq('network_id', network_id)
+			.eq('ap_apply_in_progress', false)
+			.select('network_id')
+			.maybeSingle();
+
+		if (lockErr) throw lockErr;
+
+		if (!lockRow) {
+			// Either network doesn't exist or lock is already held
+			const { data: exists } = await supabaseClient
+				.from('networks')
+				.select('network_id, ap_apply_in_progress')
+				.eq('network_id', network_id)
+				.maybeSingle();
+
+			if (!exists) {
+				return res.status(404).json({ error: 'NETWORK_NOT_FOUND', message: 'Network not found.' });
+			}
+			return res.status(409).json({ error: 'REQUEST_IN_PROGRESS', message: 'An AP configuration change is already in progress.' });
 		}
 
-		// ── DISABLE path (no scan_id needed) ─────────────────────
+		lockAcquired = true;
+
+		// ══════════════════════════════════════════════════════════
+		//  DISABLE PATH (no scan_id needed)
+		// ══════════════════════════════════════════════════════════
 		if (ap_status === 'disable') {
 			// Load network config from DB
 			const { data: net, error: netErr } = await supabaseClient
@@ -85,27 +145,45 @@ router.post('/enable-ap', async (req, res) => {
 				ap_status: 'disable',
 			};
 
-			console.log('\n═══ FastAPI orchestrate/apply (DISABLE) ═══');
-			console.log('URL:', `${FASTAPI_BASE}/orchestrate/apply`);
-			console.log('Payload:', JSON.stringify(orchestratePayload, null, 2));
-			console.log('═'.repeat(40));
-			const fastapiRes = await fetch(`${FASTAPI_BASE}/orchestrate/apply`, {
+			const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+			logFastApiCall('orchestrate/apply (DISABLE)', orchestrateUrl, orchestratePayload, null);
+
+			const fastapiRes = await fetch(orchestrateUrl, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(orchestratePayload),
 			});
 			const fastapiData = await fastapiRes.json().catch(() => null);
+
+			logFastApiCall('orchestrate/apply RESPONSE (DISABLE)', orchestrateUrl, orchestratePayload, {
+				status: fastapiRes.status,
+				body: fastapiData,
+			});
+
 			if (!fastapiRes.ok) {
+				// Audit: disable failed
+				await logAuditEvent({
+					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+				});
 				throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
 			}
 
-			// Persist ap_enabled = false
+			// Persist ap_enabled = false + update ap_last_applied_at
 			await supabaseClient
 				.from('networks')
-				.update({ ap_enabled: false })
+				.update({ ap_enabled: false, ap_last_applied_at: new Date().toISOString() })
 				.eq('network_id', network_id);
 
 			console.log('AP disabled successfully for network:', network_id);
+
+			// Audit: disable success
+			await logAuditEvent({
+				req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'SUCCESS',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, fastapi_status: fastapiRes.status },
+			});
 
 			return res.json({
 				ok: true,
@@ -116,7 +194,10 @@ router.post('/enable-ap', async (req, res) => {
 			});
 		}
 
-		// ── ENABLE path (scan_id required + validated) ───────────
+		// ══════════════════════════════════════════════════════════
+		//  ENABLE PATH (scan_id required + validated)
+		// ══════════════════════════════════════════════════════════
+
 		// Step 1: scan_id must be present
 		if (!scan_id) {
 			return res.status(400).json({ error: 'SCAN_REQUIRED', message: 'A recent scan is required to enable the access point.' });
@@ -133,7 +214,7 @@ router.post('/enable-ap', async (req, res) => {
 			return res.status(400).json({ error: 'SCAN_NOT_FOUND', message: 'Scan not found. Run a new scan first.' });
 		}
 
-		// Step 3: Validate scan (exists + network match + finished + fresh)
+		// Step 3: Validate scan (exists + network match + status + errors + data + fresh)
 		const validation = validateScan(scan, network_id, SCAN_MAX_AGE_SECONDS);
 		if (!validation.valid) {
 			return res.status(400).json({
@@ -146,7 +227,7 @@ router.post('/enable-ap', async (req, res) => {
 		// Step 4: Load network config from DB (never trust frontend)
 		const { data: net, error: netErr } = await supabaseClient
 			.from('networks')
-			.select('ssid, bssid, channel, encryption_status, portal_initialized')
+			.select('ssid, bssid, channel, encryption_status, portal_initialized, risk_score_version')
 			.eq('network_id', network_id)
 			.single();
 		if (netErr) throw netErr;
@@ -177,34 +258,59 @@ router.post('/enable-ap', async (req, res) => {
 			// Seed default content into DB tables (announcements, terms, tips)
 			await seedDefaultContent(network_id);
 
-			// Build payload from DB (risk_score fetched internally from scans table)
+			// Build payload from DB
 			const patchPayload = await buildPortalPayloadFromDB(
 				network_id, net.bssid, net.ssid
 			);
 
-			console.log('\n═══ FastAPI portal/patch (INIT) ═══');
-			console.log('URL:', `${FASTAPI_BASE}/portal/patch`);
-			console.log('Payload:', JSON.stringify(patchPayload, null, 2));
-			console.log('═'.repeat(40));
+			const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
 
-			const portalRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
+			const portalRes = await fetch(portalUrl, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(patchPayload),
 			});
 			const portalData = await portalRes.json().catch(() => null);
+
+			logFastApiCall('portal/patch RESPONSE (INIT)', portalUrl, patchPayload, {
+				status: portalRes.status,
+				body: portalData,
+			});
+
 			if (!portalRes.ok) {
-				throw new Error(portalData?.detail || `portal/patch error: ${portalRes.status}`);
+				// Audit: portal init failed — abort enable
+				await logAuditEvent({
+					req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status, fastapi_body: portalData },
+				});
+				return res.status(502).json({
+					error: 'PORTAL_PATCH_FAILED',
+					message: 'Failed to initialize captive portal. AP enable aborted.',
+					detail: portalData?.detail || `portal/patch error: ${portalRes.status}`,
+				});
 			}
 
-			// Mark initialized in DB
+			// Mark initialized + stamp portal version
 			const { error: updErr } = await supabaseClient
 				.from('networks')
-				.update({ portal_initialized: true })
+				.update({
+					portal_initialized: true,
+					portal_last_patched_version: net.risk_score_version,
+					portal_last_patched_at: new Date().toISOString(),
+				})
 				.eq('network_id', network_id);
 			if (updErr) throw updErr;
 
 			console.log('Portal initialized successfully for', patchPayload.network_id);
+
+			// Audit: portal init success
+			await logAuditEvent({
+				req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'SUCCESS',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status },
+			});
 		}
 
 		// Step 8: Enable AP via orchestrate/apply (config from DB, not frontend)
@@ -217,27 +323,50 @@ router.post('/enable-ap', async (req, res) => {
 			ap_status: 'enable',
 		};
 
-		console.log('\n═══ FastAPI orchestrate/apply (ENABLE) ═══');
-		console.log('URL:', `${FASTAPI_BASE}/orchestrate/apply`);
-		console.log('Payload:', JSON.stringify(orchestratePayload, null, 2));
-		console.log('═'.repeat(40));
-		const fastapiRes = await fetch(`${FASTAPI_BASE}/orchestrate/apply`, {
+		const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+		logFastApiCall('orchestrate/apply (ENABLE)', orchestrateUrl, orchestratePayload, null);
+
+		const fastapiRes = await fetch(orchestrateUrl, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(orchestratePayload),
 		});
 		const fastapiData = await fastapiRes.json().catch(() => null);
+
+		logFastApiCall('orchestrate/apply RESPONSE (ENABLE)', orchestrateUrl, orchestratePayload, {
+			status: fastapiRes.status,
+			body: fastapiData,
+		});
+
 		if (!fastapiRes.ok) {
+			// Audit: enable failed
+			await logAuditEvent({
+				req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, scan_id, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+			});
 			throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
 		}
 
-		// Step 9: Persist ap_enabled = true
+		// Step 9: Persist ap_enabled = true + update timestamps + denormalize scan pointer
 		await supabaseClient
 			.from('networks')
-			.update({ ap_enabled: true })
+			.update({
+				ap_enabled: true,
+				ap_last_applied_at: new Date().toISOString(),
+				last_scan_id: scan.scan_id,
+				last_scan_finished_at: scan.finished_at,
+			})
 			.eq('network_id', network_id);
 
 		console.log('AP enabled successfully for network:', network_id);
+
+		// Audit: enable success
+		await logAuditEvent({
+			req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'SUCCESS',
+			entityType: 'NETWORK', entityIdUuid: network_id,
+			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: fastapiRes.status },
+		});
 
 		return res.json({
 			ok: true,
@@ -253,6 +382,11 @@ router.post('/enable-ap', async (req, res) => {
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
 		return res.status(500).json({ error: 'AP toggle failed', detail: err.message });
+	} finally {
+		// ── ALWAYS release the lock ──────────────────────────────
+		if (lockAcquired) {
+			await releaseApLock(network_id);
+		}
 	}
 });
 
