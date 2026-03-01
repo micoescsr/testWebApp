@@ -11,6 +11,7 @@ const {
 } = require('../utils/scanValidation');
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
 const { logAuditEvent } = require('../utils/auditLogger');
+const { onScanCompleted } = require('../utils/riskPipeline');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
@@ -788,6 +789,34 @@ router.post('/portal/update', async (req, res) => {
 			message: err.message,
 			...(err.extra || {}),
 		});
+	}
+});
+
+// ─── Scan Completed Webhook ──────────────────────────────────────
+// POST /api/device/scan-completed
+// Body: { scan_id }
+// Called by scan runner or external system when a vulnerability_scans
+// row transitions to COMPLETED. Triggers risk pipeline + auto-portal.
+router.post('/scan-completed', async (req, res) => {
+	const { scan_id } = req.body;
+
+	if (!scan_id) {
+		return res.status(400).json({ error: 'INVALID_INPUT', message: 'scan_id is required.' });
+	}
+
+	try {
+		const result = await onScanCompleted(scan_id, req);
+		return res.json({
+			ok: true,
+			scan_id,
+			risk_changed: result.changed,
+			portal_patched: result.portalPatched,
+			old_bucket: result.oldBucket,
+			new_bucket: result.newBucket,
+		});
+	} catch (err) {
+		console.error('deviceMgmt /scan-completed error:', err);
+		return res.status(500).json({ error: 'SCAN_COMPLETED_HOOK_FAILED', message: err.message });
 	}
 });
 

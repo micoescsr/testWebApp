@@ -349,6 +349,27 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
   } else {
     console.log(`Scan ${scanId} risk_score updated to ${riskScore}`);
   }
+
+  // ── Risk pipeline: update networks.risk_bucket + auto-portal ──
+  // Resolve network_id from BSSID so the risk pipeline can update the right network
+  if (normalizedBssid) {
+    const { data: netRow } = await supabaseClient
+      .from('networks')
+      .select('network_id')
+      .eq('bssid', normalizedBssid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (netRow?.network_id) {
+      try {
+        const { onThreatEvent } = require('./utils/riskPipeline');
+        await onThreatEvent(netRow.network_id, threatRows);
+      } catch (pipeErr) {
+        console.error('[riskPipeline] onThreatEvent error (non-fatal):', pipeErr.message);
+      }
+    }
+  }
 }
 
 
