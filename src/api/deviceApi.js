@@ -48,6 +48,14 @@ export const toggleAP = (payload) =>
 export const getApState = (networkId) =>
   api.get(`/device/ap-state/${networkId}`);
 
+// ─── Network Config ──────────────────────────────────────────────
+export const getNetworkConfig = (networkId) =>
+  api.get(`/rasPi/networks/${networkId}`);
+
+// ─── Admin State (authoritative AP + scan + portal + risk) ───────
+export const getNetworkState = (networkId) =>
+  api.get(`/device/network/${networkId}/state`);
+
 // ─── Network Config (for AP panel display) ───────────────────────
 export const getNetworkConfig = (networkId) =>
   api.get(`/rasPi/networks/${networkId}`);
