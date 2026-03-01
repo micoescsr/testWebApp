@@ -87,21 +87,59 @@ export const useDevice = (networkId, scanId) => {
     } catch (err) {
       console.error("AP toggle failed:", err);
       const backendError = err?.response?.data?.error;
+      const backendMsg = err?.response?.data?.message;
 
       // Revert optimistic toggle on failure
       setApEnabled(!nextState);
 
-      if (backendError === "SCAN_REQUIRED") {
-        setScanError("SCAN_REQUIRED");
-      } else if (backendError === "SCAN_TOO_OLD") {
-        setScanError("SCAN_TOO_OLD");
-        // Include extra detail from backend
-        setError(err?.response?.data?.message || "Scan is too old. Run a new scan.");
-      } else if (backendError === "SCAN_NETWORK_MISMATCH") {
-        setScanError("SCAN_NETWORK_MISMATCH");
-        setError("Scan does not match this network. Run a new scan.");
-      } else {
-        setError("Failed to toggle access point. Check device connection.");
+      // Map all backend error codes to scanError + user-friendly message
+      switch (backendError) {
+        case "SCAN_REQUIRED":
+          setScanError("SCAN_REQUIRED");
+          break;
+        case "SCAN_NOT_FOUND":
+          setScanError("SCAN_NOT_FOUND");
+          setError(backendMsg || "Scan not found. Run a new scan first.");
+          break;
+        case "SCAN_NETWORK_MISMATCH":
+          setScanError("SCAN_NETWORK_MISMATCH");
+          setError(backendMsg || "Scan does not match this network. Run a new scan.");
+          break;
+        case "SCAN_NOT_FINISHED":
+          setScanError("SCAN_NOT_FINISHED");
+          setError(backendMsg || "Scan has not finished yet. Wait for the scan to complete.");
+          break;
+        case "SCAN_FAILED":
+          setScanError("SCAN_FAILED");
+          setError(backendMsg || "Scan failed, cancelled, or timed out. Run a new scan.");
+          break;
+        case "SCAN_HAS_ERRORS":
+          setScanError("SCAN_HAS_ERRORS");
+          setError(backendMsg || "Last scan completed with errors. Run a new scan.");
+          break;
+        case "SCAN_INVALID_DATA":
+          setScanError("SCAN_INVALID_DATA");
+          setError(backendMsg || "Scan finished but contains no data. Run a new scan.");
+          break;
+        case "SCAN_TOO_OLD":
+          setScanError("SCAN_TOO_OLD");
+          setError(backendMsg || "Scan is too old. Run a new scan.");
+          break;
+        case "NETWORK_CONFIG_MISSING":
+          setError(backendMsg || "Network configuration is incomplete. Re-scan the network.");
+          break;
+        case "AP_PASSWORD_REQUIRED":
+          setError(backendMsg || "An AP password is required for encrypted networks.");
+          break;
+        case "AP_PASSWORD_WEAK":
+          setError(backendMsg || "AP password must be at least 8 characters.");
+          break;
+        case "REQUEST_IN_PROGRESS":
+          setError("An AP configuration change is already in progress. Please wait.");
+          break;
+        default:
+          setError(backendMsg || "Failed to toggle access point. Check device connection.");
+          break;
       }
     } finally {
       setLoading(false);
