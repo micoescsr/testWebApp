@@ -39,6 +39,15 @@ function logFastApiCall(label, url, payload, response) {
 	console.log('═'.repeat(40));
 }
 
+// ─── Helper: typed HTTP error for structured catch handling ──────
+function httpError(status, code, message, extra = {}) {
+	const e = new Error(message);
+	e.status = status;
+	e.code = code;
+	e.extra = extra;
+	return e;
+}
+
 // ─── Legacy toggle signal (keep for backward compat) ────────────
 router.post('/signal_ap', async (req, res) => {
 	try {
@@ -137,6 +146,16 @@ router.post('/enable-ap', async (req, res) => {
 				.single();
 			if (netErr) throw netErr;
 
+			// Validate config before sending to FastAPI (same as enable)
+			const configCheck = validateNetworkConfig(net);
+			if (!configCheck.valid) {
+				return res.status(400).json({
+					error: configCheck.error,
+					message: configCheck.message,
+					missing: configCheck.missing,
+				});
+			}
+
 			const orchestratePayload = {
 				ssid: net.ssid,
 				bssid: net.bssid,
@@ -167,7 +186,10 @@ router.post('/enable-ap', async (req, res) => {
 					entityType: 'NETWORK', entityIdUuid: network_id,
 					meta: { request_id: requestId, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
 				});
-				throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
+				throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (disable)', {
+					fastapi_status: fastapiRes.status,
+					fastapi_body: fastapiData,
+				});
 			}
 
 			// Persist ap_enabled = false + update ap_last_applied_at
@@ -285,6 +307,12 @@ router.post('/enable-ap', async (req, res) => {
 					entityType: 'NETWORK', entityIdUuid: network_id,
 					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status, fastapi_body: portalData },
 				});
+				// Also audit enable request failure so the trail is queryable
+				await logAuditEvent({
+					req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, scan_id, reason: 'portal_init_failed' },
+				});
 				return res.status(502).json({
 					error: 'PORTAL_PATCH_FAILED',
 					message: 'Failed to initialize captive portal. AP enable aborted.',
@@ -292,12 +320,19 @@ router.post('/enable-ap', async (req, res) => {
 				});
 			}
 
+			// Re-read risk_score_version to avoid stamping a stale value
+			const { data: latestNet } = await supabaseClient
+				.from('networks')
+				.select('risk_score_version')
+				.eq('network_id', network_id)
+				.single();
+
 			// Mark initialized + stamp portal version
 			const { error: updErr } = await supabaseClient
 				.from('networks')
 				.update({
 					portal_initialized: true,
-					portal_last_patched_version: net.risk_score_version,
+					portal_last_patched_version: latestNet?.risk_score_version ?? net.risk_score_version,
 					portal_last_patched_at: new Date().toISOString(),
 				})
 				.eq('network_id', network_id);
@@ -345,7 +380,10 @@ router.post('/enable-ap', async (req, res) => {
 				entityType: 'NETWORK', entityIdUuid: network_id,
 				meta: { request_id: requestId, scan_id, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
 			});
-			throw new Error(fastapiData?.detail || `orchestrate/apply error: ${fastapiRes.status}`);
+			throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (enable)', {
+				fastapi_status: fastapiRes.status,
+				fastapi_body: fastapiData,
+			});
 		}
 
 		// Step 9: Persist ap_enabled = true + update timestamps + denormalize scan pointer
@@ -381,7 +419,12 @@ router.post('/enable-ap', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
-		return res.status(500).json({ error: 'AP toggle failed', detail: err.message });
+		const status = err.status || 500;
+		return res.status(status).json({
+			error: err.code || 'AP_TOGGLE_FAILED',
+			message: err.message,
+			...(err.extra || {}),
+		});
 	} finally {
 		// ── ALWAYS release the lock ──────────────────────────────
 		if (lockAcquired) {

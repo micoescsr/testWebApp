@@ -137,6 +137,12 @@ export const useDevice = (networkId, scanId) => {
         case "REQUEST_IN_PROGRESS":
           setError("An AP configuration change is already in progress. Please wait.");
           break;
+        case "FASTAPI_APPLY_FAILED":
+          setError(backendMsg || "Failed to communicate with the device. Try again.");
+          break;
+        case "PORTAL_PATCH_FAILED":
+          setError(backendMsg || "Failed to initialize captive portal. Try again.");
+          break;
         default:
           setError(backendMsg || "Failed to toggle access point. Check device connection.");
           break;
