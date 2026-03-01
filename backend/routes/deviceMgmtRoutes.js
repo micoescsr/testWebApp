@@ -15,6 +15,8 @@ const { onScanCompleted } = require('../utils/riskPipeline');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
+const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Portal patch constants ──────────────────────────────────────
 const VALID_UPDATE_TYPES = new Set(['announcement', 'terms', 'tips', 'risk', 'active', 'bulk']);
@@ -798,13 +800,43 @@ router.post('/portal/update', async (req, res) => {
 // Called by scan runner or external system when a vulnerability_scans
 // row transitions to COMPLETED. Triggers risk pipeline + auto-portal.
 router.post('/scan-completed', async (req, res) => {
+	// Token auth (if configured)
+	if (SCAN_RUNNER_TOKEN) {
+		const token = req.headers['x-scan-runner-token'];
+		if (token !== SCAN_RUNNER_TOKEN) {
+			return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid or missing X-Scan-Runner-Token.' });
+		}
+	}
+
 	const { scan_id } = req.body;
 
 	if (!scan_id) {
 		return res.status(400).json({ error: 'INVALID_INPUT', message: 'scan_id is required.' });
 	}
+	if (!UUID_RE.test(scan_id)) {
+		return res.status(400).json({ error: 'INVALID_INPUT', message: 'scan_id must be a valid UUID.' });
+	}
 
 	try {
+		// Idempotency: check if already processed (last_scan_id == scan_id)
+		const { data: scan } = await supabaseClient
+			.from('vulnerability_scans')
+			.select('network_id')
+			.eq('scan_id', scan_id)
+			.maybeSingle();
+
+		if (scan?.network_id) {
+			const { data: net } = await supabaseClient
+				.from('networks')
+				.select('last_scan_id')
+				.eq('network_id', scan.network_id)
+				.maybeSingle();
+
+			if (net?.last_scan_id === scan_id) {
+				return res.json({ ok: true, scan_id, skipped: true, reason: 'already_processed' });
+			}
+		}
+
 		const result = await onScanCompleted(scan_id, req);
 		return res.json({
 			ok: true,

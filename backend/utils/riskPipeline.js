@@ -249,7 +249,7 @@ async function updateNetworkRisk(networkId, opts = {}) {
  * @returns {boolean} whether patch was actually sent
  */
 async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null) {
-	// Simple cooldown: skip if patched too recently
+	// Simple cooldown: skip if patched too recently (NULL = never patched → allow)
 	if (lastPatchedAt) {
 		const elapsed = Date.now() - new Date(lastPatchedAt).getTime();
 		if (elapsed < PORTAL_PATCH_COOLDOWN_MS) {
@@ -259,7 +259,17 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 	}
 
 	try {
-		const payload = { network_id: networkId, risk: { bucket } };
+		// Snapshot the version we are about to patch
+		const { data: preNet } = await supabaseClient
+			.from('networks')
+			.select('risk_score_version, risk_bucket')
+			.eq('network_id', networkId)
+			.single();
+
+		const patchVersion = Number(preNet?.risk_score_version) || 0;
+		const patchBucket = preNet?.risk_bucket || bucket;
+
+		const payload = { network_id: networkId, risk: { bucket: patchBucket } };
 		const url = `${FASTAPI_BASE}/portal/patch`;
 
 		console.log(`[riskPipeline] Auto portal/patch → ${url}`, JSON.stringify(payload));
@@ -277,33 +287,43 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 				req, actorId: null,
 				eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: networkId,
-				meta: { reason: 'auto_risk_patch', bucket, fastapi_status: res.status, fastapi_body: body },
+				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, fastapi_body: body },
 			});
 			return false;
 		}
 
-		// Stamp portal version
-		const { data: latestNet } = await supabaseClient
+		// Verify bucket hasn't drifted between patch send and stamp
+		const { data: postNet } = await supabaseClient
 			.from('networks')
-			.select('risk_score_version')
+			.select('risk_score_version, risk_bucket')
 			.eq('network_id', networkId)
 			.single();
 
+		const postVersion = Number(postNet?.risk_score_version) || 0;
+		const postBucket = postNet?.risk_bucket;
+
+		if (postBucket !== patchBucket) {
+			// Bucket changed during patch — don't stamp, let next cycle re-patch
+			console.log(`[riskPipeline] Bucket drifted (${patchBucket}→${postBucket}) during patch, skipping stamp`);
+			return false;
+		}
+
+		// Stamp to the version we actually patched (or current if unchanged)
 		await supabaseClient
 			.from('networks')
 			.update({
 				portal_last_patched_at: new Date().toISOString(),
-				portal_last_patched_version: latestNet?.risk_score_version ?? 0,
+				portal_last_patched_version: postVersion,
 			})
 			.eq('network_id', networkId);
 
-		console.log(`[riskPipeline] Auto portal/patch success for ${networkId}, bucket=${bucket}`);
+		console.log(`[riskPipeline] Auto portal/patch success for ${networkId}, bucket=${patchBucket}, stampedVersion=${postVersion}`);
 
 		await logAuditEvent({
 			req, actorId: null,
 			eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: networkId,
-			meta: { reason: 'auto_risk_patch', bucket, fastapi_status: res.status },
+			meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, stamped_version: postVersion },
 		});
 
 		return true;

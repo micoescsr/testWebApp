@@ -1,6 +1,6 @@
-// hooks/useDevice.js - DB-driven AP state + scan validation
+// hooks/useDevice.js - DB-driven AP state + admin state from /network/:id/state
 import { useState, useEffect, useCallback } from "react";
-import { toggleAP, getApState, getNetworkConfig } from "../api/deviceApi";
+import { toggleAP, getNetworkConfig, getNetworkState, updatePortal } from "../api/deviceApi";
 
 export const useDevice = (networkId, scanId) => {
   // Network config fetched from DB (display only — never sent to enable-ap)
@@ -11,7 +11,8 @@ export const useDevice = (networkId, scanId) => {
     encryption_type: "",
   });
 
-  // AP state from DB (source of truth)
+  // Admin state from /network/:id/state (source of truth)
+  const [adminState, setAdminState] = useState(null);
   const [apEnabled, setApEnabled] = useState(false);
   const [portalInitialized, setPortalInitialized] = useState(false);
 
@@ -19,7 +20,7 @@ export const useDevice = (networkId, scanId) => {
   const [loading, setLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [scanError, setScanError] = useState(null); // SCAN_REQUIRED, SCAN_TOO_OLD, etc.
+  const [scanError, setScanError] = useState(null);
 
   // ─── Fetch network config from Supabase ──────────────────────
   const fetchNetworkConfig = useCallback(async () => {
@@ -37,24 +38,44 @@ export const useDevice = (networkId, scanId) => {
     }
   }, [networkId]);
 
-  // ─── Fetch AP state from DB (source of truth) ────────────────
-  const fetchApState = useCallback(async () => {
+  // ─── Fetch admin state (replaces old getApState) ─────────────
+  const fetchAdminState = useCallback(async () => {
     if (!networkId) return;
     try {
-      const res = await getApState(networkId);
-      setApEnabled(res.data.ap_enabled ?? false);
-      setPortalInitialized(res.data.portal_initialized ?? false);
+      const res = await getNetworkState(networkId);
+      const s = res.data;
+      setAdminState(s);
+      setApEnabled(s.ap_enabled ?? false);
+      setPortalInitialized(s.portal_initialized ?? false);
     } catch (err) {
-      console.error("fetchApState error:", err);
+      console.error("fetchAdminState error:", err);
       // Non-fatal: default to disabled
     }
   }, [networkId]);
 
   useEffect(() => {
     fetchNetworkConfig();
-    fetchApState();
+    fetchAdminState();
     setScanError(null);
-  }, [fetchNetworkConfig, fetchApState]);
+  }, [fetchNetworkConfig, fetchAdminState]);
+
+  // ─── Portal update helper (for "Update Portal" button) ───────
+  const handleUpdatePortal = async () => {
+    if (!networkId || !apEnabled) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const bucket = adminState?.risk_state?.risk_bucket || "LOW";
+      await updatePortal(networkId, "risk", { risk: { bucket } }, "risk_score_changed");
+      await fetchAdminState();
+    } catch (err) {
+      console.error("Portal update failed:", err);
+      const backendMsg = err?.response?.data?.message;
+      setError(backendMsg || "Failed to update portal.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ─── Toggle AP → sends only IDs + password to backend ────────
   const handleToggleAccessPoint = async (apPassword = "") => {
@@ -82,8 +103,8 @@ export const useDevice = (networkId, scanId) => {
       const res = await toggleAP(payload);
       console.log("enable-ap response:", res.data);
 
-      // Refresh AP state from DB after success
-      await fetchApState();
+      // Refresh admin state from DB after success
+      await fetchAdminState();
     } catch (err) {
       console.error("AP toggle failed:", err);
       const backendError = err?.response?.data?.error;
@@ -186,12 +207,15 @@ export const useDevice = (networkId, scanId) => {
     networkConfig,
     apEnabled,
     portalInitialized,
+    adminState,       // full admin state object from /network/:id/state
     loading,
     configLoading,
     error,
-    scanError,        // "SCAN_REQUIRED" | "SCAN_TOO_OLD" | "SCAN_NETWORK_MISMATCH" | null
+    scanError,
     hasScanId: !!scanId,
     refetch: fetchNetworkConfig,
+    refetchState: fetchAdminState,
     handleToggleAccessPoint,
+    handleUpdatePortal,
   };
 };
