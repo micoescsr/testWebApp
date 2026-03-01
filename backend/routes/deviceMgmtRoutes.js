@@ -433,4 +433,96 @@ router.post('/enable-ap', async (req, res) => {
 	}
 });
 
+// ─── Admin State Endpoint (cheap, read-only) ─────────────────────
+// GET /api/device/network/:networkId/state
+// Returns authoritative AP + scan + portal + risk state for the UI
+router.get('/network/:networkId/state', async (req, res) => {
+	const { networkId } = req.params;
+	const maxAgeSeconds = SCAN_MAX_AGE_SECONDS;
+
+	try {
+		// 1) Load network row
+		const { data: net, error: netErr } = await supabaseClient
+			.from('networks')
+			.select([
+				'network_id',
+				'ap_enabled',
+				'ap_apply_in_progress',
+				'portal_initialized',
+				'risk_score',
+				'risk_bucket',
+				'risk_score_version',
+				'portal_last_patched_version',
+				'portal_last_patched_at',
+				'last_threat_at',
+				'last_scan_id',
+				'last_scan_finished_at',
+				'ssid',
+				'bssid',
+				'channel',
+			].join(','))
+			.eq('network_id', networkId)
+			.maybeSingle();
+
+		if (netErr) throw netErr;
+		if (!net) {
+			return res.status(404).json({ ok: false, error: 'NETWORK_NOT_FOUND', message: 'Network not found.' });
+		}
+
+		// 2) Load latest eligible scan (completed, no errors)
+		const { data: scan, error: scanErr } = await supabaseClient
+			.from('vulnerability_scans')
+			.select('scan_id, finished_at, status, error_code')
+			.eq('network_id', networkId)
+			.eq('status', 'COMPLETED')
+			.is('error_code', null)
+			.order('finished_at', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+
+		if (scanErr) throw scanErr;
+
+		const hasScan = !!scan?.scan_id;
+		const finishedAtMs = scan?.finished_at ? new Date(scan.finished_at).getTime() : null;
+		const scanFresh = hasScan && finishedAtMs !== null && (Date.now() - finishedAtMs) <= maxAgeSeconds * 1000;
+
+		// 3) Compute portal freshness
+		const portalOutOfDate = !!net.ap_enabled && (Number(net.portal_last_patched_version) < Number(net.risk_score_version));
+
+		// 4) Optional: network config missing flag
+		const networkConfigMissing = !net.ssid || !net.bssid || net.channel == null;
+
+		return res.json({
+			ok: true,
+			network_id: net.network_id,
+			ap_enabled: !!net.ap_enabled,
+			ap_apply_in_progress: !!net.ap_apply_in_progress,
+			portal_initialized: !!net.portal_initialized,
+			scan_state: {
+				has_scan: hasScan,
+				scan_fresh: scanFresh,
+				latest_scan_id: scan?.scan_id || null,
+				latest_scan_finished_at: scan?.finished_at || null,
+			},
+			portal_state: {
+				portal_out_of_date: portalOutOfDate,
+				portal_last_patched_version: Number(net.portal_last_patched_version) || 0,
+				portal_last_patched_at: net.portal_last_patched_at || null,
+			},
+			risk_state: {
+				risk_score: Number(net.risk_score) || 0,
+				risk_bucket: net.risk_bucket || 'LOW',
+				risk_score_version: Number(net.risk_score_version) || 0,
+				last_threat_at: net.last_threat_at || null,
+			},
+			flags: {
+				network_config_missing: networkConfigMissing,
+			},
+		});
+	} catch (err) {
+		console.error('deviceMgmt /network/:networkId/state error:', err);
+		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: err.message });
+	}
+});
+
 module.exports = router;
