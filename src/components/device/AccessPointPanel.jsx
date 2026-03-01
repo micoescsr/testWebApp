@@ -1,6 +1,30 @@
 // components/device/AccessPointPanel.jsx - deterministic banners from admin state
 import { useNavigate } from "react-router-dom";
 
+/**
+ * Compute the single highest-priority banner to show.
+ * Returns { type, cssClass } or null if no banner applies.
+ *
+ * Priority (top wins, stop at first match):
+ *  1. network_config_missing  → blocking
+ *  2. ap_apply_in_progress    → blocking + disable controls
+ *  3. scanError (backend validation on toggle attempt)
+ *  4. AP off + no scan        → blocking "Scan required"
+ *  5. AP off + stale scan     → blocking "Scan is stale"
+ *  6. AP on + portal outdated → warning + Update Portal button
+ *  7. AP on + stale scan      → info (non-blocking)
+ */
+function computeBanner({ networkConfigMissing, apApplyInProgress, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate }) {
+  if (networkConfigMissing)             return "config_missing";
+  if (apApplyInProgress)                return "apply_in_progress";
+  if (scanError && scanError !== "SCAN_REQUIRED") return "scan_error";
+  if (!apEnabled && !hasScan)           return "scan_required";
+  if (!apEnabled && hasScan && !scanFresh) return "scan_stale_blocking";
+  if (apEnabled && portalOutOfDate)     return "portal_outdated";
+  if (apEnabled && hasScan && !scanFresh) return "scan_stale_info";
+  return null;
+}
+
 const AccessPointPanel = ({
   accessPoint,
   networkConfig,
@@ -30,6 +54,17 @@ const AccessPointPanel = ({
   const portalOutOfDate = portalState.portal_out_of_date ?? false;
   const networkConfigMissing = flags.network_config_missing ?? false;
 
+  // Single exclusive banner — only ONE renders at a time
+  const banner = computeBanner({
+    networkConfigMissing,
+    apApplyInProgress,
+    scanError,
+    apEnabled: accessPoint?.enabled ?? false,
+    hasScan,
+    scanFresh,
+    portalOutOfDate,
+  });
+
   // Toggle is disabled while loading, during in-progress apply, or when enabling without a scan
   const toggleDisabled = loading || apApplyInProgress || (!accessPoint?.enabled && !hasScanId);
 
@@ -38,6 +73,17 @@ const AccessPointPanel = ({
       return alert("Enter AP password for encrypted network");
     }
     onToggle(apPassword);
+  };
+
+  // Map scanError code to user-friendly text
+  const scanErrorText = {
+    SCAN_TOO_OLD: "Scan is outdated.",
+    SCAN_NETWORK_MISMATCH: "Scan does not match this network.",
+    SCAN_NOT_FOUND: "Scan not found.",
+    SCAN_NOT_FINISHED: "Scan has not finished yet.",
+    SCAN_FAILED: "Scan failed or was cancelled.",
+    SCAN_HAS_ERRORS: "Scan completed with errors.",
+    SCAN_INVALID_DATA: "Scan contains no data.",
   };
 
   return (
@@ -57,61 +103,9 @@ const AccessPointPanel = ({
           </label>
         </div>
 
-        {/* ── Deterministic banners from admin state ─────────── */}
+        {/* ── Single exclusive banner (strict priority) ─────── */}
 
-        {/* Banner: AP apply in progress (locks controls) */}
-        {apApplyInProgress && (
-          <div className="state-message info-state">
-            <p>Applying AP configuration...</p>
-            <small>Please wait while the change is being applied.</small>
-          </div>
-        )}
-
-        {/* Banner: Scan required to enable (AP off + no scan at all) */}
-        {!accessPoint?.enabled && !hasScan && !apApplyInProgress && (
-          <div className="state-message warning-state">
-            <p>Scan required to enable Access Point.</p>
-            <small>Run a scan to get the latest network configuration.</small>
-            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
-              Go to Scan
-            </button>
-          </div>
-        )}
-
-        {/* Banner: Scan stale + AP off (blocking — must scan before enable) */}
-        {!accessPoint?.enabled && hasScan && !scanFresh && !apApplyInProgress && (
-          <div className="state-message warning-state">
-            <p>Scan is stale.</p>
-            <small>Run a new scan before enabling the access point.</small>
-            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
-              Scan Again
-            </button>
-          </div>
-        )}
-
-        {/* Banner: Portal out of date (AP on, risk version mismatch) */}
-        {accessPoint?.enabled && portalOutOfDate && !apApplyInProgress && (
-          <div className="state-message warning-state">
-            <p>Captive portal content is out of date.</p>
-            <small>Risk level changed since last portal update.</small>
-            {onUpdatePortal && (
-              <button onClick={onUpdatePortal} disabled={loading} style={{ marginTop: 8 }}>
-                {loading ? "Updating..." : "Update Portal"}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Banner: Scan stale while AP is on (info, non-blocking) */}
-        {accessPoint?.enabled && hasScan && !scanFresh && !apApplyInProgress && (
-          <div className="state-message info-state">
-            <p>Scan data is getting old.</p>
-            <small>Consider running a new scan to keep risk assessment current.</small>
-          </div>
-        )}
-
-        {/* Banner: Network config missing */}
-        {networkConfigMissing && !apApplyInProgress && (
+        {banner === "config_missing" && (
           <div className="state-message warning-state">
             <p>Network configuration incomplete.</p>
             <small>SSID, BSSID, or channel is missing. Re-scan the network.</small>
@@ -121,22 +115,59 @@ const AccessPointPanel = ({
           </div>
         )}
 
-        {/* Scan validation errors from backend (on toggle attempt) */}
-        {scanError && scanError !== "SCAN_REQUIRED" && (
+        {banner === "apply_in_progress" && (
+          <div className="state-message info-state">
+            <p>Applying AP configuration…</p>
+            <small>Please wait while the change is being applied.</small>
+          </div>
+        )}
+
+        {banner === "scan_error" && (
           <div className="state-message warning-state">
-            <p>
-              {scanError === "SCAN_TOO_OLD" && "Scan is outdated."}
-              {scanError === "SCAN_NETWORK_MISMATCH" && "Scan does not match this network."}
-              {scanError === "SCAN_NOT_FOUND" && "Scan not found."}
-              {scanError === "SCAN_NOT_FINISHED" && "Scan has not finished yet."}
-              {scanError === "SCAN_FAILED" && "Scan failed or was cancelled."}
-              {scanError === "SCAN_HAS_ERRORS" && "Scan completed with errors."}
-              {scanError === "SCAN_INVALID_DATA" && "Scan contains no data."}
-            </p>
+            <p>{scanErrorText[scanError] || "Scan validation failed."}</p>
             <small>Run a new scan before enabling the access point.</small>
             <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
               Scan Again
             </button>
+          </div>
+        )}
+
+        {banner === "scan_required" && (
+          <div className="state-message warning-state">
+            <p>Scan required to enable Access Point.</p>
+            <small>Run a scan to get the latest network configuration.</small>
+            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
+              Go to Scan
+            </button>
+          </div>
+        )}
+
+        {banner === "scan_stale_blocking" && (
+          <div className="state-message warning-state">
+            <p>Scan is stale.</p>
+            <small>Run a new scan before enabling the access point.</small>
+            <button onClick={() => navigate("/security-assessment")} style={{ marginTop: 8 }}>
+              Scan Again
+            </button>
+          </div>
+        )}
+
+        {banner === "portal_outdated" && (
+          <div className="state-message warning-state">
+            <p>Captive portal content is out of date.</p>
+            <small>Risk level changed since last portal update.</small>
+            {onUpdatePortal && (
+              <button onClick={onUpdatePortal} disabled={loading} style={{ marginTop: 8 }}>
+                {loading ? "Updating…" : "Update Portal"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {banner === "scan_stale_info" && (
+          <div className="state-message info-state">
+            <p>Scan data is getting old.</p>
+            <small>Consider running a new scan to keep risk assessment current.</small>
           </div>
         )}
       </div>
