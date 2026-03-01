@@ -1,7 +1,7 @@
 # Session Persistence — Architecture & Policy
 
 > **Scope:** Explains how the Why-PII? web app preserves UI state across page refreshes without compromising security.  
-> **Last updated:** February 25, 2026
+> **Last updated:** March 1, 2026
 
 ---
 
@@ -95,7 +95,7 @@ This allows future schema migrations. If the app reads an envelope with an unexp
 |---|---|---|
 | Refresh with network selected | Network gone, table empty | Network restored, vulnerabilities auto-fetched from DB |
 | Refresh with network no longer in range | N/A (was always lost) | Banner: *"Previously selected network is no longer in range"* |
-| Refresh during threat detection | Polling stopped silently | Banner: *"Detection was paused due to page refresh. Start detection again."* Status forced to IDLE. |
+| Refresh during threat detection | Polling stopped silently | UI calls `/detect/status` on mount → resumes DETECTING if backend is RUNNING |
 | Refresh on Threats tab | Reset to Vulnerabilities | Stays on Threats tab |
 
 ### Device Management
@@ -142,23 +142,49 @@ Both paths guarantee no stale session data survives.
 
 ---
 
-## Threat Detection — Current Limitations
+## Threat Detection — Persistent Detection State (PR4 — Implemented)
 
-**Detection does NOT resume after refresh.** This is intentional.
+**Detection now survives refresh, login, and logout.** The backend `public.detection_state` table is the single source of truth.
 
-The threat detection polling (`useThreatDetection`) uses `fetch()` to poll `/api/detect/poll` every 2 seconds. On refresh:
+### How it works
 
-1. The polling loop is destroyed (React unmounts)
-2. There is no backend endpoint to check if a detection session is still alive
-3. Blindly resuming polling could show stale "Detecting..." UI with no actual backend activity
+On server startup, the backend ensures a `detection_state` row exists for `device_id=1`. After every scan save (`saveNetworkMetadataScan`), the backend calls `detectStateService.startOrSwitch()` which atomically sets detection to `RUNNING` with the correct `active_network_id` and `active_scan_id` (bigint from `public.scans`).
 
-**Current behavior:** If `detectionStatus` was `DETECTING` or `SCANNING` before refresh, it is forced to `IDLE` and a dismissible banner informs the user.
+The frontend `useThreatDetection` hook:
+1. On mount, calls `GET /api/detect/status` to bootstrap UI state from the database.
+2. If `RUNNING` → sets `DETECTING` and starts polling via `api.get("/detect/poll")`.
+3. If `STOPPED` → sets `IDLE`.
+4. If `FAILED` → sets `FAILED` and shows `failure_reason`.
 
-**Future work (PR4):**
-- Fix polling to use the authenticated `api` instance instead of raw `fetch()`
-- Add a backend `/api/detect/status` endpoint with session lifecycle
-- Implement TTL-based expiry for detection sessions
-- Only then: allow `DETECTING` to resume after refresh
+### What does NOT stop detection
+- Page refresh
+- Logout / login
+- Opening a new tab
+
+### What does stop detection
+- Explicit `POST /api/detect/stop` (user action)
+- New scan on a different network (automatic `SWITCH_TARGET`)
+- Heartbeat timeout (Pi offline for >30s → `FAILED`)
+
+### Heartbeat rules
+- `GET /api/detect/poll` updates `last_heartbeat_at` on every successful FastAPI proxy.
+- `GET /api/detect/status` checks: if `RUNNING` and `last_heartbeat_at` is NULL or older than 30s → marks `FAILED` with `failure_reason = 'heartbeat timeout'`.
+
+### Endpoints
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/detect/status` | Current state (enforces heartbeat timeout) |
+| POST | `/api/detect/start` | Start or switch detection (body: `{ network_id, scan_id }`) |
+| POST | `/api/detect/stop` | Stop detection (body: `{ reason? }`) |
+| POST | `/api/detect/heartbeat` | Manual heartbeat update |
+| GET | `/api/detect/poll` | Gated poll proxy — returns empty when not RUNNING |
+
+### Concurrency guard
+All state transitions use optimistic locking on `updated_at`. If a concurrent write is detected, the service retries up to 2 times.
+
+### Audit events
+All state transitions are logged to `public.audit_logging` with `entity_type = 'DETECTION_STATE'`:
+- `START_DETECTION`, `STOP_DETECTION`, `SWITCH_TARGET`, `DETECTION_FAILED`
 
 ---
 
@@ -201,7 +227,14 @@ Solution: both are stored as a single object under `wf:networkScan`. The `setNet
 ### PR3 — SAM persistence + auto-restore
 - [ ] Select network → scan → refresh → vulnerabilities table repopulates
 - [ ] Select network → scan → take network offline → refresh → banner: "no longer in range"
-- [ ] Start detection → refresh → banner: "Detection paused" → status is IDLE
-- [ ] Dismiss "Detection paused" banner → start new scan → banner does not reappear
 - [ ] Switch to Threats tab → refresh → still on Threats tab
 - [ ] Device Management: switch to Terms tab → refresh → still on Terms tab
+
+### PR4 — Detection persistence (detection_state table)
+- [ ] After scan/save → `detection_state` becomes RUNNING with correct `active_network_id` + `active_scan_id` (bigint)
+- [ ] Refresh page while RUNNING → UI resumes DETECTING via `/detect/status`
+- [ ] Login as another admin while RUNNING → still DETECTING
+- [ ] Scan different network while RUNNING → SWITCH_TARGET works and audit logged
+- [ ] Stop detection → STOPPED; `/detect/poll` returns STOPPED + empty results
+- [ ] Simulated heartbeat timeout: set `last_heartbeat_at = now() - interval '5 minutes'` → `GET /detect/status` returns FAILED
+- [ ] Logout → login → detection state unchanged (still RUNNING/STOPPED/FAILED as before)

@@ -4,6 +4,7 @@ const rasPiService = require("../services/rasPiService");
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
+const detectStateService = require("../services/detectStateService");
 
 function getRiskLabel(score) {
   const s = Number(score) || 0;
@@ -308,6 +309,17 @@ async function saveNetworkMetadataScan(req, res) {
         console.log("[saveNetworkMetadataScan] riskPipeline.onScanCompleted triggered for", vulnScanRow.scan_id);
       } catch (pipeErr) {
         console.error("[saveNetworkMetadataScan] riskPipeline error (non-fatal):", pipeErr.message);
+      }
+    }
+
+    // ── Auto-start (or switch) detection after scan save ──
+    // IMPORTANT: uses scanRow.scan_id (BIGINT from public.scans), NOT vulnScanRow (UUID).
+    if (scanRow?.scan_id && network?.network_id && req.user?.id) {
+      try {
+        await detectStateService.startOrSwitch(req, req.user.id, network.network_id, scanRow.scan_id);
+        console.log("[saveNetworkMetadataScan] detection started/switched for scan", scanRow.scan_id);
+      } catch (detectErr) {
+        console.error("[saveNetworkMetadataScan] detectStateService.startOrSwitch error (non-fatal):", detectErr.message);
       }
     }
 

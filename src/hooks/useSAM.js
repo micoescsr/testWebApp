@@ -7,7 +7,6 @@ import {
   getThreatDetail,
   getVulnerabilityDetail,
 } from "../api/samApi";
-import { mappedThreats } from "../data/mockThreats";
 
   export const useNetworks = () => {
     const [networks, setNetworks] = useState([]);
@@ -297,81 +296,104 @@ export const useVulnerabilities = (bssid) => {
 
 
 /* =========================
-   THREAT DETECTION HOOK (Smart Polling)
+   THREAT DETECTION HOOK (Persistent — backed by detection_state table)
 ========================= */
 export const useThreatDetection = () => {
-  const [status, setStatus] = useState("IDLE"); // 'IDLE' | 'SCANNING' | 'DETECTING'
+  // UI status: 'IDLE' | 'SCANNING' | 'DETECTING' | 'FAILED'
+  const [status, setStatus] = useState("IDLE");
   const [detectionResults, setDetectionResults] = useState(null);
-  
+  const [failureReason, setFailureReason] = useState(null);
+
   // 1) live snapshot from the latest poll
   const [liveThreats, setLiveThreats] = useState([]);
 
   // 2) sticky/latest-known threats (what you show in UI)
-  // Use mock data in development when REACT_APP_USE_MOCK_THREATS is true
-  let USE_MOCK_THREATS = false;
-  try {
-    // Prefer explicit VITE/REACT flag, but enable mocks automatically during Vite dev mode
-    const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
-    const rawFlag = env.VITE_USE_MOCK_THREATS ?? env.REACT_APP_USE_MOCK_THREATS ?? null;
+  const [displayThreats, setDisplayThreats] = useState([]);
 
-    if (rawFlag != null) {
-      USE_MOCK_THREATS = String(rawFlag).toLowerCase() === "true";
-    } else if (env.DEV) {
-      // developer convenience: show mock threats during local dev
-      USE_MOCK_THREATS = true;
-    } else if (typeof process !== "undefined" && process.env) {
-      USE_MOCK_THREATS = String(process.env.REACT_APP_USE_MOCK_THREATS || "false").toLowerCase() === "true";
-    } else {
-      USE_MOCK_THREATS = false;
-    }
-  } catch (e) {
-    USE_MOCK_THREATS = false;
-  }
+  // 3) backend state row (for callers that need network_id etc.)
+  const [backendState, setBackendState] = useState(null);
 
-  const [displayThreats, setDisplayThreats] = useState(
-    USE_MOCK_THREATS ? mappedThreats : []
-  );
-
-  // Refs track the "Live" status without causing re-renders
+  // Refs track the polling loop without causing re-renders
   const isPollingRef = useRef(false);
   const timeoutRef = useRef(null);
+  const bootstrappedRef = useRef(false);
 
-  // The actual polling function
+  // ─── Bootstrap: hydrate from /detect/status on mount ──────────
+  useEffect(() => {
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+
+    (async () => {
+      try {
+        const { default: api } = await import("../api/axios");
+        const res = await api.get("/detect/status");
+        const row = res.data;
+        setBackendState(row);
+
+        if (row.status === "RUNNING") {
+          setStatus("DETECTING");
+          setFailureReason(null);
+        } else if (row.status === "FAILED") {
+          setStatus("FAILED");
+          setFailureReason(row.failure_reason || "Unknown failure");
+        } else {
+          setStatus("IDLE");
+          setFailureReason(null);
+        }
+      } catch (err) {
+        console.warn("[useThreatDetection] bootstrap /detect/status failed:", err.message);
+        // Stay IDLE — will try again on next poll or scan
+      }
+    })();
+  }, []);
+
+  // ─── Polling with axios ───────────────────────────────────────
   const runPoll = async () => {
-  if (!isPollingRef.current) return;
+    if (!isPollingRef.current) return;
 
-  try {
-    const res = await fetch("http://localhost:3000/api/detect/poll");
-    const data = await res.json();
+    try {
+      const { default: api } = await import("../api/axios");
+      const res = await api.get("/detect/poll");
+      const data = res.data;
 
-    if (isPollingRef.current) {
-      const threatRows = data.threatRows || [];
+      // If backend says detection is no longer RUNNING, stop polling
+      if (data.status && data.status !== "RUNNING") {
+        isPollingRef.current = false;
+        if (data.status === "FAILED") {
+          setStatus("FAILED");
+          setFailureReason(data.last_error || "Detection failed");
+        } else if (data.status === "STOPPED") {
+          setStatus("IDLE");
+          setFailureReason(null);
+        }
+        setBackendState((prev) => ({ ...prev, status: data.status }));
+        return; // don't schedule next poll
+      }
 
-      // Map raw threatRows into parent/session structure
-      const mapped = mapThreatRowsToParentSessions(threatRows);
+      if (isPollingRef.current) {
+        const threatRows = data.threatRows || [];
+        const mapped = mapThreatRowsToParentSessions(threatRows);
 
-      setDetectionResults(data);
-      setLiveThreats(mapped); // live snapshot (mapped)
+        setDetectionResults(data);
+        setLiveThreats(mapped);
 
-      // only update sticky state when we *have* threats
-      if (mapped.length > 0) {
-        setDisplayThreats(mapped); // last non-empty mapped
+        if (mapped.length > 0) {
+          setDisplayThreats(mapped);
+        }
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
+    } finally {
+      if (isPollingRef.current) {
+        timeoutRef.current = setTimeout(runPoll, 3000); // 3 s interval
       }
     }
-  } catch (err) {
-    console.error("Polling error:", err);
-  } finally {
-    if (isPollingRef.current) {
-      timeoutRef.current = setTimeout(runPoll, 2000);
-    }
-  }
-};
+  };
 
   // Helper: transform server threatRows into parent/session model
   function toEpochSeconds(v) {
     if (v == null) return null;
     if (typeof v === "number") {
-      // seconds vs ms heuristic
       return v > 1e12 ? Math.floor(v / 1000) : Math.floor(v);
     }
     const parsed = Date.parse(v);
@@ -403,13 +425,14 @@ export const useThreatDetection = () => {
         .sort((a, b) => {
           const aKey = a.lastSeen || a.firstSeen;
           const bKey = b.lastSeen || b.firstSeen;
-          return bKey - aKey; // newest first
+          return bKey - aKey;
         });
 
       const occurrencesCompleted = sessions.filter((s) => s.state === "CLEARED").length;
       const activeSession = sessions.find((s) => s.state === "DETECTED") || null;
-
-      const lastSeen = activeSession ? (activeSession.lastSeen || nowSec) : (sessions[0]?.lastSeen || sessions[0]?.firstSeen || null);
+      const lastSeen = activeSession
+        ? (activeSession.lastSeen || nowSec)
+        : (sessions[0]?.lastSeen || sessions[0]?.firstSeen || null);
 
       return {
         id: t.id || t.vt_id || t.code || t.name,
@@ -417,7 +440,7 @@ export const useThreatDetection = () => {
         severity: t.severity || t.severity_rating || "N/A",
         score: t.score ?? t.severity_score ?? null,
         status: t.status || (activeSession ? "DETECTED" : "CLEARED"),
-        detectedTime: lastSeen, // used by table as detectedTime
+        detectedTime: lastSeen,
         occurrences: occurrencesCompleted,
         activeCount: activeSession ? 1 : 0,
         activeSession,
@@ -427,9 +450,8 @@ export const useThreatDetection = () => {
     });
   }
 
-
   const startPolling = () => {
-    if (isPollingRef.current) return; // Already running
+    if (isPollingRef.current) return;
     isPollingRef.current = true;
     runPoll();
   };
@@ -442,28 +464,55 @@ export const useThreatDetection = () => {
     }
   };
 
+  // Start/stop polling when status changes
   useEffect(() => {
     if (status === "DETECTING") {
       startPolling();
     } else {
       stopPolling();
     }
-
     return () => stopPolling();
   }, [status]);
+
+  /** Refresh detection state from backend (call after scan save). */
+  const refreshStatus = async () => {
+    try {
+      const { default: api } = await import("../api/axios");
+      const res = await api.get("/detect/status");
+      const row = res.data;
+      setBackendState(row);
+
+      if (row.status === "RUNNING") {
+        setStatus("DETECTING");
+        setFailureReason(null);
+      } else if (row.status === "FAILED") {
+        setStatus("FAILED");
+        setFailureReason(row.failure_reason || "Unknown failure");
+      } else {
+        setStatus("IDLE");
+        setFailureReason(null);
+      }
+    } catch (err) {
+      console.warn("[refreshStatus] failed:", err.message);
+    }
+  };
 
   return {
     detectionStatus: status,
     setDetectionStatus: setStatus,
     detectionResults,
-    liveThreats,      // “raw” current poll
-    displayThreats,   // “sticky” for UI
+    liveThreats,
+    displayThreats,
+    failureReason,
+    backendState,
+    refreshStatus,
     resetDetection: () => {
       stopPolling();
       setStatus("IDLE");
       setDetectionResults(null);
-      setLiveThreats([]); // clear live threats
-      setDisplayThreats([]); // clear sticky threats
+      setLiveThreats([]);
+      setDisplayThreats([]);
+      setFailureReason(null);
     },
   };
 };
