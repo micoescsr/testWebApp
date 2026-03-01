@@ -66,6 +66,121 @@ function httpError(status, code, message, extra = {}) {
 	return e;
 }
 
+// ─── Helper: classify FastAPI orchestrate/apply error response ───
+// Maps user_message patterns from FastAPI to structured error codes
+// so the frontend can show the right prompt / action.
+function classifyOrchestrateError(fastapiData) {
+	if (!fastapiData || fastapiData.status !== 'ERROR') return null;
+
+	const msg = fastapiData.user_message || '';
+	const uplink = fastapiData.uplink || {};
+	const mismatched = uplink.mismatched_fields || uplink.strict_match?.mismatched_fields || [];
+	const reasonCode = uplink.reason_code || null;
+
+	// Pi management network conflict
+	if (msg.includes("matches the Pi's management network")) {
+		return {
+			error_code: 'PI_NETWORK_CONFLICT',
+			category: 'rejected',
+			user_message: msg,
+			retryable: false,
+		};
+	}
+
+	// SSID not found
+	if (msg.includes('SSID cannot be found')) {
+		return {
+			error_code: 'SSID_NOT_FOUND',
+			category: 'not_found',
+			user_message: msg,
+			retryable: false,
+		};
+	}
+
+	// Password required
+	if (msg.includes('Password is required')) {
+		return {
+			error_code: 'PASSWORD_REQUIRED',
+			category: 'auth',
+			user_message: msg,
+			retryable: true,
+		};
+	}
+
+	// Incorrect password
+	if (msg.includes('Incorrect Wi-Fi password')) {
+		return {
+			error_code: 'INCORRECT_PASSWORD',
+			category: 'auth',
+			user_message: msg,
+			retryable: true,
+		};
+	}
+
+	// Security/encryption type mismatch
+	if (msg.includes("security type doesn't match")) {
+		return {
+			error_code: 'ENCRYPTION_MISMATCH',
+			category: 'outdated',
+			user_message: msg,
+			mismatched_fields: ['encryption_type'],
+			retryable: false,
+			needs_rescan: true,
+		};
+	}
+
+	// Field-level mismatch (channel, BSSID, etc.) — data is outdated
+	if (msg.includes('Refused to connect') && mismatched.length > 0) {
+		return {
+			error_code: 'NETWORK_DATA_OUTDATED',
+			category: 'outdated',
+			user_message: msg,
+			mismatched_fields: mismatched,
+			reason_code: reasonCode,
+			retryable: false,
+			needs_rescan: true,
+		};
+	}
+
+	// Busy / lock
+	if (msg.includes('Busy:') || msg.includes('wifi_ops_lock')) {
+		return {
+			error_code: 'DEVICE_BUSY',
+			category: 'busy',
+			user_message: msg,
+			retryable: true,
+		};
+	}
+
+	// Invalid payload
+	if (msg.includes('Invalid payload')) {
+		return {
+			error_code: 'INVALID_PAYLOAD',
+			category: 'validation',
+			user_message: msg,
+			retryable: false,
+		};
+	}
+
+	// Generic connection failure (weak signal, timeout, etc.)
+	if (msg.includes("Couldn't connect")) {
+		return {
+			error_code: 'CONNECTION_FAILED',
+			category: 'connection',
+			user_message: msg,
+			retryable: true,
+		};
+	}
+
+	// Catch-all for any other ERROR status
+	return {
+		error_code: 'ORCHESTRATE_ERROR',
+		category: 'unknown',
+		user_message: msg || 'An unexpected error occurred during AP configuration.',
+		retryable: false,
+	};
+}
+
 // ─── Legacy toggle signal (keep for backward compat) ────────────
 router.post('/signal_ap', async (req, res) => {
 	try {
@@ -210,6 +325,24 @@ router.post('/enable-ap', async (req, res) => {
 				});
 			}
 
+			// Check for application-level ERROR (FastAPI returns 200 but status: "ERROR")
+			const disableClassified = classifyOrchestrateError(fastapiData);
+			if (disableClassified) {
+				await logAuditEvent({
+					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, classified: disableClassified, fastapi_body: fastapiData },
+				});
+				return res.status(422).json({
+					ok: false,
+					error: disableClassified.error_code,
+					category: disableClassified.category,
+					user_message: disableClassified.user_message,
+					retryable: disableClassified.retryable,
+					fastapi: fastapiData,
+				});
+			}
+
 			// Persist ap_enabled = false + update ap_last_applied_at
 			await supabaseClient
 				.from('networks')
@@ -225,13 +358,14 @@ router.post('/enable-ap', async (req, res) => {
 				meta: { request_id: requestId, fastapi_status: fastapiRes.status },
 			});
 
-			return res.json({
+			const responseBody = {
 				ok: true,
 				network_id,
 				ap_enabled: false,
 				ap_status: 'disable',
 				fastapi: fastapiData,
-			});
+			};
+			return res.json(responseBody);
 		}
 
 		// ══════════════════════════════════════════════════════════
@@ -308,7 +442,10 @@ router.post('/enable-ap', async (req, res) => {
 
 			const portalRes = await fetch(portalUrl, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
+				},
 				body: JSON.stringify(patchPayload),
 			});
 			const portalData = await portalRes.json().catch(() => null);
@@ -404,6 +541,35 @@ router.post('/enable-ap', async (req, res) => {
 			});
 		}
 
+		// Step 8b: Check for application-level ERROR (FastAPI returns 200 but status: "ERROR")
+		const enableClassified = classifyOrchestrateError(fastapiData);
+		if (enableClassified) {
+			console.warn('[enable-ap] FastAPI returned status:ERROR —', enableClassified.error_code, enableClassified.user_message);
+
+			// Do NOT set ap_enabled=true — the AP is not actually running
+			await logAuditEvent({
+				req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: {
+					request_id: requestId,
+					scan_id,
+					classified: enableClassified,
+					fastapi_body: fastapiData,
+				},
+			});
+
+			return res.status(422).json({
+				ok: false,
+				error: enableClassified.error_code,
+				category: enableClassified.category,
+				user_message: enableClassified.user_message,
+				mismatched_fields: enableClassified.mismatched_fields || null,
+				needs_rescan: enableClassified.needs_rescan || false,
+				retryable: enableClassified.retryable,
+				fastapi: fastapiData,
+			});
+		}
+
 		// Step 9: Persist ap_enabled = true + update timestamps + denormalize scan pointer
 		await supabaseClient
 			.from('networks')
@@ -424,7 +590,7 @@ router.post('/enable-ap', async (req, res) => {
 			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: fastapiRes.status },
 		});
 
-		return res.json({
+		const responseBody = {
 			ok: true,
 			network_id,
 			ap_enabled: true,
@@ -434,15 +600,17 @@ router.post('/enable-ap', async (req, res) => {
 				finished_at: scan.finished_at,
 			},
 			fastapi: fastapiData,
-		});
+		};
+		return res.json(responseBody);
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
 		const status = err.status || 500;
-		return res.status(status).json({
+		const errorBody = {
 			error: err.code || 'AP_TOGGLE_FAILED',
 			message: err.message,
 			...(err.extra || {}),
-		});
+		};
+		return res.status(status).json(errorBody);
 	} finally {
 		// ── ALWAYS release the lock ──────────────────────────────
 		if (lockAcquired) {
@@ -724,7 +892,10 @@ router.post('/portal/update', async (req, res) => {
 
 		const fastapiRes = await fetch(portalUrl, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
+			},
 			body: JSON.stringify(fastapiPayload),
 		});
 		const fastapiData = await fastapiRes.json().catch(() => null);

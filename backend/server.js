@@ -606,6 +606,64 @@ app.get('/api/history/threats', async (req, res) => {
 
 
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
+const { execSync } = require('child_process');
+
+function killPort(port) {
+  try {
+    const out = execSync(
+      `netstat -ano | findstr :${port} | findstr LISTENING`,
+      { encoding: 'utf8' }
+    );
+    const pids = [...new Set(
+      out.trim().split('\n')
+        .map(l => l.trim().split(/\s+/).pop())
+        .filter(p => p && p !== '0')
+    )];
+    for (const pid of pids) {
+      try {
+        execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+        console.log(`Killed stale process PID ${pid} on port ${port}`);
+      } catch (_) { /* already dead */ }
+    }
+    return pids.length > 0;
+  } catch (_) {
+    return false; // nothing listening
+  }
+}
+
+let retried = false;
+
+function startServer() {
+  const server = app.listen(PORT, () => {
+    console.log(`API running on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && !retried) {
+      retried = true;
+      console.log(`⚠️  Port ${PORT} in use — auto-killing stale process...`);
+      if (killPort(PORT)) {
+        setTimeout(() => startServer(), 1000);
+      } else {
+        console.error(`❌ Port ${PORT} is in use but could not identify the process. Kill it manually.`);
+        process.exit(1);
+      }
+    } else if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} still in use after retry. Kill it manually.`);
+      process.exit(1);
+    } else {
+      console.error('❌ Server error:', err);
+      process.exit(1);
+    }
+  });
+}
+
+startServer();
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled rejection:', reason);
 });

@@ -148,10 +148,13 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 9. If !portal_initialized:
    a. seedDefaultContent()
    b. buildPortalPayloadFromDB()
-   c. POST FastAPI /portal/patch               → PORTAL_PATCH_FAILED
+   c. POST FastAPI /portal/patch (with x-portal-token header) → PORTAL_PATCH_FAILED
    d. Set portal_initialized=true, portal_last_patched_at, portal_last_patched_version
    e. Audit: AP_ENABLE_REQUEST (portal init)
-10. POST FastAPI /orchestrate/apply             → FASTAPI_APPLY_FAILED
+10. POST FastAPI /orchestrate/apply             → FASTAPI_APPLY_FAILED (HTTP error)
+10b. classifyOrchestrateError(fastapiData)      → Structured 422 error if status:"ERROR"
+     - Do NOT set ap_enabled=true
+     - Return error_code, category, user_message, mismatched_fields, needs_rescan, retryable
 11. Update DB: ap_enabled=true, last_scan_id, last_scan_finished_at
 12. Audit: AP_STATUS_CHANGE (SUCCESS)
 13. finally: releaseApLock()
@@ -163,6 +166,7 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 1. Load + validateNetworkConfig()
 2. Set ap_apply_in_progress = true
 3. POST FastAPI /orchestrate/apply (disable payload)
+3b. classifyOrchestrateError(fastapiData)       → Structured 422 error if status:"ERROR"
 4. Update DB: ap_enabled=false
 5. finally: releaseApLock()
 ```
@@ -170,10 +174,12 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 ### Key Design Decisions
 
 - **`httpError(status, code, message, extra)`** — Typed error helper. Throw anywhere; catch block reads `.status`, `.code`, `.extra` to build response.
+- **`classifyOrchestrateError(fastapiData)`** — Parses FastAPI `orchestrate/apply` responses where HTTP is 200 but `status: "ERROR"`. Maps `user_message` patterns to structured error codes (see [Orchestrate Error Codes](#orchestrate-error-codes-fastapi-status-error)). Returns `null` if response is not an error.
 - **`releaseApLock()`** — Always runs in `finally` block. Logs but never throws.
 - **`logFastApiCall()`** — Logs method, URL, payload, response status + body for debugging.
 - **`logAuditEvent()`** — Fire-and-forget. Maps `SUCCESS→OK`, `FAILED→FAIL`, `DENIED→DENY` for the DB enum.
 - **`risk_score_version` re-read** — After portal init patch, re-reads version from DB before stamping to avoid race conditions.
+- **`x-portal-token` header** — All `/portal/patch` calls include `x-portal-token` header from `PORTAL_TOKEN` env var for FastAPI authentication.
 
 ---
 
@@ -489,6 +495,16 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 
 5. **Webhook** — Verified: 401 on bad token, env var comparison, UUID before DB query, idempotent retries return `{ok:true, skipped:true}`
 
+### Network Data + Orchestrate Error Fixes
+
+1. **Network update on scan save** — `rasPiController.saveNetworkMetadataScan()` now includes `ssid` and `channel` in the upsert-on-existing-network update. Previously only `city, province, notes, encryption_status, num_clients, bssid` were updated, causing stale channel/SSID values in the DB even after a fresh scan.
+
+2. **Orchestrate application-level errors** — FastAPI `/orchestrate/apply` returns HTTP 200 with `status: "ERROR"` on failures (wrong channel, wrong password, SSID not found, etc.). The backend now checks `fastapiData.status === 'ERROR'` via `classifyOrchestrateError()` and returns HTTP 422 with structured error details. Previously, these were treated as success — `ap_enabled` was set to `true` even though the AP was actually OFF.
+
+3. **Portal token auth** — All `/portal/patch` calls (portal init, client-driven update, auto-portal risk patch, portal sync) now include `x-portal-token` header read from the `PORTAL_TOKEN` env var. Fixes 401 unauthorized errors from FastAPI.
+
+4. **Guard against false `ap_enabled`** — When `classifyOrchestrateError()` detects a failure, the enable path returns 422 immediately without setting `ap_enabled=true` or `portal_initialized=true` in the DB.
+
 ---
 
 ## Environment Variables
@@ -496,6 +512,7 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FASTAPI_BASE` | `http://mothership-1.tail781e52.ts.net:8000` | FastAPI base URL |
+| `PORTAL_TOKEN` | `''` | Auth token sent as `x-portal-token` header to FastAPI `/portal/patch` |
 | `SCAN_MAX_AGE_SECONDS` | `300` (5 min) | Maximum scan age for freshness check |
 | `SCAN_RUNNER_TOKEN` | `''` (disabled) | Shared secret for `/scan-completed` webhook |
 | `PORTAL_PATCH_COOLDOWN_MS` | `15000` (15s) | Min time between auto portal patches |
@@ -540,8 +557,74 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 | `AP_PASSWORD_REQUIRED` | 400 | Encrypted network requires password |
 | `AP_PASSWORD_WEAK` | 400 | Password < 8 characters |
 | `REQUEST_IN_PROGRESS` | 409 | `ap_apply_in_progress` lock held |
-| `FASTAPI_APPLY_FAILED` | 502 | FastAPI `/orchestrate/apply` failed |
+| `FASTAPI_APPLY_FAILED` | 502 | FastAPI `/orchestrate/apply` HTTP error |
 | `PORTAL_PATCH_FAILED` | 502 | FastAPI `/portal/patch` failed (init) |
+
+### Orchestrate Error Codes (FastAPI status: "ERROR")
+
+These are returned as HTTP 422 when FastAPI returns `200 OK` but with `status: "ERROR"` in the body. The backend classifies the `user_message` into a structured error for the frontend.
+
+| Code | Category | Retryable | Needs Rescan | FastAPI `user_message` Pattern |
+|------|----------|-----------|--------------|-------------------------------|
+| `SSID_NOT_FOUND` | `not_found` | No | No | `SSID cannot be found` |
+| `PASSWORD_REQUIRED` | `auth` | Yes | No | `Password is required` |
+| `INCORRECT_PASSWORD` | `auth` | Yes | No | `Incorrect Wi-Fi password` |
+| `ENCRYPTION_MISMATCH` | `outdated` | No | Yes | `security type doesn't match` |
+| `NETWORK_DATA_OUTDATED` | `outdated` | No | Yes | `Refused to connect` + mismatched fields (channel, BSSID, etc.) |
+| `PI_NETWORK_CONFLICT` | `rejected` | No | No | `matches the Pi's management network` |
+| `DEVICE_BUSY` | `busy` | Yes | No | `Busy:` / `wifi_ops_lock` |
+| `INVALID_PAYLOAD` | `validation` | No | No | `Invalid payload` |
+| `CONNECTION_FAILED` | `connection` | Yes | No | `Couldn't connect` (generic — weak signal, timeout) |
+| `ORCHESTRATE_ERROR` | `unknown` | No | No | Catch-all for unrecognized error messages |
+
+#### 422 Response Shape
+
+```json
+{
+  "ok": false,
+  "error": "NETWORK_DATA_OUTDATED",
+  "category": "outdated",
+  "user_message": "Refused to connect to uplink Wi-Fi 'HUAWEI-ai9b': channel is incorrect. ...",
+  "mismatched_fields": ["channel"],
+  "needs_rescan": true,
+  "retryable": false,
+  "fastapi": { ... }
+}
+```
+
+#### FastAPI `user_message` Reference (complete list)
+
+```
+// Success
+Uplink connected to '<ssid>'. Access point '<ssid>_INFO' is ON (ch <channel>, <encryption>).
+Uplink connected to '<ssid>'. Access point is OFF.
+Uplink disconnected. Access point is OFF.
+
+// SSID not found
+Couldn't connect to uplink Wi-Fi '<ssid>': SSID cannot be found. ...
+
+// Password issues
+Couldn't connect to uplink Wi-Fi '<ssid>': Password is required. ...
+Couldn't connect to uplink Wi-Fi '<ssid>': Incorrect Wi-Fi password. ...
+
+// Encryption mismatch
+Couldn't connect to uplink Wi-Fi '<ssid>': Network security type doesn't match the requested mode. ...
+
+// Field-level mismatch (channel, BSSID — data is outdated)
+Refused to connect to uplink Wi-Fi '<ssid>': <field_errors>. ...
+
+// Pi management network conflict
+Refused to connect uplink to '<ssid>' because it matches the Pi's management network. ...
+
+// Generic connection failure (weak signal, timeout)
+Couldn't connect to uplink Wi-Fi '<ssid>'. Uplink is disconnected. Access point is OFF.
+
+// System errors
+Invalid payload.
+Busy: wifi_ops_lock_busy
+Busy: wifi_ops_lock_timeout
+Exception: <exception>
+```
 
 ### Portal Update Errors
 
@@ -653,6 +736,22 @@ WHERE ap_apply_in_progress = true;
 | Invalid UUID | 400 `INVALID_INPUT` |
 | Same valid `scan_id` twice | Second returns `{ ok: true, skipped: true }` |
 
+### E. Orchestrate Error Handling
+
+| Scenario | Expected Error Code | Expected HTTP | Retryable? |
+|----------|-------------------|---------------|------------|
+| Wrong channel in DB | `NETWORK_DATA_OUTDATED` | 422 | No (needs rescan) |
+| Wrong BSSID in DB | `NETWORK_DATA_OUTDATED` | 422 | No (needs rescan) |
+| Wrong password provided | `INCORRECT_PASSWORD` | 422 | Yes |
+| No password for encrypted network | `PASSWORD_REQUIRED` | 422 | Yes |
+| SSID not visible to Pi | `SSID_NOT_FOUND` | 422 | No |
+| Encryption type mismatch | `ENCRYPTION_MISMATCH` | 422 | No (needs rescan) |
+| Pi management network | `PI_NETWORK_CONFLICT` | 422 | No |
+| Device busy / lock timeout | `DEVICE_BUSY` | 422 | Yes |
+| Weak signal / can't connect | `CONNECTION_FAILED` | 422 | Yes |
+
+**Key behavior:** On any orchestrate error, `ap_enabled` is NOT set to `true` in the DB. The frontend receives the structured error and can prompt the user accordingly (e.g., "Network data is outdated, run a new scan" for `needs_rescan: true`).
+
 ---
 
 ## Files Modified
@@ -661,10 +760,12 @@ WHERE ap_apply_in_progress = true;
 
 | File | Changes |
 |------|---------|
-| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook |
-| `backend/utils/riskPipeline.js` | **New file** — bucket computation, version bumping, auto-portal patching, scan/threat hooks |
+| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook, `classifyOrchestrateError()` for FastAPI error parsing, `x-portal-token` header on portal/patch calls |
+| `backend/utils/riskPipeline.js` | **New file** — bucket computation, version bumping, auto-portal patching, scan/threat hooks, `x-portal-token` header |
 | `backend/utils/scanValidation.js` | Pure scan validation functions, network config validation, password validation, portal payload builder |
 | `backend/utils/auditLogger.js` | Fire-and-forget audit logging (unchanged, consumed by new code) |
+| `backend/controllers/captivePortalController.js` | Portal sync to FastAPI, `x-portal-token` header on portal/patch call |
+| `backend/controllers/rasPiController.js` | Fixed `saveNetworkMetadataScan()` — network update now includes `ssid` and `channel` (previously missing, causing stale data) |
 | `backend/server.js` | Wired `onThreatEvent` into `persistThreatRows()` |
 
 ### Frontend

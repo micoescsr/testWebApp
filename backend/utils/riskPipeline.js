@@ -7,6 +7,7 @@ const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
+const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s
@@ -276,7 +277,10 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 
 		const res = await fetch(url, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
+			},
 			body: JSON.stringify(payload),
 		});
 		const body = await res.json().catch(() => null);
