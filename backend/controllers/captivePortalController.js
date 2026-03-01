@@ -4,6 +4,7 @@
 const { supabaseClient } = require('../config/supabaseClient');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
+const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared helpers (exported for use in deviceMgmtRoutes)
@@ -570,7 +571,10 @@ async function syncPortal(req, res) {
 		// Forward to FastAPI
 		const fastapiRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
+			},
 			body: JSON.stringify(payload),
 		});
 		const fastapiData = await fastapiRes.json().catch(() => null);

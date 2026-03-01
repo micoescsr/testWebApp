@@ -1,4 +1,5 @@
 // controllers/rasPiController.js
+const crypto = require("crypto");
 const rasPiService = require("../services/rasPiService");
 const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const { supabaseClient } = require("../config/supabaseClient");
@@ -132,6 +133,8 @@ async function saveNetworkMetadataScan(req, res) {
       const { error: updateErr } = await supabaseClient
         .from("networks")
         .update({
+          ssid,
+          channel,
           city,
           province,
           notes,
@@ -143,8 +146,9 @@ async function saveNetworkMetadataScan(req, res) {
       if (updateErr) throw updateErr;
     }
 
-    // 2. Insert scan (linked to network_id)
+    // 2. Insert scan (linked to network_id) — legacy scans table
     let scanRow = null;
+    let vulnScanRow = null; // vulnerability_scans row (UUID PK, used by AP enable)
     let riskScoreValue = 0;
     if (scan) {
       const { data: scanInsert, error: scanErr } = await supabaseClient
@@ -159,6 +163,43 @@ async function saveNetworkMetadataScan(req, res) {
         .single();
       if (scanErr) throw scanErr;
       scanRow = scanInsert;
+
+      // 2b. Dual-write: also insert into vulnerability_scans (UUID PK)
+      //     This is the table used by AP enable, scan validation, and risk pipeline.
+      const profileId = req.user?.id || null;
+      const scanStart = scan.scan_start || new Date().toISOString();
+      const scanEnd = scan.scan_end || new Date().toISOString();
+      const idempotencyKey = crypto.randomUUID(); // unique per save
+
+      const vulnScanPayload = {
+        network_id: network.network_id,
+        requested_by_profile_id: profileId,
+        status: 'COMPLETED',
+        started_at: scanStart,
+        finished_at: scanEnd,
+        target_snapshot: {
+          ssid,
+          bssid: normalizedBssid,
+          channel,
+        },
+        idempotency_key: idempotencyKey,
+        scan_data: scan,
+        error_code: null,
+      };
+
+      const { data: vulnScanInsert, error: vulnScanErr } = await supabaseClient
+        .from("vulnerability_scans")
+        .insert(vulnScanPayload)
+        .select("scan_id")
+        .single();
+
+      if (vulnScanErr) {
+        // Non-fatal: log but don't fail the save — old scan still works
+        console.error("[saveNetworkMetadataScan] vulnerability_scans insert failed:", vulnScanErr.message);
+      } else {
+        vulnScanRow = vulnScanInsert;
+        console.log("[saveNetworkMetadataScan] vulnerability_scans row created:", vulnScanRow.scan_id);
+      }
     }
 
     // 3. Insert vulnerabilities_threat from scan.findings
@@ -251,17 +292,32 @@ async function saveNetworkMetadataScan(req, res) {
         entityIdUuid: req.user.id,
         newValues: {
           network_id: network.network_id,
-          scan_id: scanRow?.scan_id || null,
+          scan_id: vulnScanRow?.scan_id || scanRow?.scan_id || null,
+          legacy_scan_id: scanRow?.scan_id || null,
           ssid,
           bssid,
         },
       }).catch(() => {});
     }
 
+    // Trigger risk pipeline from the new vulnerability_scans row (non-fatal)
+    if (vulnScanRow?.scan_id) {
+      try {
+        const { onScanCompleted } = require("../utils/riskPipeline");
+        await onScanCompleted(vulnScanRow.scan_id, req);
+        console.log("[saveNetworkMetadataScan] riskPipeline.onScanCompleted triggered for", vulnScanRow.scan_id);
+      } catch (pipeErr) {
+        console.error("[saveNetworkMetadataScan] riskPipeline error (non-fatal):", pipeErr.message);
+      }
+    }
+
+    // Return UUID scan_id (from vulnerability_scans) for AP enable;
+    // legacy_scan_id (bigint from scans) for backward compat.
     return res.status(201).json({
       status: "OK",
       network_id: network.network_id,
-      scan_id: scanRow?.scan_id ?? null,
+      scan_id: vulnScanRow?.scan_id ?? scanRow?.scan_id ?? null,
+      legacy_scan_id: scanRow?.scan_id ?? null,
       risk_score: riskScoreValue,
       risk_label: getRiskLabel(riskScoreValue),
       network,
