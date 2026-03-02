@@ -575,6 +575,10 @@ function startServer() {
     try {
       await detectStateService.ensureRow();
       console.log("[startup] detection_state row ensured");
+
+      // Start server-side heartbeat loop — pings FastAPI independently
+      // of any browser tab, so detection doesn't FAIL when users are idle.
+      detectStateService.startServerHeartbeatLoop();
     } catch (err) {
       console.error("[startup] Failed to ensure detection_state row:", err.message);
     }

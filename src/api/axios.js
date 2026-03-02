@@ -84,6 +84,11 @@ api.interceptors.response.use(
       refreshQueue.forEach(({ reject }) => reject(refreshErr));
       refreshQueue = [];
       setAccessToken(null);
+      // Wipe all wf:* sessionStorage keys (matches Sidebar logout path)
+      try {
+        const { clearSessionState } = await import("../hooks/useSessionState");
+        clearSessionState();
+      } catch (_) { /* best-effort */ }
       // Only redirect if not already on a public page
       const publicPaths = ["/login", "/forgot-password", "/reset-password"];
       if (!publicPaths.includes(window.location.pathname)) {

@@ -4,7 +4,7 @@ This document describes how the threat-detection pipeline works in this codebase
 
 **Scope**: runtime threat detection (live polling from the FastAPI detector, mapping into session/parent objects, optional mock data for local UI, and persistence into the `vulnerabilities_threat` table with `vt_kind = 'threat'`). This does not cover vulnerability scan rules (those are handled separately by the scan endpoints and marked with `vt_kind = 'vulnerability'`).
 
-**Last updated**: March 1, 2026
+**Last updated**: March 2, 2026
 
 ---
 
@@ -40,15 +40,24 @@ RUNNING → FAILED            (heartbeat timeout: last_heartbeat_at > 30s)
 - Page refresh
 - Logout / login
 - Opening a new tab or closing tabs
+- **User inactivity / background tabs** (server-side heartbeat loop keeps detection alive independently of the browser)
 
 ### What stops detection
 - Explicit `POST /api/detect/stop`
 - New scan on a different network (automatic SWITCH_TARGET)
 - Heartbeat timeout (Pi offline for >30s)
+- Express server shutdown (stops the server-side heartbeat loop)
 
 ### Heartbeat rules
-- Heartbeat expected every ~10s (poll interval is 3s, heartbeat updates on each successful poll).
-- If RUNNING and `last_heartbeat_at` is NULL or older than 30s, `GET /api/detect/status` auto-marks FAILED.
+
+Heartbeats are updated from **two independent sources**:
+
+1. **Server-side heartbeat loop** (primary): Express runs a `setInterval` every 10 seconds that pings FastAPI directly (`GET /detect/poll?max_items=1`). If FastAPI responds OK, `last_heartbeat_at` is updated in the database. This runs independently of any browser tab, preventing false FAILED states caused by browser throttling or user inactivity.
+2. **Frontend poll** (redundant): Each successful `GET /api/detect/poll` from the browser also calls `heartbeat()` server-side. This is supplementary — if the server-side loop is already keeping heartbeat fresh, the frontend’s heartbeat update is harmless.
+
+If RUNNING and `last_heartbeat_at` is NULL or older than 30s, `GET /api/detect/status` auto-marks FAILED.
+
+**Why server-side?** Modern browsers aggressively throttle background tabs: `setTimeout` callbacks are delayed from 3s to 60s+ (Chrome), and tabs can be fully frozen after ~5 minutes of inactivity. Without the server-side loop, an admin minimising their browser while waiting for threat detection would cause a false heartbeat timeout even though the Pi is still running fine.
 
 ---
 
@@ -77,11 +86,12 @@ This ensures the FastAPI detector is only contacted when detection is legitimate
 ## High-level flow
 
 1. **Scan save** triggers auto-start: `rasPiController.js` calls `detectStateService.startOrSwitch()` after the risk pipeline completes. This writes RUNNING to `detection_state` with the scan's bigint `scan_id` and the `network_id`.
-2. **Frontend bootstrap**: On SAM page mount, `useThreatDetection()` calls `GET /api/detect/status`. If RUNNING, the hook immediately enters DETECTING mode and begins polling.
-3. **Polling loop**: Frontend polls `GET /api/detect/poll` every 3 seconds via axios. Poll results are mapped into parent/session model for the ThreatsTable.
-4. **Heartbeat**: Each successful poll triggers `POST /api/detect/heartbeat` server-side, keeping `last_heartbeat_at` fresh.
-5. **Failure detection**: If the Pi goes offline, heartbeats stop. The next `GET /api/detect/status` call (or any frontend poll cycle) checks `last_heartbeat_at` > 30s and auto-marks FAILED.
-6. **Persistence**: Threat rows from each poll are mapped and upserted into `vulnerabilities_threat` with `vt_kind = 'threat'`.
+2. **Server-side heartbeat loop**: On Express startup, `detectStateService.startServerHeartbeatLoop()` begins pinging FastAPI every 10 seconds. When detection is RUNNING and FastAPI responds, `last_heartbeat_at` is refreshed — no browser tab required.
+3. **Frontend bootstrap**: On SAM page mount, `useThreatDetection()` calls `GET /api/detect/status`. If RUNNING, the hook immediately enters DETECTING mode and begins polling.
+4. **Polling loop**: Frontend polls `GET /api/detect/poll` every 3 seconds via axios. Poll results are mapped into parent/session model for the ThreatsTable.
+5. **Redundant heartbeat**: Each successful frontend poll also triggers a heartbeat update server-side (harmless overlap with the server-side loop).
+6. **Failure detection**: If the Pi goes offline, heartbeats stop (from both sources). The next `GET /api/detect/status` call checks `last_heartbeat_at` > 30s and auto-marks FAILED.
+7. **Persistence**: Threat rows from each poll are mapped and upserted into `vulnerabilities_threat` with `vt_kind = 'threat'`.
 
 ---
 
@@ -103,20 +113,20 @@ All detection lifecycle transitions are logged to the audit table:
 
 | Action | Detail |
 |---|---|
-| `DETECT_START` | Detection started (includes network_id, scan_id) |
-| `DETECT_STOP` | Detection stopped (includes reason) |
-| `DETECT_SWITCH_TARGET` | Network/scan changed while detection was running |
-| `DETECT_FAILED` | Heartbeat timeout triggered automatic failure |
+| `START_DETECTION` | Detection started (includes network_id, scan_id) |
+| `STOP_DETECTION` | Detection stopped (includes reason) |
+| `SWITCH_TARGET` | Network/scan changed while detection was running |
+| `DETECTION_FAILED` | Heartbeat timeout triggered automatic failure |
 
 ---
 
 ## Where to look in the code
 
 ### Backend
-- **Detection state service**: [backend/services/detectStateService.js](backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, optimistic locking).
+- **Detection state service**: [backend/services/detectStateService.js](backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, `startServerHeartbeatLoop`, `stopServerHeartbeatLoop`, optimistic locking).
 - **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
 - **Detection routes**: [backend/routes/detectRoutes.js](backend/routes/detectRoutes.js) — Express router mapping endpoints to controller handlers.
-- **Server mount**: [backend/server.js](backend/server.js) — mounts `detectRoutes` at `/api/detect`, calls `detectStateService.ensureRow()` on startup.
+- **Server mount**: [backend/server.js](backend/server.js) — mounts `detectRoutes` at `/api/detect`, calls `detectStateService.ensureRow()` and `detectStateService.startServerHeartbeatLoop()` on startup.
 - **Auto-start on scan save**: [backend/controllers/rasPiController.js](backend/controllers/rasPiController.js) — calls `detectStateService.startOrSwitch()` after risk pipeline.
 - **Threat detail endpoint** (modal data): [backend/controllers/samController.js](backend/controllers/samController.js) at `/api/sam/threats/:idOrName`.
 
@@ -172,6 +182,8 @@ All detection lifecycle transitions are logged to the audit table:
 5. **Heartbeat timeout**: Start detection → stop FastAPI → wait >30s → status returns FAILED with reason "heartbeat timeout".
 6. **Concurrent guard**: Two tabs hit `POST /api/detect/start` simultaneously → one succeeds, the other retries via optimistic lock.
 7. **scan_id is bigint**: Attempt `POST /api/detect/start` with a UUID `scanId` → 400 error.
+8. **Server-side heartbeat keeps detection alive during user inactivity**: Start detection → minimise browser for 5+ minutes → return → detection still DETECTING (not false FAILED).
+9. **Server-side heartbeat does not ping when STOPPED**: With detection STOPPED, the server-side ping skips the FastAPI call (no unnecessary traffic).
 
 ---
 
@@ -181,6 +193,7 @@ All detection lifecycle transitions are logged to the audit table:
 - Implement multi-device support (remove `DEVICE_ID = 1` assumption).
 - Add a UI toggle to switch between mock data and live polling without restarting.
 - Improve session detail modal to show raw payloads for forensic analysis.
+- Add a dedicated `/health` endpoint on FastAPI for lighter server-side pings (currently uses `/detect/poll?max_items=1`).
 
 ---
 
@@ -198,4 +211,4 @@ All detection lifecycle transitions are logged to the audit table:
 - [backend/controllers/samController.js](backend/controllers/samController.js)
 
 ---
-Updated on March 1, 2026
+Updated on March 2, 2026
