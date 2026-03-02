@@ -310,7 +310,8 @@ async function poll(req, res) {
       const targetBssid = firstResult?.bssid ? firstResult.bssid.toUpperCase() : null;
       await persistThreatRows(threatRows, targetBssid);
 
-      // 3) Heartbeat on successful poll
+      // 3) Heartbeat on successful poll (redundant with server-side ping,
+      //    but harmless — keeps heartbeat fresh from both sources)
       await detectStateService.heartbeat(req).catch(() => {});
 
       return res.status(200).json({

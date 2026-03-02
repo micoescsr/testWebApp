@@ -9,6 +9,10 @@ const { logAuditEvent } = require("../utils/auditLogger");
 const DEVICE_ID = 1;
 const HEARTBEAT_TIMEOUT_SEC = 30; // FAILED after 30 s without heartbeat
 const MAX_RETRIES = 2; // optimistic-lock retry limit
+const SERVER_PING_INTERVAL_MS = 10_000; // 10 s — server-side liveness check interval
+
+const FASTAPI_BASE =
+  process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -301,11 +305,80 @@ async function heartbeat(req) {
   return updated || row;
 }
 
+// ─── Server-side liveness ping ──────────────────────────────────
+//
+// Runs every SERVER_PING_INTERVAL_MS while Express is alive.
+// Pings FastAPI's /health (or /detect/poll) directly — no browser needed.
+// If the Pi answers, we update the heartbeat.  If not, we let the
+// existing heartbeat-timeout logic in getStatusAndMaybeFail() handle it.
+//
+// This decouples the liveness signal from the frontend polling loop,
+// so detection no longer FAILS just because an admin minimises the tab.
+
+let pingIntervalHandle = null;
+
+async function serverPing() {
+  try {
+    const row = await fetchRow();
+    if (!row || row.status !== "RUNNING") return; // nothing to ping
+
+    // Lightweight HEAD or GET to FastAPI — just check if it's reachable
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 s hard timeout
+
+    const r = await fetch(`${FASTAPI_BASE}/detect/poll?max_items=1`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (r.ok) {
+      // Pi is alive — refresh the heartbeat (no req needed)
+      const now = new Date().toISOString();
+      await lockedUpdate(
+        { last_heartbeat_at: now, updated_at: now },
+        row.updated_at
+      ).catch(() => {}); // best-effort; next ping will retry
+    }
+    // If FastAPI returned non-OK, do nothing — heartbeat ages naturally
+    // and getStatusAndMaybeFail() will transition to FAILED after 30 s.
+  } catch (err) {
+    // Network error, timeout, abort — Pi is unreachable. Do nothing.
+    // Heartbeat will age → FAILED via the normal path.
+    if (err.name !== "AbortError") {
+      console.warn("[serverPing] FastAPI unreachable:", err.message);
+    }
+  }
+}
+
+/** Start the server-side heartbeat loop. Call once on server startup. */
+function startServerHeartbeatLoop() {
+  if (pingIntervalHandle) return; // already running
+
+  pingIntervalHandle = setInterval(serverPing, SERVER_PING_INTERVAL_MS);
+  console.log(`[detectState] Server heartbeat loop started (every ${SERVER_PING_INTERVAL_MS / 1000}s)`);
+
+  // Run one immediately so we don't wait 10 s for the first check
+  serverPing();
+}
+
+/** Stop the server-side heartbeat loop (for graceful shutdown / tests). */
+function stopServerHeartbeatLoop() {
+  if (pingIntervalHandle) {
+    clearInterval(pingIntervalHandle);
+    pingIntervalHandle = null;
+    console.log("[detectState] Server heartbeat loop stopped");
+  }
+}
+
 module.exports = {
   ensureRow,
   getStatusAndMaybeFail,
   startOrSwitch,
   stop,
   heartbeat,
+  startServerHeartbeatLoop,
+  stopServerHeartbeatLoop,
   HEARTBEAT_TIMEOUT_SEC,
 };

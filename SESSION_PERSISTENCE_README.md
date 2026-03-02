@@ -1,7 +1,7 @@
 # Session Persistence — Architecture & Policy
 
 > **Scope:** Explains how the Why-PII? web app preserves UI state across page refreshes without compromising security.  
-> **Last updated:** March 1, 2026
+> **Last updated:** March 2, 2026
 
 ---
 
@@ -148,7 +148,7 @@ Both paths guarantee no stale session data survives.
 
 ### How it works
 
-On server startup, the backend ensures a `detection_state` row exists for `device_id=1`. After every scan save (`saveNetworkMetadataScan`), the backend calls `detectStateService.startOrSwitch()` which atomically sets detection to `RUNNING` with the correct `active_network_id` and `active_scan_id` (bigint from `public.scans`).
+On server startup, the backend ensures a `detection_state` row exists for `device_id=1` and starts a **server-side heartbeat loop** (`startServerHeartbeatLoop()`). After every scan save (`saveNetworkMetadataScan`), the backend calls `detectStateService.startOrSwitch()` which atomically sets detection to `RUNNING` with the correct `active_network_id` and `active_scan_id` (bigint from `public.scans`).
 
 The frontend `useThreatDetection` hook:
 1. On mount, calls `GET /api/detect/status` to bootstrap UI state from the database.
@@ -160,15 +160,25 @@ The frontend `useThreatDetection` hook:
 - Page refresh
 - Logout / login
 - Opening a new tab
+- **Closing all browser tabs** (server-side heartbeat keeps detection alive)
+- **User inactivity / background tabs** (browser throttling does not affect server-side heartbeat)
 
 ### What does stop detection
 - Explicit `POST /api/detect/stop` (user action)
 - New scan on a different network (automatic `SWITCH_TARGET`)
 - Heartbeat timeout (Pi offline for >30s → `FAILED`)
+- Express server shutdown (stops the server-side heartbeat loop)
 
 ### Heartbeat rules
-- `GET /api/detect/poll` updates `last_heartbeat_at` on every successful FastAPI proxy.
-- `GET /api/detect/status` checks: if `RUNNING` and `last_heartbeat_at` is NULL or older than 30s → marks `FAILED` with `failure_reason = 'heartbeat timeout'`.
+
+Heartbeats are updated from **two independent sources**, ensuring detection does not falsely fail when the browser is inactive:
+
+1. **Server-side heartbeat loop** (primary): Express runs a `setInterval` every 10 seconds that pings FastAPI directly (`GET /detect/poll?max_items=1`). If FastAPI responds OK, `last_heartbeat_at` is updated — no browser needed.
+2. **Frontend poll** (redundant/supplementary): `GET /api/detect/poll` also updates `last_heartbeat_at` on every successful FastAPI proxy.
+
+`GET /api/detect/status` checks: if `RUNNING` and `last_heartbeat_at` is NULL or older than 30s → marks `FAILED` with `failure_reason = 'heartbeat timeout'`.
+
+**Why both?** Browsers aggressively throttle background tabs (`setTimeout` delays from 3s to 60s+, or freezes JS entirely after ~5 min). Without the server-side loop, an admin minimising their browser would cause a false FAILED even though the Pi is still running. The server-side loop guarantees that as long as Express and the Pi are both alive, detection stays RUNNING regardless of browser state.
 
 ### Endpoints
 | Method | Path | Description |
@@ -184,7 +194,10 @@ All state transitions use optimistic locking on `updated_at`. If a concurrent wr
 
 ### Audit events
 All state transitions are logged to `public.audit_logging` with `entity_type = 'DETECTION_STATE'`:
-- `START_DETECTION`, `STOP_DETECTION`, `SWITCH_TARGET`, `DETECTION_FAILED`
+- `START_DETECTION` — detection started or resumed
+- `STOP_DETECTION` — explicit stop by admin
+- `SWITCH_TARGET` — network/scan changed while detection was running
+- `DETECTION_FAILED` — heartbeat timeout triggered automatic failure
 
 ---
 
@@ -238,3 +251,10 @@ Solution: both are stored as a single object under `wf:networkScan`. The `setNet
 - [ ] Stop detection → STOPPED; `/detect/poll` returns STOPPED + empty results
 - [ ] Simulated heartbeat timeout: set `last_heartbeat_at = now() - interval '5 minutes'` → `GET /detect/status` returns FAILED
 - [ ] Logout → login → detection state unchanged (still RUNNING/STOPPED/FAILED as before)
+
+### PR5 — Server-side heartbeat (user inactivity)
+- [ ] Start detection → minimise browser for 5+ minutes → return → detection still DETECTING (not FAILED)
+- [ ] Start detection → close all browser tabs → wait 2 minutes → re-open SAM → detection still RUNNING
+- [ ] Start detection → stop FastAPI → wait >30s → `GET /detect/status` returns FAILED (true failure)
+- [ ] Server console shows `[detectState] Server heartbeat loop started (every 10s)` on startup
+- [ ] With detection STOPPED, server-side ping does NOT contact FastAPI (check: no `[serverPing]` warnings)
