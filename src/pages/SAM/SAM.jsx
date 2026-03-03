@@ -1,5 +1,5 @@
 // pages/SAM.jsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Tabs from "../../components/common/Tabs/Tabs";
 import "./SAM.css";
 import ThreatsTable from "../../components/sam/ThreatsTable";
@@ -9,21 +9,33 @@ import {
   useThreats,
   useVulnerabilities,
   useNetworks,
-  useThreatDetection,
 } from "../../hooks/useSAM";
 import { triggerScan, sendMetadata } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 import { useNetworkContext } from "../../context/NetworkContext";
+import {
+  useThreatDetectionContext,
+  timeAgo,
+} from "../../context/ThreatDetectionContext";
 import { useSessionState } from "../../hooks/useSessionState";
 
 const SAM = () => {
   const { setNetworkScan } = useNetworkContext();
-  const [activeTab, setActiveTab] = useSessionState("wf:samTab", "vulnerabilities");
+  const [activeTab, setActiveTab] = useSessionState(
+    "wf:samTab",
+    "vulnerabilities",
+  );
 
   // Persist a small snapshot of the selected network (bssid + ssid + timestamp)
   // so we can restore it and auto-fetch vulnerabilities after refresh.
-  const [networkSnapshot, setNetworkSnapshot] = useSessionState("wf:selectedNetwork", null);
-  const [lastScannedSnapshot, setLastScannedSnapshot] = useSessionState("wf:lastScannedNetwork", null);
+  const [networkSnapshot, setNetworkSnapshot] = useSessionState(
+    "wf:selectedNetwork",
+    null,
+  );
+  const [lastScannedSnapshot, setLastScannedSnapshot] = useSessionState(
+    "wf:lastScannedNetwork",
+    null,
+  );
 
   // Full in-memory objects (hydrated from snapshot or user selection)
   const [selectedNetwork, setSelectedNetworkRaw] = useState(null);
@@ -39,13 +51,10 @@ const SAM = () => {
     province: "",
     notes: "",
   });
+  const [dismissCounter, setDismissCounter] = useState(0);
 
-  const {
-    threats,
-    fetchThreatDetail,
-    threatDetail,
-    threatDetailLoading,
-  } = useThreats();
+  const { threats, fetchThreatDetail, threatDetail, threatDetailLoading } =
+    useThreats();
 
   const {
     vulnerabilities,
@@ -63,7 +72,7 @@ const SAM = () => {
     refetchNetworks,
   } = useNetworks();
 
-  // --- POLLING HOOK (persistent detection state) ---
+  // --- GLOBAL DETECTION STATE (single polling loop in context) ---
   const {
     detectionStatus,
     setDetectionStatus,
@@ -73,7 +82,11 @@ const SAM = () => {
     failureReason,
     refreshStatus,
     resetDetection,
-  } = useThreatDetection();
+    lastUpdated,
+    backendState,
+    activeNetwork,
+    setActiveNetwork,
+  } = useThreatDetectionContext();
 
   // ─── Wrap setters to also persist snapshots ───────────────────
   const setSelectedNetwork = (net) => {
@@ -142,20 +155,14 @@ const SAM = () => {
       reloadVulnerabilities(normalizedBssid);
     }
 
+    // Push restored network SSID into global context for sidebar/pill
+    const restoredSsid = lastScannedSnapshot?.ssid || networkSnapshot?.ssid;
+    if (restoredSsid) setActiveNetwork(restoredSsid);
+
     // Detection state is now persistent (backed by detection_state table).
     // The useThreatDetection hook bootstraps from /detect/status on mount,
     // so no forced IDLE reset is needed here.
   }, [networksLoading, networks]);
-
-  useEffect(() => {
-    console.log("vulnerabilities state updated:", vulnerabilities);
-  }, [vulnerabilities]);
-
-    console.log("liveThreats:", liveThreats);
-    console.log("displayThreats:", displayThreats);
-  // If there are live threats from polling, show those; otherwise fallback to DB threats
-  /* const displayThreats =
-    liveThreats && liveThreats.length > 0 ? liveThreats : threats; */
 
   // Helper: Filter vulnerabilities locally if needed
   const filteredVulns =
@@ -187,7 +194,10 @@ const SAM = () => {
       if (e.name === "CanceledError") {
         console.log("Metadata fetch aborted");
       } else {
-        console.warn("Metadata fetch failed:", e?.response?.status || e.message);
+        console.warn(
+          "Metadata fetch failed:",
+          e?.response?.status || e.message,
+        );
       }
       setLocationMeta({ city: "", province: "", notes: "" });
     }
@@ -229,6 +239,9 @@ const SAM = () => {
       setLastScan(result);
       setLastScannedNetwork(selectedNetwork);
 
+      // Push active network SSID into global context for sidebar/pill
+      setActiveNetwork(selectedNetwork.ssid || null);
+
       // 3. Save Results (use API wrapper so base URL/auth are centralized)
       const saveRes = await sendMetadata({
         ssid: selectedNetwork.ssid,
@@ -247,20 +260,20 @@ const SAM = () => {
       // 👈 NEW: Get network_id from response + navigate!
       const saveData = saveRes.data;
       const networkId = saveData.network_id; // From Supabase upsert
-      const scanId = saveData.scan_id;        // From Supabase insert
+      const scanId = saveData.scan_id; // From Supabase insert
 
-       // Store both in React context (in-memory, not localStorage)
+      // Store both in React context (in-memory, not localStorage)
       setNetworkScan(networkId, scanId);
 
-      alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
-      
+      alert(
+        `Scan saved! Network ID: ${networkId}. Starting threat detection...`,
+      );
+
       // 4. Detection auto-started by backend (detectStateService.startOrSwitch)
       //    Refresh UI state from the backend's detection_state row.
       await refreshStatus();
       const normalizedBssid = (selectedNetwork.bssid || "").toUpperCase();
-      console.log("Reloading vulnerabilities for BSSID:", normalizedBssid);
       await reloadVulnerabilities(normalizedBssid);
-      console.log("Vulnerabilities after reload:", vulnerabilities);
 
       // 5. Show vulnerabilities first, then auto-switch to Threats after 5 seconds
       setActiveTab("vulnerabilities");
@@ -314,7 +327,7 @@ const SAM = () => {
     setIsModalOpen(true);
   };
 
-  const openVulnDetail = /* async  */(vuln) => {
+  const openVulnDetail = /* async  */ (vuln) => {
     //await fetchVulnDetail(vuln.name);
     setIsModalOpen(true);
     fetchVulnDetail(vuln); // pass whole row
@@ -333,8 +346,47 @@ const SAM = () => {
     { label: "Vulnerabilities", value: "vulnerabilities" },
   ];
 
+  // ─── Compact detection status pill ──────────────────────────
+  const isOutOfRange = selectedNetwork?._notInRange === true;
+
+  const showOutOfRangeBanner = useMemo(() => {
+    if (!selectedNetwork?._notInRange) return false;
+    const id = selectedNetwork?.bssid || selectedNetwork?.ssid;
+    if (!id) return false;
+    return sessionStorage.getItem(`wf:dismissOutOfRange:${id}`) !== "true";
+  }, [selectedNetwork, dismissCounter]);
+
+  const handleDismissOutOfRange = () => {
+    const id = selectedNetwork?.bssid || selectedNetwork?.ssid;
+    if (id) sessionStorage.setItem(`wf:dismissOutOfRange:${id}`, "true");
+    setDismissCounter((c) => c + 1);
+  };
+
+  let statusPillConfig = null;
+  if (detectionStatus === "DETECTING") {
+    // Detection is actively running — always show Monitoring, even if network is out of range
+    const ssid =
+      backendState?.ssid ||
+      activeNetwork ||
+      (lastScannedNetwork || selectedNetwork)?.ssid ||
+      "";
+    statusPillConfig = {
+      label: `Monitoring${ssid ? `: ${ssid}` : ""}`,
+      cls: "monitoring",
+    };
+  } else if (detectionStatus === "SCANNING") {
+    statusPillConfig = { label: "Starting\u2026", cls: "starting" };
+  } else if (detectionStatus === "FAILED") {
+    statusPillConfig = { label: "Failed", cls: "failed" };
+  } else if (isOutOfRange) {
+    // Only show "Paused" when detection is NOT actively running
+    statusPillConfig = { label: "Paused \u2014 out of range", cls: "paused" };
+  }
+
   return (
-    <div className={activeTab === "vulnerabilities" ? "sam-layout" : "sam-page"}>
+    <div
+      className={activeTab === "vulnerabilities" ? "sam-layout" : "sam-page"}
+    >
       <div className="sam-main">
         <h1 className="page-title">Security Assessment Management</h1>
 
@@ -351,47 +403,38 @@ const SAM = () => {
               border: "1px solid #991b1b",
             }}
           >
-            Detection failed: {failureReason || "Unknown error"}. Run a new scan to restart.
+            Detection failed: {failureReason || "Unknown error"}. Run a new scan
+            to restart.
           </div>
         )}
 
-        {selectedNetwork?._notInRange && (
-          <div
-            className="status-banner warning"
-            style={{
-              background: "#fff3e0",
-              color: "#e65100",
-              padding: "10px",
-              marginBottom: "10px",
-              borderRadius: "4px",
-              border: "1px solid #e65100",
-            }}
-          >
-            Previously selected network "{selectedNetwork.ssid}" is no longer in range.
-            Select a new network to scan.
-          </div>
-        )}
-
-        {/* STATUS BANNER */}
-        {detectionStatus === "DETECTING" && (
-          <div
-            className="status-banner detecting"
-            style={{
-              background: "#e6fffa",
-              color: "#047857",
-              padding: "10px",
-              marginBottom: "10px",
-              borderRadius: "4px",
-              border: "1px solid #047857",
-            }}
-          >
-            Scanning active... Monitoring for threats (
-            {detectionResults?.results?.length || 0} found)
+        {selectedNetwork?._notInRange && showOutOfRangeBanner && (
+          <div className="status-banner warning out-of-range-banner">
+            <span>
+              Previously selected network &ldquo;{selectedNetwork.ssid}&rdquo;
+              is no longer in range. Select a new network to scan.
+            </span>
+            <button
+              className="dismiss-banner-btn"
+              onClick={handleDismissOutOfRange}
+              title="Dismiss"
+            >
+              ✕
+            </button>
           </div>
         )}
 
         <div className="sam-header">
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+          {statusPillConfig && (
+            <div className={`detection-status-pill ${statusPillConfig.cls}`}>
+              <span className="pill-dot" />
+              <span className="pill-label">{statusPillConfig.label}</span>
+              {lastUpdated && !isOutOfRange && detectionStatus !== "IDLE" && (
+                <span className="pill-time">{timeAgo(lastUpdated)}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {activeTab === "threats" && (
