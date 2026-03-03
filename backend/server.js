@@ -540,7 +540,7 @@ app.get('/api/history/threats', async (req, res) => {
 // );
 
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const { execSync } = require('child_process');
 
 function killPort(port) {
