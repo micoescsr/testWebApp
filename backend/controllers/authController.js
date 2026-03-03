@@ -212,6 +212,18 @@ exports.refresh = async (req, res) => {
       res.cookie("sb_refresh", data.refresh_token, refreshCookieOpts());
     }
 
+    // Audit: token refresh success (fire-and-forget)
+    if (data.user?.id) {
+      logAuditEvent({
+        req,
+        actorId: data.user.id,
+        eventName: "AUTH.REFRESH",
+        eventStatus: "SUCCESS",
+        entityType: "AUTH",
+        entityIdUuid: data.user.id,
+      }).catch(() => {});
+    }
+
     return res.json({
       access_token: data.access_token,
       expires_in: data.expires_in,
@@ -226,6 +238,20 @@ exports.refresh = async (req, res) => {
 // ── POST /api/auth/logout ───────────────────────────────
 exports.logout = async (req, res) => {
   res.clearCookie("sb_refresh", { path: "/api/auth" });
+
+  // Audit: logout (actor available via optionalAuthJWT)
+  const actorId = req.user?.id;
+  if (actorId) {
+    logAuditEvent({
+      req,
+      actorId,
+      eventName: "AUTH.LOGOUT",
+      eventStatus: "SUCCESS",
+      entityType: "AUTH",
+      entityIdUuid: actorId,
+    }).catch(() => {});
+  }
+
   return res.json({ ok: true });
 };
 

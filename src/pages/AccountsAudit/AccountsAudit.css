@@ -112,6 +112,37 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.date-range-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+}
+
+.date-input {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 13px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: #000;
 }
 
 .status-filter-select {
@@ -420,6 +451,91 @@ button {
 }
 
 
+/* --- Export Bar --- */
+.export-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.export-csv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #111;
+  color: #fff;
+  border: 1px solid #111;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.export-csv-btn:hover:not(:disabled) {
+  background: #333;
+  border-color: #333;
+}
+
+.export-csv-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.export-error {
+  font-size: 12px;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+/* --- Export Confirmation Dialog --- */
+.export-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.export-confirm-dialog {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px 28px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+.export-confirm-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+  margin: 0 0 12px;
+}
+
+.export-confirm-text {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.export-confirm-note {
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.export-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 /* --- Responsive --- */
 
 /* Tablet and below */
@@ -436,6 +552,15 @@ button {
 
   .search-input {
     width: 100%;
+  }
+
+  .audit-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-range-filters {
+    flex-wrap: wrap;
   }
 
   .table-container {

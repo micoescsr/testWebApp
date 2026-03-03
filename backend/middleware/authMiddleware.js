@@ -38,4 +38,33 @@ exports.authJWT = async (req, res, next) => {
   }
 };
 
+/**
+ * Optional JWT middleware: tries to verify the token and populate req.user,
+ * but does NOT reject the request if the token is missing or invalid.
+ * Useful for endpoints like /logout that should work regardless but benefit
+ * from knowing the actor for audit logging.
+ */
+exports.optionalAuthJWT = async (req, _res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return next(); // no token — continue without req.user
+  }
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      audience: "authenticated",
+    });
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      aud: payload.aud,
+    };
+  } catch (_err) {
+    // Token invalid/expired — ignore, req.user stays undefined
+  }
+  next();
+};
+
 

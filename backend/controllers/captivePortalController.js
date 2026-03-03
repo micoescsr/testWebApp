@@ -2,6 +2,7 @@
 // CRUD for captive portal content + portal sync to FastAPI
 
 const { supabaseClient } = require('../config/supabaseClient');
+const { logAuditEvent } = require('../utils/auditLogger');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
 const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
@@ -319,6 +320,20 @@ async function publishAnnouncement(req, res) {
 			.eq('network_id', network_id)
 			.eq('is_active', true);
 
+		// Audit: announcement published
+		const actorId = req.user?.id;
+		if (actorId) {
+			logAuditEvent({
+				req,
+				actorId,
+				eventName: 'PORTAL.ANNOUNCEMENT_PUBLISH',
+				eventStatus: 'SUCCESS',
+				entityType: 'PORTAL',
+				entityIdUuid: network_id,
+				meta: { network_id, announcement_id: data.announcement_id },
+			}).catch(() => {});
+		}
+
 		res.json(data);
 	} catch (err) {
 		console.error('captivePortal publishAnnouncement error:', err);
@@ -409,6 +424,20 @@ async function publishTerms(req, res) {
 			.eq('network_id', network_id)
 			.eq('is_active', true);
 
+		// Audit: terms published
+		const actorId = req.user?.id;
+		if (actorId) {
+			logAuditEvent({
+				req,
+				actorId,
+				eventName: 'PORTAL.TERMS_PUBLISH',
+				eventStatus: 'SUCCESS',
+				entityType: 'PORTAL',
+				entityIdUuid: network_id,
+				meta: { network_id, tc_id: data.tc_id, version: data.version },
+			}).catch(() => {});
+		}
+
 		res.json(data);
 	} catch (err) {
 		console.error('captivePortal publishTerms error:', err);
@@ -490,6 +519,20 @@ async function upsertTips(req, res) {
 			.select();
 
 		if (error) throw error;
+
+		// Audit: tips updated
+		const actorId = req.user?.id;
+		if (actorId) {
+			logAuditEvent({
+				req,
+				actorId,
+				eventName: 'PORTAL.TIPS_UPDATE',
+				eventStatus: 'SUCCESS',
+				entityType: 'PORTAL',
+				entityIdUuid: network_id,
+				meta: { network_id, tips_count: tips.length },
+			}).catch(() => {});
+		}
 
 		res.json(data);
 	} catch (err) {
@@ -585,6 +628,20 @@ async function syncPortal(req, res) {
 		}
 
 		res.json({ status: 'synced', fastapi: fastapiData, payload });
+
+		// Audit: portal synced (fire-and-forget after response)
+		const actorId = req.user?.id;
+		if (actorId) {
+			logAuditEvent({
+				req,
+				actorId,
+				eventName: 'PORTAL.SYNC',
+				eventStatus: 'SUCCESS',
+				entityType: 'PORTAL',
+				entityIdUuid: network_id,
+				meta: { network_id },
+			}).catch(() => {});
+		}
 	} catch (err) {
 		console.error('captivePortal syncPortal error:', err);
 		res.status(500).json({ error: 'Failed to sync portal', detail: err.message });

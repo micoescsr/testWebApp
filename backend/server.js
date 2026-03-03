@@ -17,7 +17,9 @@ const deviceMgmtRoutes = require('./routes/deviceMgmtRoutes');
 const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const detectRoutes = require('./routes/detectRoutes');
+const historyRoutes = require('./routes/historyRoutes');
 const detectStateService = require('./services/detectStateService');
+const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
 const { authJWT } = require("./middleware/authMiddleware");
 const { requireActiveProfile } = require("./middleware/statusMiddleware");
@@ -53,6 +55,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(requestIdMiddleware);
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
 //app.use('/api/rasPi_scan', scanRoutes);
@@ -68,6 +71,9 @@ app.use("/api/audit", auditRoutes);
 
 // 3) Detection lifecycle + poll (JWT-protected per-route)
 app.use("/api/detect", detectRoutes);
+
+// 4) History (JWT-protected, user-scoped per controller logic)
+app.use("/api/history", historyRoutes);
 
 // 2) Everything else under /api requires JWT + active profile
 //app.use("/api", authJWT, requireActiveProfile);
@@ -309,193 +315,12 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 
 
 //========================================
-
-app.get('/api/history/vulnerabilities', async (req, res) => {
-  try {
-    // 1) Get all scans joined with networks for SSID/BSSID/channel/num_clients
-    const { data: scans, error: scansError } = await supabaseClient
-      .from('scans')
-      .select(`
-        scan_id,
-        created_at,
-        scan_start,
-        scan_end,
-        scan_data,
-        risk_score,
-        networks (
-          ssid,
-          bssid,
-          channel,
-          num_clients
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (scansError) throw scansError;
-
-    // 2) Get all findings for those scans where vt_kind = 'vulnerability'
-    const scanIds = scans.map(s => s.scan_id);
-    if (scanIds.length === 0) return res.json([]);
-
-    const { data: findings, error: findingsError } = await supabaseClient
-      .from('vulnerabilities_threat')
-      .select(`
-        scan_id,
-        vt_name,
-        vt_kind,
-        vt_status,
-        vt_value,
-        severity_score,
-        detail:vulnerability_threat_details (
-          vt_code,
-          vt_name,
-          vt_severity_rating,
-          vt_cvss_base_score
-        )
-      `)
-      .in('scan_id', scanIds)
-      .eq('vt_kind', 'vulnerability');
-
-    if (findingsError) throw findingsError;
-
-    // 3) Group findings by scan_id
-    const byScan = new Map();
-    for (const f of findings) {
-      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
-      byScan.get(f.scan_id).push(f);
-    }
-
-    // 4) Map to frontend shape
-    const result = scans.map(scan => {
-      const items = byScan.get(scan.scan_id) || [];
-      const net = scan.networks || {};
-
-      const ssid =
-        net.ssid ||
-        scan.scan_data?.ssid ||
-        scan.scan_data?.network_name ||
-        `Scan ${scan.scan_id}`;
-
-      return {
-        id: scan.scan_id,
-        datetime: scan.created_at,
-        ssid,
-        bssid: net.bssid || scan.scan_data?.bssid || null,
-        channel: net.channel ?? scan.scan_data?.channel ?? null,
-        scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
-        scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
-        num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
-        riskScore: scan.risk_score ?? 0,
-        riskLabel: getRiskLabel(scan.risk_score ?? 0),
-        summary: items.length,
-        details: items.map(i => ({
-          id: i.detail?.vt_code ?? null,
-          severity: i.detail?.vt_severity_rating ?? 'UNKNOWN',
-          name: i.detail?.vt_name || i.vt_name || i.vt_kind,
-          score: i.detail?.vt_cvss_base_score ?? i.severity_score ?? 0,
-          status: i.vt_status || null,
-          value: i.vt_value || null,
-        })),
-      };
-    });
-
-    res.json(result);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch vulnerability history' });
-  }
-});
-
-app.get('/api/history/threats', async (req, res) => {
-  try {
-    const { data: scans, error: scansError } = await supabaseClient
-      .from('scans')
-      .select(`
-        scan_id,
-        created_at,
-        scan_start,
-        scan_end,
-        scan_data,
-        risk_score,
-        networks (
-          ssid,
-          bssid,
-          channel,
-          num_clients
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (scansError) throw scansError;
-
-    const scanIds = scans.map(s => s.scan_id);
-    if (scanIds.length === 0) return res.json([]);
-
-    const { data: findings, error: findingsError } = await supabaseClient
-      .from("vulnerabilities_threat")
-      .select(`
-        scan_id,
-        vt_name,
-        vt_kind,
-        vt_status,
-        severity_score,
-        detail:vulnerability_threat_details(
-          vt_code,
-          vt_severity_rating,
-          vt_cvss_base_score
-        )
-      `)
-      .in("scan_id", scanIds)
-      .eq("vt_kind", "threat");
-
-    if (findingsError) throw findingsError;
-
-    const byScan = new Map();
-    for (const f of findings) {
-      if (!byScan.has(f.scan_id)) byScan.set(f.scan_id, []);
-      byScan.get(f.scan_id).push(f);
-    }
-
-    const result = scans.map(scan => {
-      const items = byScan.get(scan.scan_id) || [];
-      const net = scan.networks || {};
-
-      const ssid =
-        net.ssid ||
-        scan.scan_data?.ssid ||
-        scan.scan_data?.network_name ||
-        `Scan ${scan.scan_id}`;
-
-      return {
-        id: scan.scan_id,
-        datetime: scan.created_at,
-        ssid,
-        bssid: net.bssid || scan.scan_data?.bssid || null,
-        channel: net.channel ?? scan.scan_data?.channel ?? null,
-        scan_start: scan.scan_start || scan.scan_data?.scan_start || null,
-        scan_end: scan.scan_end || scan.scan_data?.scan_end || null,
-        num_clients: net.num_clients ?? scan.scan_data?.num_clients ?? null,
-        riskScore: scan.risk_score ?? 0,
-        riskLabel: getRiskLabel(scan.risk_score ?? 0),
-        summary: items.length,
-        threats: items.map(i => ({
-          code: i.detail?.vt_code ?? null,
-          severity: i.detail?.vt_severity_rating ?? 'UNKNOWN',
-          name: i.vt_name || i.vt_kind,
-          score: i.detail?.vt_cvss_base_score ?? i.severity_score ?? 0,
-          status: i.vt_status || null,
-          occurrences: 1,
-          window: '',
-        })),
-      };
-    });
-
-    res.json(result);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch threat history' });
-  }
-});
+// History endpoints moved to controllers/historyController.js + routes/historyRoutes.js
+// Mounted at: app.use("/api/history", historyRoutes)
+// Endpoints:
+//   GET /api/history/vulnerabilities  (JWT required, user-scoped)
+//   GET /api/history/threats          (JWT required, user-scoped)
+//========================================
 
 
 // ─── Announcement / Terms / Tips / Risk / Portal Sync ────────────
