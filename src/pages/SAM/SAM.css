@@ -85,15 +85,29 @@
 
 /* Even column widths for 5-column layout */
 .sam-table th:nth-child(1),
-.sam-table td:nth-child(1) { width: 12%; text-align: center; }
+.sam-table td:nth-child(1) {
+  width: 12%;
+  text-align: center;
+}
 .sam-table th:nth-child(2),
-.sam-table td:nth-child(2) { width: 28%; }
+.sam-table td:nth-child(2) {
+  width: 28%;
+}
 .sam-table th:nth-child(3),
-.sam-table td:nth-child(3) { width: 16%; text-align: center; }
+.sam-table td:nth-child(3) {
+  width: 16%;
+  text-align: center;
+}
 .sam-table th:nth-child(4),
-.sam-table td:nth-child(4) { width: 28%; }
+.sam-table td:nth-child(4) {
+  width: 28%;
+}
 .sam-table th:nth-child(5),
-.sam-table td:nth-child(5) { width: 16%; text-align: right; padding-right: 22px; }
+.sam-table td:nth-child(5) {
+  width: 16%;
+  text-align: right;
+  padding-right: 22px;
+}
 
 .sam-table tbody tr {
   height: 56px;
@@ -239,7 +253,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  transition:
+    color 0.2s,
+    border-color 0.2s,
+    background 0.2s;
 }
 
 .refresh-btn:hover {
@@ -258,8 +275,12 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .edit-btn {
@@ -315,7 +336,9 @@
   cursor: pointer;
   color: #9ca3af;
   border-radius: 4px;
-  transition: color 0.2s, background 0.2s;
+  transition:
+    color 0.2s,
+    background 0.2s;
 }
 
 .clear-search-btn:hover {
@@ -598,7 +621,7 @@
     font-size: 12px;
   }
 
-    .sam-table th,
+  .sam-table th,
   .sam-table td {
     text-align: center;
   }
@@ -610,10 +633,10 @@
 
   /* FIX: buttons at far ends, same row */
   .sam-actions {
-    min-width: 600px;          /* match table width */
+    min-width: 600px; /* match table width */
     padding: 12px 18px;
     display: flex;
-    justify-content: space-between;  /* push buttons to far ends */
+    justify-content: space-between; /* push buttons to far ends */
     align-items: center;
     gap: 12px;
     background: #fff;
@@ -802,4 +825,116 @@ th.sortable {
 /* Child rows: subtle left border to indicate hierarchy */
 .group-child-row td:first-child {
   border-left: 3px solid #2563eb;
+}
+
+/* ─── Compact detection status pill ─── */
+
+.detection-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detection-status-pill.monitoring {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.detection-status-pill.starting {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.detection-status-pill.paused {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.detection-status-pill.failed {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.detection-status-pill.monitoring .pill-dot {
+  background: #10b981;
+}
+
+.detection-status-pill.starting .pill-dot {
+  background: #3b82f6;
+  animation: pill-pulse 1.2s ease-in-out infinite;
+}
+
+.detection-status-pill.paused .pill-dot {
+  background: #f97316;
+}
+
+.detection-status-pill.failed .pill-dot {
+  background: #ef4444;
+}
+
+@keyframes pill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.pill-label {
+  line-height: 1;
+}
+
+.pill-time {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+/* ─── Out-of-range banner with dismiss ─── */
+
+.out-of-range-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff3e0;
+  color: #e65100;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  border: 1px solid #e65100;
+}
+
+.dismiss-banner-btn {
+  background: none;
+  border: none;
+  color: #e65100;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.dismiss-banner-btn:hover {
+  background: rgba(230, 81, 0, 0.1);
 }
