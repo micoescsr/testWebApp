@@ -42,8 +42,15 @@ const [issueTempPassword, setIssueTempPassword] = useState(true);
   totalPages: auditTotalPages,
   search: auditSearch,
   statusFilter: auditStatusFilter,
+  fromDate: auditFromDate,
+  toDate: auditToDate,
+  isExporting: auditIsExporting,
+  exportError: auditExportError,
   handleSearch: handleAuditSearch,
   handleStatusFilter: handleAuditStatusFilter,
+  handleFromDate: handleAuditFromDate,
+  handleToDate: handleAuditToDate,
+  handleExport: handleAuditExport,
   goToPage: goToAuditPage,
 } = useAuditLogs();
 
@@ -209,6 +216,26 @@ const handleDeactivate = (user) => {
               <option value="SUCCESS">Success</option>
               <option value="FAILED">Failed</option>
             </select>
+            <div className="date-range-filters">
+              <label className="date-filter-label">
+                From
+                <input
+                  type="date"
+                  className="date-input"
+                  value={auditFromDate}
+                  onChange={(e) => handleAuditFromDate(e.target.value)}
+                />
+              </label>
+              <label className="date-filter-label">
+                To
+                <input
+                  type="date"
+                  className="date-input"
+                  value={auditToDate}
+                  onChange={(e) => handleAuditToDate(e.target.value)}
+                />
+              </label>
+            </div>
           </div>
         )}
       </div>
@@ -251,6 +278,12 @@ const handleDeactivate = (user) => {
               page={auditPage}
               totalPages={auditTotalPages}
               onPageChange={goToAuditPage}
+              currentUser={profile}
+              fromDate={auditFromDate}
+              toDate={auditToDate}
+              isExporting={auditIsExporting}
+              exportError={auditExportError}
+              onExport={handleAuditExport}
             />
           )}
         </>

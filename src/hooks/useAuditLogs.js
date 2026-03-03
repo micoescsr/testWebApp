@@ -1,12 +1,12 @@
 //hooks/useAuditLogs.js
 import { useEffect, useState, useCallback, useRef } from "react";
-import { getAuditLogs } from "../api/auditApi";
+import { getAuditLogs, exportAuditLogs } from "../api/auditApi";
 
 /**
  * useAuditLogs
  * ------------------
  * Fetches paginated audit logs from the backend.
- * Supports search, status filtering, and pagination.
+ * Supports search, status filtering, date range, pagination, and CSV export.
  */
 const useAuditLogs = () => {
   const [logs, setLogs] = useState([]);
@@ -17,6 +17,13 @@ const useAuditLogs = () => {
   const [limit] = useState(25);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(""); // '' | 'SUCCESS' | 'FAILED'
+  const [fromDate, setFromDate] = useState("");          // YYYY-MM-DD
+  const [toDate, setToDate] = useState("");              // YYYY-MM-DD
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const lastExportRef = useRef(0); // rate-limiting timestamp
 
   // Debounce timer ref for search
   const debounceRef = useRef(null);
@@ -32,6 +39,8 @@ const useAuditLogs = () => {
           limit,
           search: overrides.search ?? search,
           status: overrides.status ?? statusFilter,
+          startDate: overrides.fromDate ?? fromDate,
+          endDate: overrides.toDate ?? toDate,
         };
 
         const res = await getAuditLogs(params);
@@ -53,13 +62,13 @@ const useAuditLogs = () => {
         setLoading(false);
       }
     },
-    [page, limit, search, statusFilter]
+    [page, limit, search, statusFilter, fromDate, toDate]
   );
 
-  // Auto-fetch on mount and when page/statusFilter changes
+  // Auto-fetch on mount and when page/statusFilter/dates change
   useEffect(() => {
     fetchAuditLogs();
-  }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, statusFilter, fromDate, toDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search handler (300ms)
   const handleSearch = useCallback(
@@ -78,6 +87,75 @@ const useAuditLogs = () => {
     setStatusFilter(status);
     setPage(1);
   }, []);
+
+  const handleFromDate = useCallback((value) => {
+    setFromDate(value);
+    setPage(1);
+  }, []);
+
+  const handleToDate = useCallback((value) => {
+    setToDate(value);
+    setPage(1);
+  }, []);
+
+  /**
+   * Export audit logs as CSV.
+   * Rate-limited to one export every 5 seconds.
+   * Returns true on success, false on failure.
+   */
+  const handleExport = useCallback(async () => {
+    // Rate limiting: 5-second cooldown
+    const now = Date.now();
+    if (now - lastExportRef.current < 5000) {
+      setExportError("Please wait a few seconds before exporting again.");
+      return false;
+    }
+
+    // Require at least a date range
+    if (!fromDate || !toDate) {
+      setExportError("Please select both a start and end date before exporting.");
+      return false;
+    }
+
+    // Validate date order
+    if (new Date(fromDate) > new Date(toDate)) {
+      setExportError("Start date cannot be after end date.");
+      return false;
+    }
+
+    try {
+      setIsExporting(true);
+      setExportError(null);
+      lastExportRef.current = now;
+
+      const res = await exportAuditLogs({
+        from: fromDate,
+        to: toDate,
+        status: statusFilter,
+      });
+
+      // Create blob download
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `audit_logs_${fromDate}_${toDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      return true;
+    } catch (err) {
+      console.error("Export audit logs error:", err);
+      const msg =
+        err.response?.data?.error || err.message || "Failed to export audit logs";
+      setExportError(msg);
+      return false;
+    } finally {
+      setIsExporting(false);
+    }
+  }, [fromDate, toDate, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -99,11 +177,20 @@ const useAuditLogs = () => {
     totalPages,
     search,
     statusFilter,
+    fromDate,
+    toDate,
+
+    // export state
+    isExporting,
+    exportError,
 
     // actions
     fetchAuditLogs,
     handleSearch,
     handleStatusFilter,
+    handleFromDate,
+    handleToDate,
+    handleExport,
     goToPage,
     setPage,
   };

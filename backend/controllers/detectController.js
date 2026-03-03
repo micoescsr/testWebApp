@@ -5,6 +5,7 @@
 
 const detectStateService = require("../services/detectStateService");
 const { supabaseClient } = require("../config/supabaseClient");
+const { logAuditEvent } = require("../utils/auditLogger");
 
 const FASTAPI_BASE =
   process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
@@ -225,9 +226,36 @@ async function start(req, res) {
     }
 
     const row = await detectStateService.startOrSwitch(req, actorId, network_id, numericScanId);
+
+    // Audit: detection started
+    logAuditEvent({
+      req,
+      actorId,
+      eventName: "DETECTION.START",
+      eventStatus: "SUCCESS",
+      entityType: "DETECTION",
+      entityIdUuid: network_id,
+      entityIdBigint: numericScanId,
+      meta: { network_id, scan_id: numericScanId },
+    }).catch(() => {});
+
     return res.json(row);
   } catch (err) {
     console.error("[detect/start] error:", err);
+
+    // Audit: detection start failed
+    const actorId = req.user?.id;
+    if (actorId) {
+      logAuditEvent({
+        req,
+        actorId,
+        eventName: "DETECTION.START",
+        eventStatus: "FAILED",
+        entityType: "DETECTION",
+        meta: { error: err.message },
+      }).catch(() => {});
+    }
+
     return res.status(500).json({ error: "Failed to start detection", detail: err.message });
   }
 }
@@ -245,9 +273,34 @@ async function stopDetection(req, res) {
 
     const { reason } = req.body || {};
     const row = await detectStateService.stop(req, actorId, reason || null);
+
+    // Audit: detection stopped
+    logAuditEvent({
+      req,
+      actorId,
+      eventName: "DETECTION.STOP",
+      eventStatus: "SUCCESS",
+      entityType: "DETECTION",
+      meta: { reason: reason || "manual" },
+    }).catch(() => {});
+
     return res.json(row);
   } catch (err) {
     console.error("[detect/stop] error:", err);
+
+    // Audit: detection stop failed
+    const actorId = req.user?.id;
+    if (actorId) {
+      logAuditEvent({
+        req,
+        actorId,
+        eventName: "DETECTION.STOP",
+        eventStatus: "FAILED",
+        entityType: "DETECTION",
+        meta: { error: err.message },
+      }).catch(() => {});
+    }
+
     return res.status(500).json({ error: "Failed to stop detection", detail: err.message });
   }
 }

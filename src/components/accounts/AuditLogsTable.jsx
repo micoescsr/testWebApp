@@ -1,5 +1,5 @@
 // components/accounts/AuditLogsTable.jsx
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 /**
  * Formats ISO timestamp to readable date + time.
@@ -28,10 +28,31 @@ function formatTimestamp(isoString) {
 
 /**
  * Maps event_name to a human-readable module/category.
+ * Supports both dot-notation (AUTH.LOGIN) and legacy underscore names.
  */
 function getEventModule(eventName) {
   if (!eventName) return "—";
   const upper = eventName.toUpperCase();
+
+  // Dot-notation: module is the prefix before the first dot
+  if (upper.includes(".")) {
+    const module = upper.split(".")[0];
+    const moduleMap = {
+      AUTH: "AUTH",
+      USER: "ACCOUNTS",
+      SCAN: "SCANS",
+      DETECTION: "DETECTION",
+      DEVICE: "DEVICE",
+      PORTAL: "PORTAL",
+      AUTHORIZATION: "AUTH",
+      EXPORT: "SYSTEM",
+      ARCHIVE: "SYSTEM",
+      RISK: "SYSTEM",
+    };
+    return moduleMap[module] || module;
+  }
+
+  // Legacy underscore names (backwards compat)
   if (upper.includes("LOGIN") || upper.includes("LOGOUT") || upper.includes("AUTH") || upper.includes("REFRESH") || upper.includes("TEMP_EXPIRED")) return "AUTH";
   if (upper.includes("USER") || upper.includes("PROFILE") || upper.includes("ACTIVATE") || upper.includes("DEACTIVATE")) return "ACCOUNTS";
   if (upper.includes("SCAN")) return "SCANS";
@@ -53,11 +74,47 @@ function getActorDisplay(actor) {
 }
 
 /**
- * Formats event name for display (e.g. USER_UPDATE → Edit User).
+ * Formats event name for display.
+ * Supports both dot-notation (AUTH.LOGIN) and legacy underscore names.
  */
 function formatEventName(name) {
   if (!name) return "—";
+
+  // Comprehensive map covering both dot-notation and legacy names
   const map = {
+    // Dot-notation (new standard)
+    "AUTH.LOGIN": "Login",
+    "AUTH.LOGIN_FAILED": "Login Attempt",
+    "AUTH.LOGOUT": "Logout",
+    "AUTH.REFRESH": "Token Refresh",
+    "AUTH.TEMP_EXPIRED": "Temp PW Expired",
+    "USER.CREATE": "Create User",
+    "USER.UPDATE": "Edit User",
+    "USER.DELETE": "Delete User",
+    "USER.ACTIVATE": "Activate User",
+    "USER.DEACTIVATE": "Deactivate User",
+    "USER.RESET_SLOT": "Reset Slot",
+    "USER.PASSWORD_CHANGE": "Password Change",
+    "USER.PASSWORD_RESET": "Password Reset",
+    "SCAN.START": "Scan Started",
+    "SCAN.SAVE": "Scan Saved",
+    "SCAN.COMPLETE": "Scan Complete",
+    "SCAN.FAILED": "Scan Failed",
+    "DETECTION.START": "Detection Started",
+    "DETECTION.STOP": "Detection Stopped",
+    "DETECTION.FAILED": "Detection Failed",
+    "DEVICE.AP_ENABLE": "AP Enabled",
+    "DEVICE.AP_DISABLE": "AP Disabled",
+    "DEVICE.CONFIG_UPDATE": "Device Config",
+    "PORTAL.ANNOUNCEMENT_PUBLISH": "Announcement Published",
+    "PORTAL.TERMS_PUBLISH": "Terms Published",
+    "PORTAL.TIPS_UPDATE": "Tips Updated",
+    "PORTAL.SYNC": "Portal Synced",
+    "AUTHORIZATION.DENIED": "Access Denied",
+    "EXPORT.EXECUTED": "Audit Exported",
+    "ARCHIVE.EXECUTED": "Audit Archived",
+    "RISK.UPDATE": "Risk Updated",
+    // Legacy underscore names (backwards compat)
     USER_CREATE: "Create User",
     USER_UPDATE: "Edit User",
     USER_DELETE: "Delete User",
@@ -72,7 +129,8 @@ function formatEventName(name) {
     PASSWORD_RESET: "Password Reset",
     TOKEN_REFRESH: "Token Refresh",
   };
-  return map[name.toUpperCase()] || name.replace(/_/g, " ");
+
+  return map[name.toUpperCase()] || name.replace(/[_.]/g, " ");
 }
 
 /**
@@ -82,15 +140,16 @@ function getChangeSummary(log) {
   const { oldValues, newValues, meta, eventName } = log;
   const upper = (eventName || "").toUpperCase();
 
-  // Special events
-  if (upper === "USER_DEACTIVATE") {
+  // Special events (support both dot-notation and legacy names)
+  if (upper === "USER_DEACTIVATE" || upper === "USER.DEACTIVATE") {
     return meta?.anonymized ? "Archived & anonymized" : "Deactivated";
   }
-  if (upper === "USER_ACTIVATE") {
+  if (upper === "USER_ACTIVATE" || upper === "USER.ACTIVATE") {
     return "Activated with temp password";
   }
-  if (upper.includes("LOGIN")) return null;
-  if (upper.includes("SCAN")) return null;
+  if (upper.includes("LOGIN") || upper.startsWith("AUTH.")) return null;
+  if (upper.includes("SCAN") || upper.startsWith("SCAN.")) return null;
+  if (upper.startsWith("DETECTION.")) return null;
 
   // For edits, show changed fields
   if (oldValues && newValues) {
@@ -168,16 +227,85 @@ function ChangeDiff({ oldValues, newValues }) {
   );
 }
 
-const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
+const AuditLogsTable = ({
+  logs,
+  page,
+  totalPages,
+  onPageChange,
+  currentUser,
+  fromDate,
+  toDate,
+  isExporting,
+  exportError,
+  onExport,
+}) => {
   const [expandedId, setExpandedId] = useState(null);
+  const [showExportConfirm, setShowExportConfirm] = useState(false);
 
   const toggleExpand = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
+  const isSuperadmin = currentUser?.role === "superadmin";
+  const canExport = isSuperadmin && fromDate && toDate && !isExporting;
+
+  const handleExportClick = useCallback(() => {
+    setShowExportConfirm(true);
+  }, []);
+
+  const confirmExport = useCallback(async () => {
+    setShowExportConfirm(false);
+    if (onExport) {
+      await onExport();
+    }
+  }, [onExport]);
+
+  const cancelExport = useCallback(() => {
+    setShowExportConfirm(false);
+  }, []);
+
   if (!logs || logs.length === 0) {
     return (
       <div className="table-container">
+        {/* Export bar — shown even with no results so superadmin can still export by date range */}
+        {isSuperadmin && (
+          <div className="export-bar">
+            <button
+              className="export-csv-btn"
+              disabled={!canExport}
+              onClick={handleExportClick}
+              title={
+                !fromDate || !toDate
+                  ? "Select a date range to enable export"
+                  : isExporting
+                  ? "Export in progress…"
+                  : "Export filtered audit logs as CSV"
+              }
+            >
+              {isExporting ? "Exporting…" : "Export CSV"}
+            </button>
+            {exportError && <span className="export-error">{exportError}</span>}
+          </div>
+        )}
+
+        {/* Export confirmation dialog */}
+        {showExportConfirm && (
+          <div className="export-confirm-overlay">
+            <div className="export-confirm-dialog">
+              <p className="export-confirm-title">Confirm CSV Export</p>
+              <p className="export-confirm-text">
+                Export audit logs from <strong>{fromDate}</strong> to <strong>{toDate}</strong> as CSV?
+                <br />
+                <span className="export-confirm-note">This action will be recorded in the audit log.</span>
+              </p>
+              <div className="export-confirm-actions">
+                <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
+                <button className="confirm-btn" onClick={confirmExport}>Export</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <table className="accounts-table">
           <thead>
             <tr>
@@ -205,6 +333,45 @@ const AuditLogsTable = ({ logs, page, totalPages, onPageChange }) => {
 
   return (
     <div className="table-container">
+      {/* Export bar — superadmin only */}
+      {isSuperadmin && (
+        <div className="export-bar">
+          <button
+            className="export-csv-btn"
+            disabled={!canExport}
+            onClick={handleExportClick}
+            title={
+              !fromDate || !toDate
+                ? "Select a date range to enable export"
+                : isExporting
+                ? "Export in progress…"
+                : "Export filtered audit logs as CSV"
+            }
+          >
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </button>
+          {exportError && <span className="export-error">{exportError}</span>}
+        </div>
+      )}
+
+      {/* Export confirmation dialog */}
+      {showExportConfirm && (
+        <div className="export-confirm-overlay">
+          <div className="export-confirm-dialog">
+            <p className="export-confirm-title">Confirm CSV Export</p>
+            <p className="export-confirm-text">
+              Export audit logs from <strong>{fromDate}</strong> to <strong>{toDate}</strong> as CSV?
+              <br />
+              <span className="export-confirm-note">This action will be recorded in the audit log.</span>
+            </p>
+            <div className="export-confirm-actions">
+              <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
+              <button className="confirm-btn" onClick={confirmExport}>Export</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <table className="accounts-table audit-table">
         <thead>
           <tr>

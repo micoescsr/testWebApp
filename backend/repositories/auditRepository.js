@@ -1,19 +1,57 @@
 // repositories/auditRepository.js
 const { supabaseClient } = require("../config/supabaseClient");
 
+// ─── Shared: whitelist + status map ─────────────────────────────
+
+const ALLOWED_SORT_COLS = ["created_at", "event_name", "event_status", "entity_type"];
+
+const STATUS_FILTER_MAP = {
+  SUCCESS: "OK", OK: "OK",
+  FAILED: "FAIL", FAIL: "FAIL",
+  DENIED: "DENY", DENY: "DENY",
+};
+
+// ─── SELECT columns used by both active + archive queries ───────
+const AUDIT_COLUMNS = `
+  audit_log_id,
+  created_at,
+  actor_profile_id,
+  request_id,
+  actor_ip,
+  user_agent,
+  event_name,
+  event_status,
+  entity_type,
+  entity_id_uuid,
+  entity_id_bigint,
+  old_values,
+  new_values,
+  meta
+`;
+
+const AUDIT_COLUMNS_WITH_PROFILE = `
+  ${AUDIT_COLUMNS},
+  profiles!audit_logging_actor_profile_id_fkey (
+    id,
+    first_name,
+    last_name,
+    email,
+    username
+  )
+`;
+
 /**
- * Fetch audit logs with pagination, optional filtering, and actor profile join.
- *
- * Uses the `audit_logging` table (UUID-based, richer schema).
- * Joins `profiles` via `actor_profile_id` to get actor name/email.
+ * Fetch audit logs with pagination, optional filtering, date range, and actor profile join.
  *
  * @param {Object}  opts
- * @param {number}  opts.page     - 1-based page number (default 1)
- * @param {number}  opts.limit    - rows per page, capped at 100 (default 25)
- * @param {string}  opts.search   - free-text search across event_name, entity_type, actor email
- * @param {string}  opts.status   - filter by event_status ('SUCCESS' | 'FAILED')
- * @param {string}  opts.sortBy   - column to sort ('created_at')
- * @param {string}  opts.sortDir  - 'asc' | 'desc' (default 'desc')
+ * @param {number}  opts.page      - 1-based page number (default 1)
+ * @param {number}  opts.limit     - rows per page, capped at 100 (default 25)
+ * @param {string}  opts.search    - free-text search across event_name, entity_type
+ * @param {string}  opts.status    - filter by event_status ('SUCCESS' | 'FAILED' | 'DENIED')
+ * @param {string}  opts.sortBy    - column to sort ('created_at')
+ * @param {string}  opts.sortDir   - 'asc' | 'desc' (default 'desc')
+ * @param {string}  opts.startDate - ISO date string, inclusive lower bound
+ * @param {string}  opts.endDate   - ISO date string, inclusive upper bound
  * @returns {{ data: Array, total: number, page: number, limit: number }}
  */
 async function getAuditLogs({
@@ -23,63 +61,41 @@ async function getAuditLogs({
   status = "",
   sortBy = "created_at",
   sortDir = "desc",
+  startDate = "",
+  endDate = "",
 } = {}) {
-  // Clamp limit to prevent abuse
   const safeLimit = Math.min(Math.max(1, Number(limit) || 25), 100);
   const safePage = Math.max(1, Number(page) || 1);
   const offset = (safePage - 1) * safeLimit;
 
-  // Whitelist sortable columns to prevent injection
-  const ALLOWED_SORT_COLS = ["created_at", "event_name", "event_status", "entity_type"];
   const safeSortBy = ALLOWED_SORT_COLS.includes(sortBy) ? sortBy : "created_at";
-  const safeSortDir = sortDir === "asc" ? true : false; // ascending = true
+  const safeSortDir = sortDir === "asc" ? true : false;
 
-  // Build query — join profiles for actor info
   let query = supabaseClient
     .from("audit_logging")
-    .select(
-      `
-      audit_log_id,
-      created_at,
-      actor_profile_id,
-      actor_ip,
-      user_agent,
-      event_name,
-      event_status,
-      entity_type,
-      entity_id_uuid,
-      entity_id_bigint,
-      old_values,
-      new_values,
-      meta,
-      profiles!audit_logging_actor_profile_id_fkey (
-        id,
-        first_name,
-        last_name,
-        email,
-        username
-      )
-    `,
-      { count: "exact" }
-    )
+    .select(AUDIT_COLUMNS_WITH_PROFILE, { count: "exact" })
     .order(safeSortBy, { ascending: safeSortDir })
     .range(offset, offset + safeLimit - 1);
 
-  // Apply status filter — map frontend labels to DB enum values
-  const STATUS_FILTER_MAP = { SUCCESS: "OK", OK: "OK", FAILED: "FAIL", FAIL: "FAIL", DENIED: "DENY", DENY: "DENY" };
+  // Status filter
   if (status) {
     const dbVal = STATUS_FILTER_MAP[status.toUpperCase()];
-    if (dbVal) {
-      query = query.eq("event_status", dbVal);
-    }
+    if (dbVal) query = query.eq("event_status", dbVal);
   }
 
-  // Apply free-text search via ilike on multiple columns
+  // Date range filter (parameterized — safe from injection)
+  if (startDate) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate) {
+    // Include the entire end date day
+    query = query.lte("created_at", endDate + "T23:59:59.999Z");
+  }
+
+  // Free-text search
   if (search && search.trim()) {
     const term = `%${search.trim()}%`;
-    query = query.or(
-      `event_name.ilike.${term},entity_type.ilike.${term}`
-    );
+    query = query.or(`event_name.ilike.${term},entity_type.ilike.${term}`);
   }
 
   const { data, error, count } = await query;
@@ -98,21 +114,165 @@ async function getAuditLogs({
 }
 
 /**
- * Insert a new audit log entry.
+ * Fetch audit logs from the ARCHIVE table with the same filtering options.
+ * Archive table has no FK join to profiles (profiles may have been purged).
+ */
+async function getArchivedAuditLogs({
+  page = 1,
+  limit = 25,
+  search = "",
+  status = "",
+  sortBy = "created_at",
+  sortDir = "desc",
+  startDate = "",
+  endDate = "",
+} = {}) {
+  const safeLimit = Math.min(Math.max(1, Number(limit) || 25), 100);
+  const safePage = Math.max(1, Number(page) || 1);
+  const offset = (safePage - 1) * safeLimit;
+
+  const safeSortBy = ALLOWED_SORT_COLS.includes(sortBy) ? sortBy : "created_at";
+  const safeSortDir = sortDir === "asc" ? true : false;
+
+  let query = supabaseClient
+    .from("audit_logging_archive")
+    .select(AUDIT_COLUMNS, { count: "exact" })
+    .order(safeSortBy, { ascending: safeSortDir })
+    .range(offset, offset + safeLimit - 1);
+
+  if (status) {
+    const dbVal = STATUS_FILTER_MAP[status.toUpperCase()];
+    if (dbVal) query = query.eq("event_status", dbVal);
+  }
+
+  if (startDate) query = query.gte("created_at", startDate);
+  if (endDate) query = query.lte("created_at", endDate + "T23:59:59.999Z");
+
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    query = query.or(`event_name.ilike.${term},entity_type.ilike.${term}`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    console.error("[auditRepository] getArchivedAuditLogs error:", error);
+    throw error;
+  }
+
+  return {
+    data: data || [],
+    total: count || 0,
+    page: safePage,
+    limit: safeLimit,
+  };
+}
+
+/**
+ * Export audit logs (active table) for a date range — no pagination cap.
+ * Returns up to 10,000 rows for CSV export.
  *
- * @param {Object} entry
- * @param {string} entry.actor_profile_id  - UUID of user performing the action
- * @param {string} entry.event_name        - e.g. 'USER_CREATE', 'USER_UPDATE', 'LOGIN'
- * @param {string} entry.event_status      - 'SUCCESS' | 'FAILED'
- * @param {string} entry.entity_type       - e.g. 'USER', 'NETWORK', 'SCAN'
- * @param {string} [entry.entity_id_uuid]  - UUID entity ref
- * @param {number} [entry.entity_id_bigint] - bigint entity ref
- * @param {Object} [entry.old_values]      - snapshot before change
- * @param {Object} [entry.new_values]      - snapshot after change
- * @param {Object} [entry.meta]            - extra context (user_agent, ip, etc.)
- * @param {string} [entry.actor_ip]        - IP address of actor
- * @param {string} [entry.user_agent]      - browser user agent
- * @param {string} [entry.request_id]      - correlation UUID for request tracing
+ * @param {Object} opts
+ * @param {string} opts.startDate - ISO date string
+ * @param {string} opts.endDate   - ISO date string
+ * @param {string} opts.status    - optional status filter
+ * @returns {Array} raw rows
+ */
+async function getAuditLogsForExport({
+  startDate = "",
+  endDate = "",
+  status = "",
+} = {}) {
+  const MAX_EXPORT_ROWS = 10000;
+
+  let query = supabaseClient
+    .from("audit_logging")
+    .select(AUDIT_COLUMNS_WITH_PROFILE)
+    .order("created_at", { ascending: false })
+    .limit(MAX_EXPORT_ROWS);
+
+  if (status) {
+    const dbVal = STATUS_FILTER_MAP[status.toUpperCase()];
+    if (dbVal) query = query.eq("event_status", dbVal);
+  }
+
+  if (startDate) query = query.gte("created_at", startDate);
+  if (endDate) query = query.lte("created_at", endDate + "T23:59:59.999Z");
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("[auditRepository] getAuditLogsForExport error:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Archive audit logs older than the specified number of days.
+ * Runs as an atomic two-step:
+ *   1. INSERT into audit_logging_archive (rows older than cutoff)
+ *   2. DELETE from audit_logging (same rows)
+ *
+ * Uses Supabase service role which bypasses RLS.
+ *
+ * @param {number} retentionDays - days to keep in active table (default 7)
+ * @returns {{ archived: number }} count of archived rows
+ */
+async function archiveOldLogs(retentionDays = 7) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+  const cutoffISO = cutoff.toISOString();
+
+  // Step 1: Fetch rows to archive
+  const { data: oldRows, error: fetchErr } = await supabaseClient
+    .from("audit_logging")
+    .select("*")
+    .lt("created_at", cutoffISO)
+    .order("created_at", { ascending: true })
+    .limit(5000); // batch size to avoid timeouts
+
+  if (fetchErr) {
+    console.error("[auditRepository] archiveOldLogs fetch error:", fetchErr);
+    throw fetchErr;
+  }
+
+  if (!oldRows || oldRows.length === 0) {
+    return { archived: 0 };
+  }
+
+  // Step 2: Insert into archive
+  // Strip the FK-joined 'profiles' field if present (archive table has no FK)
+  const cleanRows = oldRows.map(({ profiles, ...row }) => row);
+
+  const { error: insertErr } = await supabaseClient
+    .from("audit_logging_archive")
+    .insert(cleanRows);
+
+  if (insertErr) {
+    console.error("[auditRepository] archiveOldLogs insert error:", insertErr);
+    throw insertErr;
+  }
+
+  // Step 3: Delete archived rows from active table
+  const archivedIds = oldRows.map((r) => r.audit_log_id);
+
+  const { error: deleteErr } = await supabaseClient
+    .from("audit_logging")
+    .delete()
+    .in("audit_log_id", archivedIds);
+
+  if (deleteErr) {
+    console.error("[auditRepository] archiveOldLogs delete error:", deleteErr);
+    throw deleteErr;
+  }
+
+  return { archived: archivedIds.length };
+}
+
+/**
+ * Insert a new audit log entry.
  */
 async function insertAuditLog(entry) {
   // Validate required fields
@@ -159,5 +319,8 @@ async function insertAuditLog(entry) {
 
 module.exports = {
   getAuditLogs,
+  getArchivedAuditLogs,
+  getAuditLogsForExport,
+  archiveOldLogs,
   insertAuditLog,
 };

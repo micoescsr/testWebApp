@@ -1,5 +1,6 @@
 // middleware/roleMiddleware.js
 const { createClient } = require("@supabase/supabase-js");
+const { logAuditEvent } = require("../utils/auditLogger");
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -28,10 +29,30 @@ exports.requireSuperadmin = async (req, res, next) => {
     }
 
     if (profile.status !== "active") {
+      logAuditEvent({
+        req,
+        actorId: userId,
+        eventName: "AUTHORIZATION.DENIED",
+        eventStatus: "DENIED",
+        entityType: "AUTH",
+        entityIdUuid: userId,
+        meta: { reason: "account_not_active", status: profile.status, path: req.originalUrl },
+      }).catch(() => {});
+
       return res.status(403).json({ error: "Account is not active", status: profile.status });
     }
 
     if (profile.role !== "superadmin") {
+      logAuditEvent({
+        req,
+        actorId: userId,
+        eventName: "AUTHORIZATION.DENIED",
+        eventStatus: "DENIED",
+        entityType: "AUTH",
+        entityIdUuid: userId,
+        meta: { reason: "insufficient_role", role: profile.role, path: req.originalUrl },
+      }).catch(() => {});
+
       return res.status(403).json({ error: "Superadmin access required" });
     }
 
