@@ -44,7 +44,7 @@
 }
 
 .nav-item.active {
-  background-color: #2196F3;
+  background-color: #2196f3;
   color: white;
   border-left-color: #0d47a1;
 }
@@ -190,4 +190,57 @@
     background: rgba(0, 0, 0, 0.4);
     z-index: 25;
   }
+}
+
+/* ─── Threat-detection indicator on SAM nav item ─── */
+
+.nav-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-dot.running {
+  background: #10b981;
+}
+
+.nav-dot.pulsing {
+  background: #3b82f6;
+  animation: sidebar-pulse 1.2s ease-in-out infinite;
+}
+
+.nav-dot.failed {
+  background: #ef4444;
+}
+
+@keyframes sidebar-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.nav-badge {
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 0 4px;
 }

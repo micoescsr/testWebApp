@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import Sidebar from "./layouts/Sidebar";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import SAM from "./pages/SAM/SAM";
@@ -14,6 +19,7 @@ import ResetPassword from "./pages/Auth/ResetPassword";
 import TestAuth from "./pages/TestAuth/TestAuth";
 import api, { setAccessToken, getAccessToken } from "./api/axios";
 import { NetworkProvider } from "./context/NetworkContext";
+import { ThreatDetectionProvider } from "./context/ThreatDetectionContext";
 import "./App.css";
 //import UserMenu from "./components/common/UserMenu/UserMenu";
 
@@ -51,41 +57,49 @@ function App() {
 
   return (
     <NetworkProvider>
-    <Router>
-      <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
+      <Router>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* Protected routes — redirect to /login if no access token */}
-        <Route
-          path="/*"
-          element={
-            isAuthenticated ? (
-              <div className="app">
-                <Sidebar />
-                <main className="main-content">
-                  <Routes>
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/security-assessment" element={<SAM />} />
-                    <Route path="/device-management" element={<DeviceManagement />} />
-                    <Route path="/accounts-audit" element={<AccountsAudit />} />
-                    <Route path="/history" element={<History />} />
-                    <Route path="/profile" element={<Profile />} />
-                    <Route path="/test-auth" element={<TestAuth />} />
-                  </Routes>
-                </main>
-              </div>
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-      </Routes>
-    </Router>
+          {/* Protected routes — redirect to /login if no access token */}
+          <Route
+            path="/*"
+            element={
+              isAuthenticated ? (
+                <ThreatDetectionProvider>
+                  <div className="app">
+                    <Sidebar />
+                    <main className="main-content">
+                      <Routes>
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/security-assessment" element={<SAM />} />
+                        <Route
+                          path="/device-management"
+                          element={<DeviceManagement />}
+                        />
+                        <Route
+                          path="/accounts-audit"
+                          element={<AccountsAudit />}
+                        />
+                        <Route path="/history" element={<History />} />
+                        <Route path="/profile" element={<Profile />} />
+                        <Route path="/test-auth" element={<TestAuth />} />
+                      </Routes>
+                    </main>
+                  </div>
+                </ThreatDetectionProvider>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+        </Routes>
+      </Router>
     </NetworkProvider>
   );
 }
