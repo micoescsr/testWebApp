@@ -13,7 +13,7 @@ const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -181,8 +181,11 @@ function classifyOrchestrateError(fastapiData) {
 	};
 }
 
+// ─── Phase 2-C: All browser-called device routes require JWT ────
+const { authJWT } = require('../middleware/authMiddleware');
+
 // ─── Legacy toggle signal (keep for backward compat) ────────────
-router.post('/signal_ap', async (req, res) => {
+router.post('/signal_ap', authJWT, async (req, res) => {
 	try {
 		const { toggleState } = req.body;
 		console.log('DeviceMgmt: Received toggleState:', toggleState);
@@ -198,7 +201,7 @@ router.post('/signal_ap', async (req, res) => {
 
 // ─── GET AP state from DB (source of truth) ─────────────────────
 // GET /api/device/ap-state/:networkId
-router.get('/ap-state/:networkId', async (req, res) => {
+router.get('/ap-state/:networkId', authJWT, async (req, res) => {
 	try {
 		const { networkId } = req.params;
 
@@ -225,7 +228,7 @@ router.get('/ap-state/:networkId', async (req, res) => {
 // Body: { network_id, scan_id?, ap_status, ap_password? }
 //   scan_id required only for enable (not disable)
 //   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
-router.post('/enable-ap', async (req, res) => {
+router.post('/enable-ap', authJWT, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, scan_id, ap_status, ap_password } = req.body;
 	const actorId = req.user?.id || null;
@@ -622,7 +625,7 @@ router.post('/enable-ap', async (req, res) => {
 // ─── Admin State Endpoint (cheap, read-only) ─────────────────────
 // GET /api/device/network/:networkId/state
 // Returns authoritative AP + scan + portal + risk state for the UI
-router.get('/network/:networkId/state', async (req, res) => {
+router.get('/network/:networkId/state', authJWT, async (req, res) => {
 	const { networkId } = req.params;
 	const maxAgeSeconds = SCAN_MAX_AGE_SECONDS;
 
@@ -818,7 +821,7 @@ function validatePatchPayload(payload) {
 // ─── Client-Driven Captive Portal Partial Update ─────────────────
 // POST /api/device/portal/update
 // Body: { network_id, update_type, reason?, payload }
-router.post('/portal/update', async (req, res) => {
+router.post('/portal/update', authJWT, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, update_type, reason: rawReason, payload: patch } = req.body;
 	const actorId = req.user?.id || null;
@@ -971,12 +974,16 @@ router.post('/portal/update', async (req, res) => {
 // Called by scan runner or external system when a vulnerability_scans
 // row transitions to COMPLETED. Triggers risk pipeline + auto-portal.
 router.post('/scan-completed', async (req, res) => {
-	// Token auth (if configured)
-	if (SCAN_RUNNER_TOKEN) {
-		const token = req.headers['x-scan-runner-token'];
-		if (token !== SCAN_RUNNER_TOKEN) {
-			return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid or missing X-Scan-Runner-Token.' });
-		}
+	// ── Phase 2-C: Fail closed — reject if SCAN_RUNNER_TOKEN is not configured ──
+	// This is a machine-to-machine webhook (Pi → Express), NOT browser-called,
+	// so it uses a shared secret instead of JWT.
+	if (!SCAN_RUNNER_TOKEN) {
+		console.error('[scan-completed] SCAN_RUNNER_TOKEN not configured — rejecting request');
+		return res.status(503).json({ error: 'SERVICE_UNAVAILABLE', message: 'Webhook not configured.' });
+	}
+	const token = req.headers['x-scan-runner-token'];
+	if (token !== SCAN_RUNNER_TOKEN) {
+		return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid or missing X-Scan-Runner-Token.' });
 	}
 
 	const { scan_id } = req.body;

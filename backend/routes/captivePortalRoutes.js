@@ -4,25 +4,29 @@ const router = express.Router();
 const ctrl = require('../controllers/captivePortalController');
 const { authJWT } = require('../middleware/authMiddleware');
 
+// ─── Phase 2-A: All captive-portal routes require JWT ───────────
+// Previously GETs were public — anyone could read portal content
+// and risk classifications without authenticating.
+
 // ─── Announcement ────────────────────────────────────────────────
-router.get('/announcement', ctrl.getAnnouncement);
-router.get('/announcement/history', ctrl.getAnnouncementHistory);
+router.get('/announcement', authJWT, ctrl.getAnnouncement);
+router.get('/announcement/history', authJWT, ctrl.getAnnouncementHistory);
 router.post('/announcement', authJWT, ctrl.publishAnnouncement);
 
 // ─── Terms & Conditions ──────────────────────────────────────────
-router.get('/terms', ctrl.getTerms);
-router.get('/terms/history', ctrl.getTermsHistory);
+router.get('/terms', authJWT, ctrl.getTerms);
+router.get('/terms/history', authJWT, ctrl.getTermsHistory);
 router.post('/terms', authJWT, ctrl.publishTerms);
 
 // ─── Tips ────────────────────────────────────────────────────────
-router.get('/tips', ctrl.getTips);
+router.get('/tips', authJWT, ctrl.getTips);
 router.post('/tips', authJWT, ctrl.upsertTips);
 
 // ─── Risk Classification ─────────────────────────────────────────
-router.get('/risk-classifications', ctrl.getRiskClassifications);
+router.get('/risk-classifications', authJWT, ctrl.getRiskClassifications);
 
 // ─── Portal (preview + sync to FastAPI) ──────────────────────────
-router.get('/summary', ctrl.getPortalSummary);
+router.get('/summary', authJWT, ctrl.getPortalSummary);
 router.post('/sync', authJWT, ctrl.syncPortal);
 
 module.exports = router;

@@ -137,16 +137,13 @@ app.use("/api/detect", detectRoutes);
 // 4) History (JWT-protected, user-scoped per controller logic)
 app.use("/api/history", historyRoutes);
 
-// 2) Everything else under /api requires JWT + active profile
-//app.use("/api", authJWT, requireActiveProfile);
+// Phase 2-E: Dead global-auth middleware removed.
+// Auth is now enforced per-route (Phase 2-A/B/C/D).
+// Keeping this commented block was a false-safety trap —
+// it looked like blanket auth existed when it didn't.
 
-// 3) Protected sub-routers
-//app.use("/api/webApp", webAppRoutes);
-//app.use("/api/rasPi", rasPiRoutes);
-//app.use("/api/rasPi_scan", scanRoutes);
-//app.use("/api/captivePortal", captivePortalRoutes);
-
-app.get("/api/device/status", async (req, res) => {
+// Phase 2-D: Device status requires JWT (browser-called)
+app.get("/api/device/status", authJWT, async (req, res) => {
   try {
     const r = await fetch(`${FASTAPI_BASE}/device/status`, {
       method: "GET",
