@@ -158,11 +158,10 @@ app.get("/api/device/status", authJWT, async (req, res) => {
     );
 
   } catch (err) {
+    console.error('[device/status] FastAPI proxy error:', err);
     return res.status(502).json({
       status: "ERROR",
-      error: "Failed to reach FastAPI /device/status",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
+      error: "Failed to reach device status endpoint",
     });
   }
 });

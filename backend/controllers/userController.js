@@ -77,9 +77,21 @@ async function getCurrentProfile(req, res) {
 
 async function getAllUsers(req, res) {
   try {
+    // Phase 3-B: Only superadmins can list all user profiles.
+    // Regular admins should not be able to enumerate the full user table.
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+    const currentRole = await getCurrentUserRole(currentUser.id);
+    if (currentRole !== "superadmin") {
+      return res.status(403).json({ error: "Superadmin only" });
+    }
+
     const users = await userRepository.findAllProfiles();
     res.json(users);
   } catch (error) {
+    console.error("[getAllUsers] error:", error);
     res.status(500).json({ error: "Failed to fetch users" });
   }
 }
@@ -173,7 +185,7 @@ async function activateUserWithTemp(req, res) {
 
     if (profileError) {
       console.error("activate-with-temp profileError:", profileError);
-      return res.status(400).json({ error: profileError.message });
+      return res.status(400).json({ error: "Failed to update profile" });
     }
 
     // Generate secure random temp password
@@ -190,7 +202,7 @@ async function activateUserWithTemp(req, res) {
 
     if (authError) {
       console.error("activate-with-temp authError:", authError);
-      return res.status(400).json({ error: authError.message });
+      return res.status(400).json({ error: "Failed to update auth credentials" });
     }
 
     // Audit log for activation
@@ -252,7 +264,7 @@ async function deleteUser(req, res) {
         entityIdUuid: id,
         meta: { error: authError.message },
       }).catch(() => {});
-      return res.status(400).json({ error: authError.message });
+      return res.status(400).json({ error: "Failed to delete user" });
     }
 
     await logAuditEvent({

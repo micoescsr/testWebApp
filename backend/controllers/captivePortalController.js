@@ -644,7 +644,7 @@ async function syncPortal(req, res) {
 		}
 	} catch (err) {
 		console.error('captivePortal syncPortal error:', err);
-		res.status(500).json({ error: 'Failed to sync portal', detail: err.message });
+		res.status(500).json({ error: 'Failed to sync portal' });
 	}
 }
 

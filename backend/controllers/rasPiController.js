@@ -82,8 +82,6 @@ async function getNetworksList(req, res) {
     return res.status(502).json({
       status: "ERROR",
       error: "Failed to reach FastAPI /networks",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
     });
   }
 };
@@ -350,7 +348,6 @@ async function saveNetworkMetadataScan(req, res) {
     return res.status(500).json({
       status: "ERROR",
       error: "Failed to save network data",
-      detail: err.message,
     });
   }
 }

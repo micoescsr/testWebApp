@@ -219,7 +219,7 @@ router.get('/ap-state/:networkId', authJWT, async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /ap-state error:', err);
-		return res.status(500).json({ error: 'Failed to fetch AP state', detail: err.message });
+		return res.status(500).json({ error: 'Failed to fetch AP state' });
 	}
 });
 
@@ -474,7 +474,6 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 				return res.status(502).json({
 					error: 'PORTAL_PATCH_FAILED',
 					message: 'Failed to initialize captive portal. AP enable aborted.',
-					detail: portalData?.detail || `portal/patch error: ${portalRes.status}`,
 				});
 			}
 
@@ -610,7 +609,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 		const status = err.status || 500;
 		const errorBody = {
 			error: err.code || 'AP_TOGGLE_FAILED',
-			message: err.message,
+			message: 'AP configuration failed',
 			...(err.extra || {}),
 		};
 		return res.status(status).json(errorBody);
@@ -710,7 +709,7 @@ router.get('/network/:networkId/state', authJWT, async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /network/:networkId/state error:', err);
-		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: err.message });
+		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: 'Failed to fetch network state' });
 	}
 });
 
@@ -962,7 +961,7 @@ router.post('/portal/update', authJWT, async (req, res) => {
 		const status = err.status || 500;
 		return res.status(status).json({
 			error: err.code || 'PORTAL_UPDATE_FAILED',
-			message: err.message,
+			message: 'Portal update failed',
 			...(err.extra || {}),
 		});
 	}
@@ -1026,7 +1025,7 @@ router.post('/scan-completed', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /scan-completed error:', err);
-		return res.status(500).json({ error: 'SCAN_COMPLETED_HOOK_FAILED', message: err.message });
+		return res.status(500).json({ error: 'SCAN_COMPLETED_HOOK_FAILED', message: 'Internal error processing scan completion' });
 	}
 });
 

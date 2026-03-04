@@ -189,7 +189,7 @@ async function getStatus(req, res) {
     return res.json(row);
   } catch (err) {
     console.error("[detect/status] error:", err);
-    return res.status(500).json({ error: "Failed to read detection state", detail: err.message });
+    return res.status(500).json({ error: "Failed to read detection state" });
   }
 }
 
@@ -256,7 +256,7 @@ async function start(req, res) {
       }).catch(() => {});
     }
 
-    return res.status(500).json({ error: "Failed to start detection", detail: err.message });
+    return res.status(500).json({ error: "Failed to start detection" });
   }
 }
 
@@ -301,7 +301,7 @@ async function stopDetection(req, res) {
       }).catch(() => {});
     }
 
-    return res.status(500).json({ error: "Failed to stop detection", detail: err.message });
+    return res.status(500).json({ error: "Failed to stop detection" });
   }
 }
 
@@ -314,7 +314,7 @@ async function heartbeat(req, res) {
     return res.json(row);
   } catch (err) {
     console.error("[detect/heartbeat] error:", err);
-    return res.status(500).json({ error: "Failed to update heartbeat", detail: err.message });
+    return res.status(500).json({ error: "Failed to update heartbeat" });
   }
 }
 
