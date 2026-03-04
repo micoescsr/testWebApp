@@ -1,6 +1,6 @@
 ﻿# Audit Logging System â€” Documentation
 
-> **Last updated:** March 3, 2026  
+> **Last updated:** March 5, 2026  
 > **Branch:** `threat-detection-test`  
 > **Owner:** WiFi Security Web Application
 
@@ -358,7 +358,16 @@ Old callers using underscore names (e.g., `LOGIN_SUCCESS`, `SCAN_TRIGGER`) conti
 | Event Name | Status | Entity Type | Trigger | Logged By |
 |------------|--------|-------------|---------|-----------|
 | `DETECTION.START` | OK/FAIL | DETECTION | Threat detection started | `detectController.start` |
-| `DETECTION.STOP` | OK/FAIL | DETECTION | Threat detection stopped | `detectController.stopDetection` |
+| `DETECTION.STOP` | OK | DETECTION_STATE | RUNNING → STOPPED transition (manual stop) | `detectStateService.stop` (service layer only) |
+| `DETECTION.STOP` | FAIL | DETECTION_STATE | Server error during stop attempt | `detectController.stopDetection` (catch block) |
+
+> **DETECTION.STOP governance rules:**
+> - SUCCESS is logged **once**, in the service layer, only on a real RUNNING → STOPPED transition.
+> - If already STOPPED/FAILED, the endpoint returns 200 idempotently with **no** SUCCESS audit.
+> - FAILED audit is logged only on 500 server errors, **not** on 400 validation errors.
+> - `meta` includes `{ reason_code, reason_note, trigger: "manual_stop" }`.
+> - `oldValues`/`newValues` include: `status`, `active_network_id`, `active_scan_id`, `stopped_at`, `last_heartbeat_at`.
+> - `entityType` is `DETECTION_STATE` (not `DETECTION`) for stop events.
 
 ### Device Management Events
 

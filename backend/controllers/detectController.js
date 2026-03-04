@@ -274,9 +274,20 @@ async function start(req, res) {
   }
 }
 
+// Allowed reason_code values for governed STOP
+const STOP_REASON_CODES = [
+  "MAINTENANCE",
+  "DEVICE_RESTART",
+  "FALSE_POSITIVES",
+  "CLIENT_REQUEST",
+  "SCOPE_CHANGE",
+  "EVIDENCE_PRESERVATION",
+  "OTHER",
+];
+
 /**
  * POST /api/detect/stop
- * Body: { reason? }
+ * Body: { reason_code: string, reason_note?: string }
  */
 async function stopDetection(req, res) {
   try {
@@ -285,24 +296,31 @@ async function stopDetection(req, res) {
       return res.status(401).json({ error: "No authenticated user" });
     }
 
-    const { reason } = req.body || {};
-    const row = await detectStateService.stop(req, actorId, reason || null);
+    const { reason_code, reason_note } = req.body || {};
 
-    // Audit: detection stopped
-    logAuditEvent({
-      req,
-      actorId,
-      eventName: "DETECTION.STOP",
-      eventStatus: "SUCCESS",
-      entityType: "DETECTION",
-      meta: { reason: reason || "manual" },
-    }).catch(() => {});
+    // Validate reason_code
+    if (!reason_code || !STOP_REASON_CODES.includes(reason_code)) {
+      return res.status(400).json({
+        error: `reason_code is required and must be one of: ${STOP_REASON_CODES.join(", ")}`,
+        received: reason_code,
+      });
+    }
+
+    // Validate reason_note required when OTHER
+    if (reason_code === "OTHER" && (!reason_note || !reason_note.trim())) {
+      return res.status(400).json({
+        error: "reason_note is required when reason_code is OTHER",
+      });
+    }
+
+    // Delegate to service (SUCCESS audit is written there, not here)
+    const row = await detectStateService.stop(req, actorId, { reason_code, reason_note: reason_note || null });
 
     return res.json(row);
   } catch (err) {
     console.error("[detect/stop] error:", err);
 
-    // Audit: detection stop failed
+    // Audit: detection stop failed (server error only, not 400 validation)
     const actorId = req.user?.id;
     if (actorId) {
       logAuditEvent({
@@ -310,7 +328,7 @@ async function stopDetection(req, res) {
         actorId,
         eventName: "DETECTION.STOP",
         eventStatus: "FAILED",
-        entityType: "DETECTION",
+        entityType: "DETECTION_STATE",
         meta: { error: err.message },
       }).catch(() => {});
     }

@@ -229,16 +229,17 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
 }
 
 /**
- * Stop detection.
+ * Stop detection (governed).
  *
  * @param {Object} req - Express request
  * @param {string} actorId - UUID of the admin stopping
- * @param {string} [reason] - human-readable stop reason
+ * @param {{ reason_code: string, reason_note?: string }} reasonInfo - structured stop reason
  */
-async function stop(req, actorId, reason) {
+async function stop(req, actorId, reasonInfo) {
+  const { reason_code, reason_note } = reasonInfo || {};
   let row = await ensureRow();
 
-  // Idempotent: already stopped or failed
+  // Idempotent: already STOPPED or FAILED → return row, no SUCCESS audit
   if (row.status === "STOPPED" || row.status === "FAILED") {
     return row;
   }
@@ -246,10 +247,11 @@ async function stop(req, actorId, reason) {
   const now = new Date().toISOString();
   const oldRow = { ...row };
 
+  // STOP is not a failure: failure_reason = NULL
   const payload = {
     status: "STOPPED",
     stopped_at: now,
-    failure_reason: reason || null,
+    failure_reason: null,
     updated_at: now,
   };
 
@@ -258,20 +260,35 @@ async function stop(req, actorId, reason) {
     if (error) throw error;
 
     if (updated) {
+      // SUCCESS audit: only on real RUNNING → STOPPED transition
       await logAuditEvent({
         req,
         actorId,
-        eventName: "STOP_DETECTION",
+        eventName: "DETECTION.STOP",
         eventStatus: "SUCCESS",
         entityType: "DETECTION_STATE",
-        entityIdBigint: oldRow.active_scan_id,
+        entityIdUuid: oldRow.active_network_id || null,
+        entityIdBigint: oldRow.active_scan_id || null,
         oldValues: {
           status: oldRow.status,
-          network_id: oldRow.active_network_id,
-          scan_id: oldRow.active_scan_id,
+          active_network_id: oldRow.active_network_id,
+          active_scan_id: oldRow.active_scan_id,
+          stopped_at: oldRow.stopped_at,
+          last_heartbeat_at: oldRow.last_heartbeat_at,
         },
-        newValues: { status: "STOPPED", reason: reason || null },
-        meta: { device_id: DEVICE_ID },
+        newValues: {
+          status: "STOPPED",
+          active_network_id: updated.active_network_id,
+          active_scan_id: updated.active_scan_id,
+          stopped_at: updated.stopped_at,
+          last_heartbeat_at: updated.last_heartbeat_at,
+        },
+        meta: {
+          reason_code: reason_code || null,
+          reason_note: reason_note || null,
+          trigger: "manual_stop",
+          device_id: DEVICE_ID,
+        },
       }).catch(() => {});
 
       return updated;

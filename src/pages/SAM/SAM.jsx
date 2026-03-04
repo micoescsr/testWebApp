@@ -12,6 +12,8 @@ import {
 } from "../../hooks/useSAM";
 import { triggerScan, sendMetadata } from "../../api/rasPiApi";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
+import StopDetectionModal from "../../components/modals/StopDetectionModal/StopDetectionModal";
+import { stopDetect } from "../../api/detectApi";
 import { useNetworkContext } from "../../context/NetworkContext";
 import {
   useThreatDetectionContext,
@@ -52,6 +54,8 @@ const SAM = () => {
     notes: "",
   });
   const [dismissCounter, setDismissCounter] = useState(0);
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [stopProcessing, setStopProcessing] = useState(false);
 
   const { threats, fetchThreatDetail, threatDetail, threatDetailLoading } =
     useThreats();
@@ -337,6 +341,23 @@ const SAM = () => {
     setIsModalOpen(false);
   };
 
+  // ─── Stop Detection handler ──────────────────────────────────
+  const handleStopDetection = async (reasonCode, reasonNote) => {
+    setStopProcessing(true);
+    try {
+      await stopDetect(reasonCode, reasonNote);
+      resetDetection();
+      await refreshStatus();
+      setShowStopModal(false);
+    } catch (err) {
+      console.error("[stop detection]", err);
+      const msg = err?.response?.data?.error || err.message || "Failed to stop detection";
+      alert(msg);
+    } finally {
+      setStopProcessing(false);
+    }
+  };
+
   const currentDetail = activeTab === "threats" ? threatDetail : vulnDetail;
   const detailLoading =
     activeTab === "threats" ? threatDetailLoading : vulnDetailLoading;
@@ -433,6 +454,15 @@ const SAM = () => {
               {lastUpdated && !isOutOfRange && detectionStatus !== "IDLE" && (
                 <span className="pill-time">{timeAgo(lastUpdated)}</span>
               )}
+              {detectionStatus === "DETECTING" && (
+                <button
+                  className="stop-detection-btn"
+                  onClick={() => setShowStopModal(true)}
+                  title="Stop threat detection"
+                >
+                  Stop
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -477,6 +507,13 @@ const SAM = () => {
           loading={detailLoading || !currentDetail}
         />
       )}
+
+      <StopDetectionModal
+        isOpen={showStopModal}
+        onClose={() => setShowStopModal(false)}
+        onConfirm={handleStopDetection}
+        isProcessing={stopProcessing}
+      />
     </div>
   );
 };

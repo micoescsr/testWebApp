@@ -20,9 +20,16 @@ export async function startDetect(networkId, scanId) {
   return res.data;
 }
 
-/** POST /api/detect/stop — stop detection */
-export async function stopDetect(reason) {
-  const res = await api.post("/detect/stop", { reason: reason || null });
+/**
+ * POST /api/detect/stop — stop detection (governed)
+ * @param {string} reasonCode  - Required. One of: MAINTENANCE, DEVICE_RESTART, FALSE_POSITIVES, CLIENT_REQUEST, SCOPE_CHANGE, EVIDENCE_PRESERVATION, OTHER
+ * @param {string} [reasonNote] - Optional note (required when reasonCode is "OTHER")
+ */
+export async function stopDetect(reasonCode, reasonNote) {
+  const res = await api.post("/detect/stop", {
+    reason_code: reasonCode,
+    reason_note: reasonNote || undefined,
+  });
   return res.data;
 }
 
