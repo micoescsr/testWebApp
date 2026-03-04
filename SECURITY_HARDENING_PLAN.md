@@ -172,6 +172,33 @@ const globalLimiter = rateLimit({
 module.exports = { loginLimiter, refreshLimiter, globalLimiter };
 ```
 
+### Rate Limiter Limitation (1-G)
+
+> **Known limitation:** The rate limiters above use `express-rate-limit`'s **in-memory store**.
+>
+> - Counters **reset on every server restart** (Railway redeploys, crashes).
+> - Counters are **not shared across instances** — if Railway auto-scales to 2+ containers, each has its own bucket, effectively multiplying the allowed requests by the instance count.
+> - Nonce / idempotency caches would suffer the same problem.
+>
+> **Mitigation path:** When scaling beyond a single Railway instance, swap to [`rate-limit-redis`](https://www.npmjs.com/package/rate-limit-redis) backed by a shared Redis service. For a single-instance capstone deployment, the in-memory store is acceptable.
+
+### Edge Connectivity Architecture (1-K)
+
+> **Security boundary decision — documented here for traceability.**
+>
+> Railway **cannot** join a Tailscale tailnet (no persistent daemon support). Therefore:
+>
+> 1. The **Raspberry Pi** exposes its FastAPI gateway via **Tailscale Funnel** (public HTTPS URL, e.g. `https://pi.tail12345.ts.net`).
+> 2. The **Express backend** (Railway) is the **only** caller of that Pi URL. The browser / React frontend **never** calls the Pi directly.
+> 3. Commands from Express → Pi are **HMAC-signed** (`CONTROL_SIGNING_SECRET`) with a timestamp to prevent replay.
+> 4. Scan-complete webhooks from Pi → Express use a **Bearer token** (`SCAN_RUNNER_TOKEN`) validated server-side.
+> 5. Portal content updates use a separate **Bearer token** (`PORTAL_PATCH_TOKEN`) for privilege separation.
+>
+> This means:
+> - Pi secrets (`CONTROL_SIGNING_SECRET`, `PORTAL_PATCH_TOKEN`, `SCAN_RUNNER_TOKEN`) exist **only** in Railway env vars and the Pi's `.env`. They are **never** exposed to the frontend (no `VITE_` prefix).
+> - If the Funnel URL leaks, an attacker still cannot issue commands without the signing secret.
+> - If a token leaks, the `ALLOWED_DEVICE_IDS` allowlist (Phase 4.5) limits blast radius.
+
 ---
 
 ## Phase 2 — Route Auth Lockdown

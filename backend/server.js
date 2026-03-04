@@ -1,12 +1,21 @@
 // server.js
 
 require("dotenv").config();
+
+// ── Fail-fast env validation (Phase 1-I) ─────────────────────────────
+// Must run BEFORE any Express setup so we crash immediately on bad config.
+const { validateEnv } = require("./config/envValidation");
+validateEnv();
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const FASTAPI_BASE = "http://mothership-1.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
-//const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
-const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
+const helmet = require("helmet");
+const crypto = require("crypto");
+
+// ── FastAPI base URL (Phase 4-E) ────────────────────────────────────
+// NEVER hardcode Tailscale URLs — always use env var so dev/prod stay separate.
+const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
@@ -36,9 +45,57 @@ function getRiskLabel(score) {
 }
 
 const app = express();
-const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
+
+// ── Trust proxy (Phase 1-A) ──────────────────────────────────────────
+// Railway uses a single-layer reverse proxy. Without this, express-rate-limit
+// keys on the proxy IP (all users share one bucket) and req.ip is wrong.
+app.set('trust proxy', 1);
+
+// Hide Express fingerprint on ALL responses (including pre-middleware health check)
+app.disable('x-powered-by');
+
+// ── Health check (Phase 2-new) ──────────────────────────────────────
+// Placed BEFORE any middleware so Railway uptime probes are never blocked
+// by rate limiting, auth, or CORS.
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use(cookieParser());
+
+// ── Helmet + CSP (Phase 1-C) ────────────────────────────────────────
+const connectSources = ["'self'"];
+const appEnv = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
+if (appEnv === 'production') {
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    connectSources.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+  }
+  if (process.env.SUPABASE_URL) {
+    connectSources.push(process.env.SUPABASE_URL);
+  }
+} else {
+  connectSources.push('http://localhost:*', 'ws://localhost:*');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      connectSrc: connectSources,
+      imgSrc:     ["'self'", "data:", "blob:"],
+    },
+  },
+  hsts: appEnv === 'production',
+}));
+
+// ── CORS (Phase 4-A) ────────────────────────────────────────────────
+// Env-based origins: ALLOWED_ORIGINS="https://prod.example.com,https://www.prod.example.com"
+// Falls back to Vite dev server for local development.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -56,6 +113,11 @@ app.use(
 
 app.use(express.json());
 app.use(requestIdMiddleware);
+
+// ── Global rate limiter (Phase 1-F) ─────────────────────────────────
+// Applied AFTER health check so uptime probes aren't throttled.
+const { globalLimiter } = require('./middleware/rateLimiter');
+app.use(globalLimiter);
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
 //app.use('/api/rasPi_scan', scanRoutes);
