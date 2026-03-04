@@ -110,18 +110,20 @@ async function getStatusAndMaybeFail(req) {
 
       if (error) throw error;
       if (updated) {
-        // Audit: DETECTION_FAILED
-        await logAuditEvent({
-          req,
-          actorId: row.started_by_profile_id || "00000000-0000-0000-0000-000000000000",
-          eventName: "DETECTION_FAILED",
-          eventStatus: "SUCCESS",
-          entityType: "DETECTION_STATE",
-          entityIdBigint: row.active_scan_id,
-          oldValues: { status: oldRow.status, network_id: oldRow.active_network_id, scan_id: oldRow.active_scan_id },
-          newValues: { status: "FAILED", failure_reason: "heartbeat timeout" },
-          meta: { device_id: DEVICE_ID },
-        }).catch(() => {});
+        // Audit: DETECTION.FAILED — only if we have a real profile FK
+        if (row.started_by_profile_id) {
+          await logAuditEvent({
+            req,
+            actorId: row.started_by_profile_id,
+            eventName: "DETECTION.FAILED",
+            eventStatus: "SUCCESS",
+            entityType: "DETECTION_STATE",
+            entityIdBigint: row.active_scan_id,
+            oldValues: { status: oldRow.status, network_id: oldRow.active_network_id, scan_id: oldRow.active_scan_id },
+            newValues: { status: "FAILED", failure_reason: "heartbeat timeout" },
+            meta: { device_id: DEVICE_ID },
+          }).catch(() => {});
+        }
 
         row = updated;
         break;
@@ -167,7 +169,7 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
   }
 
   const isSwitching = row.status === "RUNNING" && (row.active_network_id !== networkId || row.active_scan_id !== numericScanId);
-  const eventName = isSwitching ? "SWITCH_TARGET" : "START_DETECTION";
+  const eventName = isSwitching ? "DETECTION.SWITCH_TARGET" : "DETECTION.START";
   const oldRow = { ...row };
 
   const payload = {
@@ -239,8 +241,24 @@ async function stop(req, actorId, reasonInfo) {
   const { reason_code, reason_note } = reasonInfo || {};
   let row = await ensureRow();
 
-  // Idempotent: already STOPPED or FAILED → return row, no SUCCESS audit
+  // Idempotent: already STOPPED or FAILED → return row, log DENIED (no-op), no SUCCESS audit
   if (row.status === "STOPPED" || row.status === "FAILED") {
+    await logAuditEvent({
+      req,
+      actorId,
+      eventName: "DETECTION.STOP",
+      eventStatus: "DENIED",
+      entityType: "DETECTION_STATE",
+      entityIdUuid: row.active_network_id || null,
+      entityIdBigint: row.active_scan_id || null,
+      meta: {
+        noop: true,
+        current_status: row.status,
+        reason_code: reason_code || null,
+        reason_note: reason_note || null,
+        trigger: "manual_stop",
+      },
+    }).catch(() => {});
     return row;
   }
 

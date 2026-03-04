@@ -210,14 +210,27 @@ This prevents race conditions when multiple tabs or users attempt simultaneous s
 
 ## Audit events
 
-All detection lifecycle transitions are logged to the audit table:
+All detection lifecycle transitions are logged to `public.audit_logging` with `entityType: "DETECTION_STATE"`.
+Event names use **dot-notation** consistently.
 
-| Action | Detail |
-|---|---|
-| `START_DETECTION` | Detection started (includes network_id, scan_id) |
-| `DETECTION.STOP` | Detection stopped — governed. SUCCESS only on RUNNING→STOPPED. Includes `reason_code`, `reason_note`, `trigger: "manual_stop"` in meta. See **Stop Governance** above. |
-| `SWITCH_TARGET` | Network/scan changed while detection was running |
-| `DETECTION_FAILED` | Heartbeat timeout triggered automatic failure |
+| Event Name | Status | Detail |
+|---|---|---|
+| `DETECTION.START` | SUCCESS | Detection started (includes network_id, scan_id in oldValues/newValues) |
+| `DETECTION.SWITCH_TARGET` | SUCCESS | Network/scan changed while detection was already running |
+| `DETECTION.STOP` | SUCCESS | RUNNING → STOPPED transition. Includes `reason_code`, `reason_note`, `trigger: "manual_stop"` in meta. See **Stop Governance** above. |
+| `DETECTION.STOP` | DENIED | Stop called when already STOPPED or FAILED (no-op). `meta.noop = true`, `meta.current_status` shows why. |
+| `DETECTION.STOP` | FAILED | Server error during stop attempt (logged by controller catch block). |
+| `DETECTION.FAILED` | SUCCESS | Heartbeat timeout (>30 s) auto-marked RUNNING → FAILED. Only logged when `started_by_profile_id` is non-null. |
+
+**Verify in DB:**
+```sql
+SELECT id, created_at, event_name, event_status, entity_type,
+       actor_id, old_values, new_values, meta
+FROM   public.audit_logging
+WHERE  event_name LIKE 'DETECTION.%'
+ORDER  BY created_at DESC
+LIMIT  20;
+```
 
 ---
 
