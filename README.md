@@ -4,6 +4,158 @@ A Web-based Security Assessment Tool using Microcontroller applied to Unsecured 
 
 ---
 
+## Tech Stack
+
+| Layer     | Technology                                                        |
+|-----------|-------------------------------------------------------------------|
+| Frontend  | React 19 (Vite), React Router 7, Recharts, Axios                 |
+| Backend   | Express 5, Node.js                                                |
+| Database  | PostgreSQL via Supabase (SDK — zero raw SQL)                      |
+| Auth      | JWKS JWT (in-memory access token) + HttpOnly refresh cookie       |
+| Hardware  | Raspberry Pi (FastAPI), Tailscale Funnel for remote connectivity  |
+| Hosting   | Railway (planned)                                                 |
+| Testing   | Jest (backend unit/integration), Playwright (E2E), Burp/ZAP (security) |
+
+---
+
+## Project Structure
+
+```
+whypii/
+├── src/                    # React frontend (Vite)
+│   ├── api/                # Axios instance + API helpers
+│   ├── components/         # Reusable UI components
+│   ├── context/            # React context providers (auth, threat detection)
+│   ├── hooks/              # Custom React hooks
+│   ├── layouts/            # Sidebar, page layouts
+│   ├── pages/              # Route-level page components
+│   └── lib/                # Utilities
+├── backend/                # Express.js API server
+│   ├── controllers/        # Route handlers
+│   ├── services/           # Business logic
+│   ├── repositories/       # Supabase data access
+│   ├── middleware/         # Auth, roles, rate limiting, request ID
+│   ├── routes/             # Express route definitions
+│   ├── validators/         # Input validation
+│   ├── utils/              # Shared utilities
+│   └── __tests__/          # Jest test suites
+├── e2e/                    # Playwright E2E tests
+└── public/                 # Static assets
+```
+
+---
+
+## Architecture
+
+```
+Browser (React SPA)
+    │
+    │  HTTPS / cookies
+    ▼
+Railway (Express API)
+    │
+    ├──→ Supabase (PostgreSQL + Auth)
+    │
+    └──→ Tailscale Funnel (public HTTPS)
+              │
+              ▼
+         Raspberry Pi
+         ├── nginx (127.0.0.1:9000 — gateway)
+         └── FastAPI (scanning, AP control, detection)
+```
+
+- **Express is the only caller of the Pi.** The browser never talks to the Pi directly.
+- **Tailscale Funnel** exposes the Pi because Railway cannot join a tailnet.
+- **HMAC signing** authenticates Express→Pi commands; **nginx rate limits** protect availability.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- Supabase project (with service role key)
+- Raspberry Pi with FastAPI + nginx (for device features)
+
+### Frontend
+
+```bash
+npm install
+npm run dev          # Vite dev server on http://localhost:5173
+```
+
+### Backend
+
+```bash
+cd backend
+npm install
+cp .env.example .env  # Fill in Supabase keys, JWT secret, etc.
+npm start             # Express on http://localhost:3001
+```
+
+### Tests
+
+```bash
+# Backend unit/integration tests
+cd backend
+npm test
+npm run test:coverage
+
+# E2E tests (Playwright)
+npm run test:e2e
+npm run test:e2e:headed
+```
+
+---
+
+## Security Hardening
+
+The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md).
+
+### Current Security Posture: 4/10
+
+| Phase | Name                        | Status       | Key Items                                                      |
+|-------|-----------------------------|--------------|----------------------------------------------------------------|
+| 0     | Secrets Remediation         | Not started  | Rotate Supabase key, scrub git history, generate Pi secrets    |
+| 1     | P0 Infrastructure           | Not started  | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies, Funnel architecture doc |
+| 2     | Route Auth Lockdown         | Not started  | Add `authJWT` to 6+ unprotected route groups                  |
+| 3     | Bug Fixes & Info Disclosure | Not started  | Fix SA role check, restrict `getAllUsers`, seal 17 error leaks |
+| 4     | Deployment Readiness        | Not started  | CORS via env, frontend baseURL via env, remove hardcoded URLs  |
+| 4.5   | Pi Connectivity Readiness   | Not started  | Funnel URL stability, nginx binding, timeouts, Idempotency-Key |
+| 5     | Optional Polish             | Not started  | UUID validation, field allowlists, self-deletion prevention    |
+| 6     | Testing Deliverables        | Not started  | Scope list, test matrix, before/after evidence, retest proof   |
+
+### Top 4 Deployment Watchlist Items
+
+1. **CSP `connect-src`** — will break production if too strict (missing Railway/Supabase domains)
+2. **CORS / cookies** — `SameSite=Lax` cookies won't send cross-origin; need `None; Secure` in prod
+3. **Multi-instance** — in-memory rate limiter + nonce cache become inconsistent if Railway scales
+4. **Funnel ports** — Funnel only listens on 443/8443/10000; nginx 9000 is internal only
+
+---
+
+## Documentation Index
+
+| Document                                                                  | Covers                                              |
+|---------------------------------------------------------------------------|------------------------------------------------------|
+| [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md)               | Full phased security plan, audit findings, risk notes |
+| [`DEVICE_MANAGEMENT_README.md`](DEVICE_MANAGEMENT_README.md)             | Device management feature (AP, portal, scans)        |
+| [`AP_ENABLE_PORTAL_README.md`](AP_ENABLE_PORTAL_README.md)               | Access Point & captive portal flow                   |
+| [`ACCOUNTS_FLOW_README.md`](ACCOUNTS_FLOW_README.md)                     | User account management flow                         |
+| [`AUDIT_README.md`](AUDIT_README.md)                                     | Audit logging system                                 |
+| [`SESSION_PERSISTENCE_README.md`](SESSION_PERSISTENCE_README.md)         | Session persistence & token refresh                  |
+| [`SAM_CHANGES_README.md`](SAM_CHANGES_README.md)                         | Security Assessment Management changes               |
+| [`HISTORY_CHANGES_README.md`](HISTORY_CHANGES_README.md)                 | History/vulnerability tracking changes               |
+| [`CHANGES_README.md`](CHANGES_README.md)                                 | General changelog                                    |
+| [`scanREADME.md`](scanREADME.md)                                         | Scan workflow                                        |
+| [`threatsREADME.md`](threatsREADME.md)                                   | Threat detection system                              |
+| [`clearListREADME.md`](clearListREADME.md)                               | Clear list functionality                             |
+| [`backend/TESTING.md`](backend/TESTING.md)                               | Backend test guide                                   |
+| [`backend/THREATS.md`](backend/THREATS.md)                                | Backend threat model                                 |
+
+---
+
 ## UI Updates — Threat Detection Indicator (Global)
 
 ### What changed
