@@ -365,7 +365,7 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 // );
 
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 const { execSync } = require('child_process');
 
 function killPort(port) {

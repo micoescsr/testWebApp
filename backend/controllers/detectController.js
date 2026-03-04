@@ -186,6 +186,20 @@ async function persistThreatRows(threatRows, targetBssid) {
 async function getStatus(req, res) {
   try {
     const row = await detectStateService.getStatusAndMaybeFail(req);
+
+    // Enrich with SSID from networks table so the frontend can display
+    // which network is being monitored — even after a page refresh.
+    if (row.active_network_id) {
+      const { data: net } = await supabaseClient
+        .from("networks")
+        .select("ssid")
+        .eq("network_id", row.active_network_id)
+        .maybeSingle();
+      row.ssid = net?.ssid || null;
+    } else {
+      row.ssid = null;
+    }
+
     return res.json(row);
   } catch (err) {
     console.error("[detect/status] error:", err);

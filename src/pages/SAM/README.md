@@ -22,7 +22,7 @@
    - Shows "Updated Xs ago" when actively monitoring.
    - **Active detection wins:** If `detectionStatus === "DETECTING"`, the pill always shows "Monitoring" even if `selectedNetwork._notInRange` is true. Detection runs on the Raspberry Pi independently.
    - "Paused — out of range" only appears when detection is idle/stopped.
-   - The SSID is resolved from: `backendState.ssid` → `activeNetwork` (context) → `lastScannedNetwork.ssid` → `selectedNetwork.ssid`.
+   - The SSID is resolved from: `backendState.ssid` (authoritative, from backend JOIN) → `activeNetwork` (session-cached context) → `lastScannedNetwork.ssid` → `selectedNetwork.ssid`.
 
 3. **Dismissible out-of-range banner**
    - The orange warning banner ("Previously selected network … is no longer in range") now has a ✕ dismiss button.

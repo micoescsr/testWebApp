@@ -67,7 +67,7 @@ All endpoints are mounted at `/api/detect` and require JWT auth (`authJWT` middl
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/detect/status` | Returns current detection state. Auto-marks FAILED if heartbeat timed out (>30s). |
+| `GET` | `/api/detect/status` | Returns current detection state, **enriched with `ssid`** from the `networks` table. Auto-marks FAILED if heartbeat timed out (>30s). |
 | `POST` | `/api/detect/start` | Starts detection or switches target. Body: `{ networkId, scanId }`. `scanId` must be a numeric bigint from `public.scans`, **not** a UUID. |
 | `POST` | `/api/detect/stop` | Stops detection. Body: `{ reason }` (optional, defaults to `"MANUAL"`). |
 | `POST` | `/api/detect/heartbeat` | Updates `last_heartbeat_at`. Called automatically by the poll endpoint. |
@@ -124,7 +124,8 @@ All detection lifecycle transitions are logged to the audit table:
 
 ### Backend
 - **Detection state service**: [backend/services/detectStateService.js](backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, `startServerHeartbeatLoop`, `stopServerHeartbeatLoop`, optimistic locking).
-- **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
+- **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. `getStatus()` JOINs the `networks` table to enrich the response with the monitored SSID. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
+- **Detection status test**: [backend/__tests__/unit/detectGetStatus.test.js](backend/__tests__/unit/detectGetStatus.test.js) — Unit tests for SSID enrichment in `getStatus()` (6 cases: found, not found, stopped, empty string, DB error, field preservation).
 - **Detection routes**: [backend/routes/detectRoutes.js](backend/routes/detectRoutes.js) — Express router mapping endpoints to controller handlers.
 - **Server mount**: [backend/server.js](backend/server.js) — mounts `detectRoutes` at `/api/detect`, calls `detectStateService.ensureRow()` and `detectStateService.startServerHeartbeatLoop()` on startup.
 - **Auto-start on scan save**: [backend/controllers/rasPiController.js](backend/controllers/rasPiController.js) — calls `detectStateService.startOrSwitch()` after risk pipeline.

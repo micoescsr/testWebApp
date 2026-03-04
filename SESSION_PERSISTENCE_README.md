@@ -53,6 +53,7 @@ All keys use the `wf:` prefix (short for "WiFi framework") to avoid collisions w
 | `wf:selectedNetwork` | `{ v: 1, value: { bssid, ssid, channel, persistedAt } }` | SAM page on network selection | Logout, session end |
 | `wf:lastScannedNetwork` | `{ v: 1, value: { bssid, ssid, channel, persistedAt } }` | SAM page after scan completes | Logout, session end |
 | `wf:samTab` | `{ v: 1, value: "vulnerabilities" }` | SAM page on tab change | Logout, session end |
+| `wf:activeNetwork` | `{ v: 1, value: "MyHomeWiFi" }` | `ThreatDetectionContext` on backend sync or SAM scan start | Logout, session end |
 | `wf:dmTab` | `{ v: 1, value: "announcement" }` | Device Management on tab change | Logout, session end |
 
 ### Versioned envelope format
@@ -80,6 +81,7 @@ This allows future schema migrations. If the app reads an envelope with an unexp
 | File | What changed |
 |---|---|
 | `src/context/NetworkContext.jsx` | `useState` → `useSessionState` with a single atomic key (`wf:networkScan`). `setNetworkId` auto-resets `scanId` when the network changes (prevents ID mismatch). Added `clearNetworkScan()`. |
+| `src/context/ThreatDetectionContext.jsx` | `activeNetworkOverride` changed from `useState(null)` → `useSessionState("wf:activeNetwork", null)`. Added sync effect from `backendState.ssid`. Resolution priority flipped: backend is authoritative, session is fallback. |
 | `src/layouts/Sidebar.jsx` | `handleLogout` now calls the backend (`POST /auth/logout`), clears the in-memory token, wipes all `wf:*` keys, then navigates to `/login`. |
 | `src/api/axios.js` | Force-logout path (refresh token failure) now also calls `clearSessionState()` before redirecting. |
 | `src/pages/SAM/SAM.jsx` | Persists selected network snapshot + last scanned network. On mount: restores from live scan list, auto-fetches vulnerabilities, degrades gracefully if network is out of range. Forces `DETECTING` → `IDLE` on refresh with a dismissible banner. Tab state persisted. |
@@ -96,6 +98,7 @@ This allows future schema migrations. If the app reads an envelope with an unexp
 | Refresh with network selected | Network gone, table empty | Network restored, vulnerabilities auto-fetched from DB |
 | Refresh with network no longer in range | N/A (was always lost) | Banner: *"Previously selected network is no longer in range"* |
 | Refresh during threat detection | Polling stopped silently | UI calls `/detect/status` on mount → resumes DETECTING if backend is RUNNING |
+| Refresh — monitoring pill network name | Lost (showed "Monitoring" with no SSID) | SSID restored from session cache instantly, then confirmed from backend (`/detect/status` now returns `ssid`) |
 | Refresh on Threats tab | Reset to Vulnerabilities | Stays on Threats tab |
 
 ### Device Management
