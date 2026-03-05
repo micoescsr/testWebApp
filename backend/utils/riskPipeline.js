@@ -1,7 +1,6 @@
 // utils/riskPipeline.js
 // Risk pipeline: bucket computation, version bumping, auto-portal patching.
-// Bucket-only phase — no numeric risk_score algorithm yet.
-// When computeRiskScore() is ready, swap derivation logic here; nothing else changes.
+// Scoring is driven by Supabase RPC compute_scan_risk; bucketize() maps 0-100 to official scale.
 
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
@@ -15,15 +14,23 @@ const BUCKETS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const BUCKET_RANK = Object.fromEntries(BUCKETS.map((b, i) => [b, i]));
 
 /**
- * Deterministic score → bucket (for future use when numeric scoring is added).
+ * Deterministic score → bucket using the OFFICIAL percent scale.
+ *
+ *   0      → LOW
+ *   1–39   → LOW
+ *   40–69  → MEDIUM
+ *   70–89  → HIGH
+ *   90–100 → CRITICAL
+ *
  * @param {number} score  0–100
  * @returns {string} LOW|MEDIUM|HIGH|CRITICAL
  */
 function bucketize(score) {
 	const s = Number(score) || 0;
-	if (s < 25) return 'LOW';
-	if (s < 50) return 'MEDIUM';
-	if (s < 75) return 'HIGH';
+	if (s <= 0)  return 'LOW';
+	if (s <= 39) return 'LOW';
+	if (s <= 69) return 'MEDIUM';
+	if (s <= 89) return 'HIGH';
 	return 'CRITICAL';
 }
 

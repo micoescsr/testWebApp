@@ -125,6 +125,35 @@ async function getStatusAndMaybeFail(req) {
           });
         }
 
+        // Finalization: recompute risk one last time + stamp scan_end + update network risk (best-effort)
+        if (row.active_scan_id) {
+          try {
+            const { data: finalScore } = await supabaseClient.rpc("compute_scan_risk", { p_scan_id: row.active_scan_id });
+            console.log(`[detectState] FAILED finalization: compute_scan_risk returned ${finalScore} for scan ${row.active_scan_id}`);
+
+            // Update network risk with final score
+            if (row.active_network_id) {
+              const { bucketize, updateNetworkRisk } = require("../utils/riskPipeline");
+              const score = finalScore ?? 0;
+              await updateNetworkRisk(row.active_network_id, {
+                newBucket: bucketize(score),
+                newScore: score,
+                reason: "detection_failed",
+                scanId: row.active_scan_id,
+              });
+            }
+          } catch (err) {
+            console.error("[detectState] FAILED finalization: risk recompute failed (non-fatal):", err.message);
+          }
+
+          await supabaseClient
+            .from("scans")
+            .update({ scan_end: new Date().toISOString() })
+            .eq("scan_id", row.active_scan_id)
+            .then(() => console.log(`[detectState] FAILED finalization: scan_end stamped for scan ${row.active_scan_id}`))
+            .catch((err) => console.error("[detectState] FAILED finalization: scan_end update failed (non-fatal):", err.message));
+        }
+
         row = updated;
         break;
       }
