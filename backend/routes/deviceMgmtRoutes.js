@@ -13,12 +13,10 @@ const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 const { validateUUID } = require('../middleware/validateUUID');
+const { piFetch } = require('../utils/piFetch');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
-// PORTAL_PATCH_TOKEN is the canonical name; PORTAL_TOKEN is legacy (remove after full migration).
-const PORTAL_TOKEN = process.env.PORTAL_PATCH_TOKEN || process.env.PORTAL_TOKEN || '';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Portal patch constants ──────────────────────────────────────
@@ -303,30 +301,28 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 				ap_status: 'disable',
 			};
 
-			const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+			const orchestrateUrl = '/orchestrate/apply';
 			logFastApiCall('orchestrate/apply (DISABLE)', orchestrateUrl, orchestratePayload, null);
 
-			const fastapiRes = await fetch(orchestrateUrl, {
+			const { ok: piOk, status: piStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(orchestratePayload),
+				jsonBody: orchestratePayload,
 			});
-			const fastapiData = await fastapiRes.json().catch(() => null);
 
 			logFastApiCall('orchestrate/apply RESPONSE (DISABLE)', orchestrateUrl, orchestratePayload, {
-				status: fastapiRes.status,
+				status: piStatus,
 				body: fastapiData,
 			});
 
-			if (!fastapiRes.ok) {
+			if (!piOk) {
 				// Audit: disable failed
 				await logAuditEvent({
 					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'FAILED',
 					entityType: 'NETWORK', entityIdUuid: network_id,
-					meta: { request_id: requestId, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+					meta: { request_id: requestId, fastapi_status: piStatus, fastapi_body: fastapiData },
 				});
 				throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (disable)', {
-					fastapi_status: fastapiRes.status,
+					fastapi_status: piStatus,
 					fastapi_body: fastapiData,
 				});
 			}
@@ -361,7 +357,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 			await logAuditEvent({
 				req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'SUCCESS',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, fastapi_status: fastapiRes.status },
+				meta: { request_id: requestId, fastapi_status: piStatus },
 			});
 
 			const responseBody = {
@@ -443,30 +439,25 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 				network_id, net.bssid, net.ssid
 			);
 
-			const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+			const portalUrl = '/portal/patch';
 			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
 
-			const portalRes = await fetch(portalUrl, {
+			const { ok: portalOk, status: portalStatus, data: portalData } = await piFetch('/portal/patch', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-				},
-				body: JSON.stringify(patchPayload),
+				jsonBody: patchPayload,
 			});
-			const portalData = await portalRes.json().catch(() => null);
 
 			logFastApiCall('portal/patch RESPONSE (INIT)', portalUrl, patchPayload, {
-				status: portalRes.status,
+				status: portalStatus,
 				body: portalData,
 			});
 
-			if (!portalRes.ok) {
+			if (!portalOk) {
 				// Audit: portal init failed — abort enable
 				await logAuditEvent({
 					req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'FAILED',
 					entityType: 'NETWORK', entityIdUuid: network_id,
-					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status, fastapi_body: portalData },
+					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalStatus, fastapi_body: portalData },
 				});
 				// Also audit enable request failure so the trail is queryable
 				await logAuditEvent({
@@ -504,7 +495,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 			await logAuditEvent({
 				req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'SUCCESS',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status },
+				meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalStatus },
 			});
 		}
 
@@ -518,30 +509,28 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 			ap_status: 'enable',
 		};
 
-		const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+		const orchestrateUrl = '/orchestrate/apply';
 		logFastApiCall('orchestrate/apply (ENABLE)', orchestrateUrl, orchestratePayload, null);
 
-		const fastapiRes = await fetch(orchestrateUrl, {
+		const { ok: enableOk, status: enableStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(orchestratePayload),
+			jsonBody: orchestratePayload,
 		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
 
 		logFastApiCall('orchestrate/apply RESPONSE (ENABLE)', orchestrateUrl, orchestratePayload, {
-			status: fastapiRes.status,
+			status: enableStatus,
 			body: fastapiData,
 		});
 
-		if (!fastapiRes.ok) {
+		if (!enableOk) {
 			// Audit: enable failed
 			await logAuditEvent({
 				req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, scan_id, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+				meta: { request_id: requestId, scan_id, fastapi_status: enableStatus, fastapi_body: fastapiData },
 			});
 			throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (enable)', {
-				fastapi_status: fastapiRes.status,
+				fastapi_status: enableStatus,
 				fastapi_body: fastapiData,
 			});
 		}
@@ -592,7 +581,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 		await logAuditEvent({
 			req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: fastapiRes.status },
+			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus },
 		});
 
 		const responseBody = {
@@ -892,32 +881,27 @@ router.post('/portal/update', authJWT, async (req, res) => {
 		const fastapiPayload = { network_id, ...patch };
 		const patchedKeys = Object.keys(patch);
 
-		const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+		const portalUrl = '/portal/patch';
 		logFastApiCall(`portal/patch (${update_type})`, portalUrl, fastapiPayload, null);
 
-		const fastapiRes = await fetch(portalUrl, {
+		const { ok: patchOk, status: patchStatus, data: fastapiData } = await piFetch('/portal/patch', {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(fastapiPayload),
+			jsonBody: fastapiPayload,
 		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
 
 		logFastApiCall(`portal/patch RESPONSE (${update_type})`, portalUrl, fastapiPayload, {
-			status: fastapiRes.status,
+			status: patchStatus,
 			body: fastapiData,
 		});
 
-		if (!fastapiRes.ok) {
+		if (!patchOk) {
 			await logAuditEvent({
 				req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+				meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: patchStatus, fastapi_body: fastapiData },
 			});
 			throw httpError(502, 'FASTAPI_PORTAL_PATCH_FAILED', fastapiData?.detail || 'FastAPI portal/patch failed', {
-				fastapi_status: fastapiRes.status,
+				fastapi_status: patchStatus,
 				fastapi_body: fastapiData,
 			});
 		}
@@ -946,7 +930,7 @@ router.post('/portal/update', authJWT, async (req, res) => {
 		await logAuditEvent({
 			req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, stamped_version: stampedVersion },
+			meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: patchStatus, stamped_version: stampedVersion },
 		});
 
 		return res.json({

@@ -12,10 +12,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const crypto = require("crypto");
-
-// ── FastAPI base URL (Phase 4-E) ────────────────────────────────────
-// NEVER hardcode Tailscale URLs — always use env var so dev/prod stay separate.
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
+const { piFetch } = require("./utils/piFetch");
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
@@ -145,21 +142,11 @@ app.use("/api/history", historyRoutes);
 // Phase 2-D: Device status requires JWT (browser-called)
 app.get("/api/device/status", authJWT, async (req, res) => {
   try {
-    const r = await fetch(`${FASTAPI_BASE}/device/status`, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-    });
-
-    const data = await r.json().catch(() => null);
-
-    // Forward FastAPI status code and JSON
-    return res.status(r.status).json(
-      data ?? { status: "ERROR", error: "Non-JSON response from FastAPI" }
-    );
-
+    const { status, data } = await piFetch("/device/status");
+    return res.status(status).json(data);
   } catch (err) {
     console.error('[device/status] FastAPI proxy error:', err);
-    return res.status(502).json({
+    return res.status(err.status || 502).json({
       status: "ERROR",
       error: "Failed to reach device status endpoint",
     });

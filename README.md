@@ -13,7 +13,7 @@ A Web-based Security Assessment Tool using Microcontroller applied to Unsecured 
 | Database  | PostgreSQL via Supabase (SDK — zero raw SQL)                      |
 | Auth      | JWKS JWT (in-memory access token) + HttpOnly refresh cookie       |
 | Hardware  | Raspberry Pi (FastAPI), Tailscale Funnel for remote connectivity  |
-| Hosting   | Railway (planned)                                                 |
+| Hosting   | Railway (frontend: `serve -s dist`, backend: Express)             |
 | Testing   | Jest (backend unit/integration), Playwright (E2E), Burp/ZAP (security) |
 
 ---
@@ -113,25 +113,26 @@ npm run test:e2e:headed
 
 The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md).
 
-### Current Security Posture: 4/10
+### Current Security Posture: 8/10
 
 | Phase | Name                        | Status       | Key Items                                                      |
 |-------|-----------------------------|--------------|----------------------------------------------------------------|
-| 0     | Secrets Remediation         | Not started  | Rotate Supabase key, scrub git history, generate Pi secrets    |
-| 1     | P0 Infrastructure           | Not started  | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies, Funnel architecture doc |
-| 2     | Route Auth Lockdown         | Not started  | Add `authJWT` to 6+ unprotected route groups                  |
-| 3     | Bug Fixes & Info Disclosure | Not started  | Fix SA role check, restrict `getAllUsers`, seal 17 error leaks |
-| 4     | Deployment Readiness        | Not started  | CORS via env, frontend baseURL via env, remove hardcoded URLs  |
+| 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `PORTAL_PATCH_TOKEN` + `CONTROL_SIGNING_SECRET` in env |
+| 1     | P0 Infrastructure           | **Done**     | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies (`CROSS_ORIGIN_COOKIES`) |
+| 2     | Route Auth Lockdown         | **Done**     | `authJWT` on all 9 route groups, `requireSuperadmin` on audit  |
+| 3     | Bug Fixes & Info Disclosure | **Partial**  | Most leaks sealed; residual `err.message` in rasPi/auth/user/detect controllers |
+| 4     | Deployment Readiness        | **Partial**  | CORS via env, `VITE_API_BASE_URL` in axios; `deviceApi.js` still hardcoded |
 | 4.5   | Pi Connectivity Readiness   | Not started  | Funnel URL stability, nginx binding, timeouts, Idempotency-Key |
-| 5     | Optional Polish             | Not started  | UUID validation, field allowlists, self-deletion prevention    |
-| 6     | Testing Deliverables        | Not started  | Scope list, test matrix, before/after evidence, retest proof   |
+| 5     | Optional Polish             | **Done**     | UUID validation middleware on device/user/rasPi routes          |
+| 6     | Testing Deliverables        | **Done**     | Jest unit + integration tests, Playwright E2E, coverage reports |
 
-### Top 4 Deployment Watchlist Items
+### Deployment Watchlist Items
 
-1. **CSP `connect-src`** — will break production if too strict (missing Railway/Supabase domains)
-2. **CORS / cookies** — `SameSite=Lax` cookies won't send cross-origin; need `None; Secure` in prod
-3. **Multi-instance** — in-memory rate limiter + nonce cache become inconsistent if Railway scales
-4. **Funnel ports** — Funnel only listens on 443/8443/10000; nginx 9000 is internal only
+1. **CSP `connect-src`** — auto-configured per environment; Railway + Supabase domains added in prod
+2. **CORS / cookies** — set `CROSS_ORIGIN_COOKIES=true` on Railway backend for `SameSite=None; Secure`
+3. **Multi-instance** — in-memory rate limiter resets on restart; Redis required if Railway auto-scales
+4. **`deviceApi.js` hardcoded URL** — still uses `localhost:3000`; should use shared axios instance
+5. **Funnel ports** — Funnel only listens on 443/8443/10000; nginx 9000 is internal only
 
 ---
 

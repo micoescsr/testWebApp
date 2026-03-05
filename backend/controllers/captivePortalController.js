@@ -3,10 +3,7 @@
 
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('../utils/auditLogger');
-
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || 'http://127.0.0.1:8000';
-// PORTAL_PATCH_TOKEN is the canonical name; PORTAL_TOKEN is legacy (remove after full migration).
-const PORTAL_TOKEN = process.env.PORTAL_PATCH_TOKEN || process.env.PORTAL_TOKEN || '';
+const { piFetch } = require('../utils/piFetch');
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared helpers (exported for use in deviceMgmtRoutes)
@@ -613,18 +610,13 @@ async function syncPortal(req, res) {
 		);
 
 		// Forward to FastAPI
-		const fastapiRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
+		const { ok: piOk, data: fastapiData } = await piFetch('/portal/patch', {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(payload),
+			jsonBody: payload,
 		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
-		if (!fastapiRes.ok) {
+		if (!piOk) {
 			throw new Error(
-				fastapiData?.detail || `portal/patch error: ${fastapiRes.status}`
+				fastapiData?.detail || `portal/patch error`
 			);
 		}
 

@@ -151,7 +151,8 @@ Add branch protection on `main`:
 | `SUPABASE_URL` | `https://dev-project.supabase.co` | `https://prod-project.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | dev key | prod key (rotated) |
 | `JWT_SECRET` | dev secret | prod secret |
-| `ALLOWED_ORIGINS` | `http://localhost:5173` | `https://yourapp.up.railway.app` |
+| `ALLOWED_ORIGINS` | `http://localhost:5173` | `https://web-dev-1-production.up.railway.app` |
+| `CROSS_ORIGIN_COOKIES` | (not set / `false`) | `true` (required for cross-origin `SameSite=None; Secure` cookies) |
 | `FASTAPI_BASE_URL` | `http://127.0.0.1:8000` | `https://pi.tail12345.ts.net` |
 | `CONTROL_SIGNING_SECRET` | (optional) | generated secret |
 | `PORTAL_PATCH_TOKEN` | (optional) | generated secret (code falls back to `PORTAL_TOKEN` for legacy compat) |
@@ -170,7 +171,9 @@ Vite only exposes vars prefixed with `VITE_`. Set in Railway for frontend servic
 
 | Variable | Dev | Prod |
 |----------|-----|------|
-| `VITE_API_BASE_URL` | (not needed — Vite proxy) | `https://yourapp-api.up.railway.app/api` |
+| `VITE_API_BASE_URL` | (not needed — Vite proxy) | `https://api-dev-production.up.railway.app/api` |
+| `VITE_SUPABASE_URL` | Supabase dev URL | Supabase prod URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase dev anon key | Supabase prod anon key |
 
 ---
 
@@ -252,9 +255,21 @@ Before any schema change in prod:
 
 ## Frontend Build Configuration
 
-### Vite proxy (development)
+### Railway service commands
 
-Already configured in `vite.config.js` — proxies `/api` to `localhost:3000`:
+| Setting | Value |
+|---------|-------|
+| **Root Directory** | `/` (repo root) |
+| **Build Command** | `npm install --prefer-offline && npm run build` |
+| **Start Command** | `npm start` |
+
+The `start` script in `package.json` runs `serve -s dist -l tcp://0.0.0.0:$PORT` (Railway injects `$PORT`).
+
+> **Note:** `npm ci` cannot be used because Railway's build layer locks `node_modules/.vite`. Use `npm install --prefer-offline` instead. The Vite cache is relocated to `.vite-cache/` (via `cacheDir` in `vite.config.js`) to avoid this issue.
+
+### Vite proxy (development only)
+
+Configured in `vite.config.js` — proxies `/api` to `localhost:3000`:
 ```js
 server: {
   proxy: {
@@ -268,40 +283,36 @@ server: {
 
 ### Production build
 
-For production, set `VITE_API_BASE_URL` as a build-time env var:
-```bash
-# Railway build command for frontend service:
-VITE_API_BASE_URL=https://yourapp-api.up.railway.app/api npm run build
+Set `VITE_API_BASE_URL` as a **Railway environment variable** on the frontend service. Vite bakes it in at build time:
+
+```
+VITE_API_BASE_URL=https://api-dev-production.up.railway.app/api
 ```
 
-The axios client already reads this:
+The axios client reads this:
 ```js
 baseURL: import.meta.env.VITE_API_BASE_URL || "/api"
 ```
 
-### If frontend and backend are the same Railway service
+### Current architecture: separate Railway services
 
-If you serve the Vite build from Express (single service), no `VITE_API_BASE_URL` is needed — `/api` routes are on the same origin. Add to `server.js`:
+The frontend and backend run as **separate Railway services** (`web-dev-1` and `api-dev`). This means:
+- `VITE_API_BASE_URL` must be set on the frontend service
+- `ALLOWED_ORIGINS` must include the frontend domain on the backend service
+- `CROSS_ORIGIN_COOKIES=true` must be set on the backend for cookie auth to work cross-origin
 
-```js
-if (process.env.NODE_ENV === 'production') {
-  const path = require('path');
-  app.use(express.static(path.join(__dirname, '../dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-  });
-}
-```
+> **Not using single-service mode.** If you ever combine them into one service, remove `VITE_API_BASE_URL` and serve the frontend static files from Express.
 
 ---
 
 ## Domain Setup
 
-| Environment | Domain | Source |
-|-------------|--------|--------|
-| Dev | `dev-yourapp.up.railway.app` | Railway auto-generated |
-| Prod | `yourapp.up.railway.app` | Railway auto-generated |
-| Prod (custom) | `yourapp.com` | Custom domain in Railway |
+| Service | Domain | Source |
+|---------|--------|--------|
+| Frontend (dev) | `web-dev-1-production.up.railway.app` | Railway auto-generated |
+| Backend (dev) | `api-dev-production.up.railway.app` | Railway auto-generated |
+| Frontend (prod) | TBD | Railway auto-generated or custom |
+| Backend (prod) | TBD | Railway auto-generated or custom |
 
 ### Custom domain steps
 

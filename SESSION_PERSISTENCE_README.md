@@ -1,7 +1,7 @@
 # Session Persistence — Architecture & Policy
 
 > **Scope:** Explains how the Why-PII? web app preserves UI state across page refreshes without compromising security.  
-> **Last updated:** March 2, 2026
+> **Last updated:** March 5, 2026
 
 ---
 

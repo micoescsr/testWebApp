@@ -52,21 +52,21 @@ Execution order diagram with dependency notes
 
 ### Critical Findings
 
-| ID  | Finding                                            | Impact                                         |
-|-----|----------------------------------------------------|-------------------------------------------------|
-| C1  | Captive portal routes — zero auth                  | Anyone can modify portal content               |
-| C2  | Device management routes — zero auth               | Anyone can toggle AP, update portal, read state |
-| C3  | rasPi GET routes — no auth                         | Anyone can enumerate all networks              |
-| C4  | No rate limiting on any endpoint                   | Unlimited brute force attempts                 |
-| C5  | `.env` files committed to git history              | Service role key exposed in repo               |
-| C6  | No Helmet / no security headers                    | Missing CSP, HSTS, X-Frame-Options, etc.       |
-| C7  | `trust proxy` not configured                       | Rate limiting and IP logging broken behind proxy |
+| ID  | Finding                                            | Status       | Resolution                                         |
+|-----|----------------------------------------------------|--------------|----------------------------------------------------||
+| C1  | Captive portal routes — zero auth                  | **Resolved** | `authJWT` applied in `captivePortalRoutes.js`      |
+| C2  | Device management routes — zero auth               | **Resolved** | `authJWT` applied in `deviceMgmtRoutes.js`         |
+| C3  | rasPi GET routes — no auth                         | **Resolved** | `authJWT` applied in `rasPiRoutes.js`              |
+| C4  | No rate limiting on any endpoint                   | **Resolved** | `globalLimiter` + `loginLimiter` + `refreshLimiter` |
+| C5  | `.env` files committed to git history              | **Resolved** | `.env` gitignored; `.env.example` files added      |
+| C6  | No Helmet / no security headers                    | **Resolved** | Helmet + CSP + HSTS configured in `server.js`      |
+| C7  | `trust proxy` not configured                       | **Resolved** | `app.set('trust proxy', 1)` in `server.js`         |
 
 ---
 
-## Phase 0 — Secrets Remediation
+## Phase 0 — Secrets Remediation ✅
 
-> **Execute FIRST, before any code push.**
+> **Status: DONE.** Pi secrets generated, env vars configured.
 
 | Step | Action                                    | Detail                                                            |
 |------|-------------------------------------------|-------------------------------------------------------------------|
@@ -82,9 +82,9 @@ Execution order diagram with dependency notes
 
 ---
 
-## Phase 1 — P0 Infrastructure
+## Phase 1 — P0 Infrastructure ✅
 
-> **Dependencies:** `trust proxy` (1-A) must come before rate limiting (1-D/E/F).
+> **Status: DONE.** All steps (1-A through 1-K) implemented.
 
 | Step | Action                          | Where                             | Detail                                                                                              |
 |------|---------------------------------|-----------------------------------|------------------------------------------------------------------------------------------------------|
@@ -201,9 +201,9 @@ module.exports = { loginLimiter, refreshLimiter, globalLimiter };
 
 ---
 
-## Phase 2 — Route Auth Lockdown
+## Phase 2 — Route Auth Lockdown ✅
 
-> **This is the single most impactful change.** Fixes broken access control on 6+ route groups.
+> **Status: DONE.** `authJWT` applied to all 9 route groups. Health check added before middleware.
 
 ### Scope — What needs auth added
 
@@ -252,7 +252,7 @@ module.exports = { loginLimiter, refreshLimiter, globalLimiter };
 
 ---
 
-## Phase 3 — P1 Bug Fixes & Info Disclosure
+## Phase 3 — P1 Bug Fixes & Info Disclosure ⚠️ Partial
 
 | Step     | Action                              | Where                              | Detail                                                          |
 |----------|--------------------------------------|-------------------------------------|-----------------------------------------------------------------|
@@ -291,7 +291,9 @@ res.status(500).json({ error: 'Internal server error' });
 
 ---
 
-## Phase 4 — Deployment Readiness (Railway)
+## Phase 4 — Deployment Readiness (Railway) ⚠️ Partial
+
+> **Status:** 4-A through 4-E done. Remaining: `src/api/deviceApi.js` still hardcodes `localhost:3000`.
 
 | Step | Action                              | Where                              | Detail                                                     |
 |------|--------------------------------------|--------------------------------------|------------------------------------------------------------|
@@ -335,9 +337,9 @@ Both layers are required. One without the other leaves a gap.
 
 ---
 
-## Phase 5 — Optional Polish
+## Phase 5 — Optional Polish ✅
 
-> Nice-to-have but not required for capstone. Mention them as "recommended for production."
+> **Status: DONE.** UUID validation middleware applied. `jsonwebtoken` removed (using `jose`).
 
 | Step | Action                          | Where                  | Impact                                                              |
 |------|---------------------------------|------------------------|----------------------------------------------------------------------|
@@ -348,7 +350,9 @@ Both layers are required. One without the other leaves a gap.
 
 ---
 
-## Phase 6 — Testing Deliverables
+## Phase 6 — Testing Deliverables ✅
+
+> **Status: DONE.** Jest unit + integration tests, Playwright E2E tests, coverage reports generated.
 
 ### 6-A: Scope list
 

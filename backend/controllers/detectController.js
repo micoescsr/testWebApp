@@ -6,8 +6,7 @@
 const detectStateService = require("../services/detectStateService");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
-
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
+const { piFetch } = require("../utils/piFetch");
 
 // ─── Shared helpers (moved from server.js) ──────────────────────
 
@@ -340,14 +339,12 @@ async function poll(req, res) {
     // 2) Proxy to FastAPI
     const maxItems = Number(req.query.max_items ?? 50);
 
-    const r = await fetch(
-      `${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`,
-      { method: "GET", headers: { Accept: "application/json" } }
-    );
+    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    const { ok: piOk, data } = await piFetch("/detect/poll", {
+      query: `max_items=${encodeURIComponent(maxItems)}`,
+    });
 
-    const data = await r.json().catch(() => null);
-
-    if (r.ok && data) {
+    if (piOk && data) {
       if (data.results && data.results.length > 0) {
         console.log("THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
       } else {

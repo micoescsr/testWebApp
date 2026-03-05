@@ -1,6 +1,6 @@
 # Accounts & Audit — End-to-End Flow
 
-> Last updated: Feb 26, 2026
+> Last updated: March 5, 2026
 
 ---
 
@@ -451,7 +451,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 | 7 | **Deactivate Supabase Auth session** | `deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session. If the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider calling `supabaseAdmin.auth.admin.signOut(id)` or updating the auth user to disabled. |
 | 8 | **Audit log search** | The search input and status filter exist in the UI but need verification that they work with the new event types and columns. |
 | 9 | **Pagination UX** | Audit logs pagination exists but total count might not account for new event types in filtering. |
-| 10 | **Rate limiting on login** | No rate limiting on `POST /api/auth/login`. Brute-force protection relies entirely on Supabase's built-in limits. |
+| 10 | **Rate limiting on login** | ~~No rate limiting on `POST /api/auth/login`.~~ **DONE** — `loginLimiter` (10 req/15min) applied via `rateLimiter.js`. |
 
 ### Low Priority / Nice to Have
 
@@ -463,7 +463,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 | 14 | **Email notifications** | No email sent when account is deactivated, activated, or temp PW issued. |
 | 15 | **Soft-delete vs hard-delete clarity** | Deactivate = soft-delete (anonymize + inactive). Delete = hard-delete (removed from Supabase Auth). The UI should make this distinction clearer. |
 | 16 | **Confirm modal for non-status edits** | Currently the AUTH-008 checkbox only appears when status changes to active. Normal edits (just name/role changes) don't have their own validation warnings. |
-| 17 | **Role-based route protection** | User routes rely on controller-level `getCurrentUserRole()` checks instead of using the `requireSuperadmin` middleware on the routes. Consider moving to middleware for consistency. |
+| 17 | **Role-based route protection** | ~~User routes rely on controller-level checks instead of middleware.~~ **DONE** — `authJWT` middleware applied to all user routes in `userRoutes.js`. |
 | 18 | **Profile `updated_at` timestamps** | Verify the `updated_at` column auto-updates on profile changes (Supabase trigger or manual). |
 
 ---

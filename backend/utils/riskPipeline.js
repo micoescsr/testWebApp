@@ -5,10 +5,7 @@
 
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
-
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || 'http://127.0.0.1:8000';
-// PORTAL_PATCH_TOKEN is the canonical name; PORTAL_TOKEN is legacy (remove after full migration).
-const PORTAL_TOKEN = process.env.PORTAL_PATCH_TOKEN || process.env.PORTAL_TOKEN || '';
+const { piFetch } = require('./piFetch');
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s
@@ -272,27 +269,21 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 		const patchBucket = preNet?.risk_bucket || bucket;
 
 		const payload = { network_id: networkId, risk: { bucket: patchBucket } };
-		const url = `${FASTAPI_BASE}/portal/patch`;
 
-		console.log(`[riskPipeline] Auto portal/patch → ${url}`, JSON.stringify(payload));
+		console.log(`[riskPipeline] Auto portal/patch →`, JSON.stringify(payload));
 
-		const res = await fetch(url, {
+		const { ok: piOk, status: piStatus, data: body } = await piFetch('/portal/patch', {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(payload),
+			jsonBody: payload,
 		});
-		const body = await res.json().catch(() => null);
 
-		if (!res.ok) {
-			console.error(`[riskPipeline] portal/patch failed: ${res.status}`, body);
+		if (!piOk) {
+			console.error(`[riskPipeline] portal/patch failed: ${piStatus}`, body);
 			await logAuditEvent({
 				req, actorId: null,
 				eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: networkId,
-				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, fastapi_body: body },
+				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: piStatus, fastapi_body: body },
 			});
 			return false;
 		}

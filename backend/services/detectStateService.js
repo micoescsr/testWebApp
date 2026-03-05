@@ -5,13 +5,12 @@
 
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
+const { piFetch } = require("../utils/piFetch");
 
 const DEVICE_ID = 1;
 const HEARTBEAT_TIMEOUT_SEC = 30; // FAILED after 30 s without heartbeat
 const MAX_RETRIES = 2; // optimistic-lock retry limit
 const SERVER_PING_INTERVAL_MS = 10_000; // 10 s — server-side liveness check interval
-
-const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -321,18 +320,14 @@ async function serverPing() {
     const row = await fetchRow();
     if (!row || row.status !== "RUNNING") return; // nothing to ping
 
-    // Lightweight HEAD or GET to FastAPI — just check if it's reachable
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5 s hard timeout
-
-    const r = await fetch(`${FASTAPI_BASE}/detect/poll?max_items=1`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
+    // Lightweight GET to FastAPI — just check if it's reachable
+    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    const { ok } = await piFetch("/detect/poll", {
+      query: "max_items=1",
+      timeoutMs: 5000,
     });
-    clearTimeout(timeout);
 
-    if (r.ok) {
+    if (ok) {
       // Pi is alive — refresh the heartbeat (no req needed)
       const now = new Date().toISOString();
       await lockedUpdate(
