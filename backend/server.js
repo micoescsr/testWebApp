@@ -423,6 +423,24 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 // );
 
 
+// ── Global error handler (Phase 6 — error leak prevention) ──────────
+// Express 4 error middleware must have exactly 4 params: (err, req, res, next).
+// This catches unhandled throw / next(err) from any route or middleware
+// and returns a safe generic message — no stack traces, no internal details.
+app.use((err, _req, res, _next) => {
+  // JSON parse errors from express.json()
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'INVALID_JSON', message: 'Malformed JSON in request body' });
+  }
+  // CORS errors
+  if (err.message === 'CORS not allowed') {
+    return res.status(403).json({ error: 'CORS_REJECTED' });
+  }
+  // Everything else — log internally, return generic
+  console.error(`[global-error] ${err.message}`, { stack: err.stack });
+  return res.status(err.status || 500).json({ error: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
+});
+
 const PORT = process.env.PORT || 3000;
 const { execSync } = require('child_process');
 
