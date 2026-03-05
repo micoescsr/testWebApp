@@ -11,8 +11,7 @@ const HEARTBEAT_TIMEOUT_SEC = 30; // FAILED after 30 s without heartbeat
 const MAX_RETRIES = 2; // optimistic-lock retry limit
 const SERVER_PING_INTERVAL_MS = 10_000; // 10 s — server-side liveness check interval
 
-const FASTAPI_BASE =
-  process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 
 // ─── Helpers ────────────────────────────────────────────────────
 

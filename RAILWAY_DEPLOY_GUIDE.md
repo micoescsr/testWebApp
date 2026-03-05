@@ -154,7 +154,7 @@ Add branch protection on `main`:
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | `https://yourapp.up.railway.app` |
 | `FASTAPI_BASE_URL` | `http://127.0.0.1:8000` | `https://pi.tail12345.ts.net` |
 | `CONTROL_SIGNING_SECRET` | (optional) | generated secret |
-| `PORTAL_PATCH_TOKEN` | (optional) | generated secret |
+| `PORTAL_PATCH_TOKEN` | (optional) | generated secret (code falls back to `PORTAL_TOKEN` for legacy compat) |
 | `SCAN_RUNNER_TOKEN` | (optional) | generated secret |
 
 ### Generating secrets

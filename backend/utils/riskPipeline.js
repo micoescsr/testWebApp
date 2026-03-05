@@ -6,8 +6,9 @@
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
-const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
+const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || 'http://127.0.0.1:8000';
+// PORTAL_PATCH_TOKEN is the canonical name; PORTAL_TOKEN is legacy (remove after full migration).
+const PORTAL_TOKEN = process.env.PORTAL_PATCH_TOKEN || process.env.PORTAL_TOKEN || '';
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s

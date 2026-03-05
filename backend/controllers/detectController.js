@@ -7,8 +7,7 @@ const detectStateService = require("../services/detectStateService");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
 
-const FASTAPI_BASE =
-  process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 
 // ─── Shared helpers (moved from server.js) ──────────────────────
 

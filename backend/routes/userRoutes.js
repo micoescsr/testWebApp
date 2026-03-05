@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/userController");
 const authMiddleware = require("../middleware/authMiddleware");
+const { validateUUID } = require("../middleware/validateUUID");
 
 // Current user profile
 router.get(
@@ -22,6 +23,7 @@ router.get(
 router.put(
   "/profiles/:id",
   authMiddleware.authJWT,
+  validateUUID('id'),
   userController.updateUser
 );
 
@@ -29,6 +31,7 @@ router.put(
 router.delete(
   "/profiles/:id",
   authMiddleware.authJWT,
+  validateUUID('id'),
   userController.deleteUser
 );
 
@@ -36,6 +39,7 @@ router.delete(
 router.post(
   "/profiles/:id/activate-with-temp",
   authMiddleware.authJWT,
+  validateUUID('id'),
   userController.activateUserWithTemp
 );
 
@@ -43,6 +47,7 @@ router.post(
 router.post(
   "/profiles/:id/deactivate",
   authMiddleware.authJWT,
+  validateUUID('id'),
   userController.deactivateUser
 );
 

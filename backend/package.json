@@ -10,7 +10,8 @@
     "test:watch": "jest --config jest.config.js --watch",
     "start": "node server.js",
     "start:dev": "APP_ENV=development node server.js",
-    "start:prod": "APP_ENV=production node server.js"
+    "start:prod": "APP_ENV=production node server.js",
+    "lint:security": "powershell -ExecutionPolicy Bypass -File scripts/lint-security.ps1"
   },
   "keywords": [],
   "author": "",

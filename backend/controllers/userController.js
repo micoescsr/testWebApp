@@ -106,7 +106,15 @@ async function updateUser(req, res) {
     }
 
     const id = req.params.id;
-    const updates = req.body;  // may contain { first_name, last_name, username, role, status }
+    // Phase 5-B: Field allowlist — only accept known fields to prevent mass assignment.
+    const { first_name, last_name, username, email, role, status } = req.body;
+    const updates = {};
+    if (first_name !== undefined) updates.first_name = first_name;
+    if (last_name  !== undefined) updates.last_name  = last_name;
+    if (username   !== undefined) updates.username   = username;
+    if (email      !== undefined) updates.email      = email;
+    if (role       !== undefined) updates.role       = role;
+    if (status     !== undefined) updates.status     = status;
 
     // Capture old values for audit trail
     const oldProfile = await userRepository.findProfileById(id);
@@ -247,6 +255,11 @@ async function deleteUser(req, res) {
     }
 
     const id = req.params.id;
+
+    // Phase 5-C: Prevent superadmin self-deletion.
+    if (currentUser.id === id) {
+      return res.status(403).json({ error: "Cannot delete your own account" });
+    }
 
     // Capture old profile for audit
     let oldProfile = null;

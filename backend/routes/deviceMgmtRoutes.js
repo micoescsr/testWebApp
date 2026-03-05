@@ -12,10 +12,13 @@ const {
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
+const { validateUUID } = require('../middleware/validateUUID');
 
 const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
+// PORTAL_PATCH_TOKEN is the canonical name; PORTAL_TOKEN is legacy (remove after full migration).
+const PORTAL_TOKEN = process.env.PORTAL_PATCH_TOKEN || process.env.PORTAL_TOKEN || '';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Portal patch constants ──────────────────────────────────────
@@ -201,7 +204,7 @@ router.post('/signal_ap', authJWT, async (req, res) => {
 
 // ─── GET AP state from DB (source of truth) ─────────────────────
 // GET /api/device/ap-state/:networkId
-router.get('/ap-state/:networkId', authJWT, async (req, res) => {
+router.get('/ap-state/:networkId', authJWT, validateUUID('networkId'), async (req, res) => {
 	try {
 		const { networkId } = req.params;
 
@@ -624,7 +627,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 // ─── Admin State Endpoint (cheap, read-only) ─────────────────────
 // GET /api/device/network/:networkId/state
 // Returns authoritative AP + scan + portal + risk state for the UI
-router.get('/network/:networkId/state', authJWT, async (req, res) => {
+router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), async (req, res) => {
 	const { networkId } = req.params;
 	const maxAgeSeconds = SCAN_MAX_AGE_SECONDS;
 
