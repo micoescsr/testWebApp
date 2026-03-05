@@ -114,3 +114,27 @@ A Web-based Security Assessment Tool using Microcontroller applied to Unsecured 
 
 - The modal checks `detectionStatus` from `ThreatDetectionContext`. If the context hasn't finished its initial `/detect/status` bootstrap call, the modal may not show the detection warning on the very first render after login.
 - The warning message is informational only — there is no option to stop detection from within the logout modal. Users must navigate to the SAM page and use the Stop Detection flow to halt detection before logging out.
+
+---
+
+## Bug Fix — UserMenu Not Displaying
+
+### Problem
+
+The `UserMenu` component (floating pill-shaped dropdown in the top-right corner showing the user's name, role, and providing Profile/Logout actions) was not visible on any authenticated page. The import in `App.jsx` was commented out and the component was never rendered, even though `App.css` already reserved space for it (`padding-top: 80px` on `.main-content`).
+
+### What changed
+
+| File | Change |
+|------|--------|
+| `src/App.jsx` | Uncommented the `UserMenu` import; added `<UserMenu />` to the authenticated layout (rendered between `<Sidebar />` and `<main>` inside `ThreatDetectionProvider`) |
+
+### How to verify
+
+1. Start the frontend dev server.
+2. Log in with any valid account.
+3. The **UserMenu** pill should appear fixed in the top-right corner of the page, showing the logged-in user's name and role.
+4. Click the pill — a dropdown should open with **Profile** and **Logout** options.
+5. Clicking **Logout** should open the `LogoutConfirmModal` (with the detection-aware warning if detection is active).
+6. Verify the menu is visible and functional on all authenticated pages (Dashboard, SAM, Device Management, etc.).
+7. On mobile (≤ 768 px), the menu should reposition slightly (`top: 12px; right: 12px`) but remain accessible.
