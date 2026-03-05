@@ -33,6 +33,8 @@ function validateEnv() {
   if (appEnv === 'production') {
     const prodRequired = [
       'ALLOWED_ORIGINS',         // CORS allowlist (comma-separated)
+      'PI_BASE_URL',             // Pi Funnel URL (https://<device>.ts.net)
+      'CONTROL_SIGNING_SECRET',  // HMAC signing secret (must match Pi)
       // JWT_SECRET not required — auth uses JWKS (Supabase remote key set)
     ];
 

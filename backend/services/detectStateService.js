@@ -321,7 +321,7 @@ async function serverPing() {
     if (!row || row.status !== "RUNNING") return; // nothing to ping
 
     // Lightweight GET to FastAPI — just check if it's reachable
-    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    // Query string is included in the signature (matches Pi verifier).
     const { ok } = await piFetch("/detect/poll", {
       query: "max_items=1",
       timeoutMs: 5000,

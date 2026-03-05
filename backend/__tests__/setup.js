@@ -7,3 +7,4 @@ process.env.SUPABASE_URL = "https://test-project.supabase.co";
 process.env.SUPABASE_ANON_KEY = "test-anon-key";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 process.env.FASTAPI_BASE_URL = "http://localhost:8000";
+process.env.PI_BASE_URL = "http://localhost:8000";

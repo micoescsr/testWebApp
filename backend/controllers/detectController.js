@@ -339,7 +339,7 @@ async function poll(req, res) {
     // 2) Proxy to FastAPI
     const maxItems = Number(req.query.max_items ?? 50);
 
-    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    // Query string is included in the signature (matches Pi verifier).
     const { ok: piOk, data } = await piFetch("/detect/poll", {
       query: `max_items=${encodeURIComponent(maxItems)}`,
     });

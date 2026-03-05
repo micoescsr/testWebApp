@@ -5,21 +5,23 @@
 
 const { buildSignedHeaders } = require("./signing");
 
+// PI_BASE_URL is canonical; FASTAPI_BASE_URL kept as migration fallback.
 const PI_BASE_URL = () =>
-  process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
+  process.env.PI_BASE_URL || process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000";
 
 const SIGNING_SECRET = () => process.env.CONTROL_SIGNING_SECRET || "";
 
 /**
  * Fetch a Pi FastAPI endpoint with HMAC-signed headers.
  *
- * @param {string} path       - URL path (e.g. "/device/status"). NO querystring.
+ * @param {string} path       - URL path, may include query string
+ *                               (e.g. "/device/status" or "/detect/poll?max_items=50").
  * @param {Object} [opts]
  * @param {string} [opts.method="GET"]
  * @param {Object} [opts.jsonBody]     - Will be JSON-stringified and sent as body.
  * @param {string} [opts.query]        - Querystring to append (e.g. "max_items=50").
- *                                        NOT included in the signature (matches Pi verifier).
- * @param {Object} [opts.extraHeaders] - Additional headers to merge (e.g. x-portal-token).
+ *                                        Merged into path for URL and signing.
+ * @param {Object} [opts.extraHeaders] - Additional headers to merge.
  * @param {number} [opts.timeoutMs=10000] - Abort timeout in milliseconds.
  * @returns {Promise<{ ok: boolean, status: number, data: any }>}
  */
@@ -33,9 +35,13 @@ async function piFetch(path, {
   const base = PI_BASE_URL();
   const secret = SIGNING_SECRET();
 
-  // Build URL (path + optional querystring)
-  let url = `${base}${path}`;
-  if (query) url += `?${query}`;
+  // Build full path with query — used for both URL and signing.
+  let pathWithQuery = path;
+  if (query) {
+    pathWithQuery += (path.includes("?") ? "&" : "?") + query;
+  }
+
+  const url = `${base}${pathWithQuery}`;
 
   // Body bytes must match exactly what gets sent
   let bodyBytes = Buffer.alloc(0);
@@ -49,9 +55,9 @@ async function piFetch(path, {
     headers["Content-Type"] = "application/json";
   }
 
-  // Sign using path only (no query, no domain) — matches Pi verifier
+  // Sign using full pathWithQuery — matches Pi verifier (PI_SIGNING_README).
   if (secret) {
-    const signed = buildSignedHeaders({ method, path, bodyBytes, secret });
+    const signed = buildSignedHeaders({ method, pathWithQuery, bodyBytes, secret });
     Object.assign(headers, signed);
   }
 
