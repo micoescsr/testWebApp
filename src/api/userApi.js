@@ -22,3 +22,8 @@ export const deactivateUser = (id, { anonymize = true } = {}) => {
   return api.post(`webapp/users/profiles/${id}/deactivate`, { anonymize });
 };
 
+// Reactivate a deactivated account (set status, update profile fields, optional temp password)
+export const reactivateUser = (id, { targetStatus = "active", issueTempPassword = false, profileUpdates = {} } = {}) => {
+  return api.post(`webapp/users/profiles/${id}/reactivate`, { targetStatus, issueTempPassword, profileUpdates });
+};
+

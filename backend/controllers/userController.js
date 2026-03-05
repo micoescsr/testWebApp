@@ -318,7 +318,7 @@ async function deactivateUser(req, res) {
       updates.first_name = "Deactivated";
       updates.last_name = "User";
       updates.username = `deactivated_${id.slice(0, 8)}`;
-      updates.email = null;
+      updates.email = `deactivated_${id.slice(0, 8)}@removed.local`;
     }
 
     const updated = await userRepository.updateProfile(id, updates);
@@ -360,6 +360,134 @@ async function deactivateUser(req, res) {
   }
 }
 
+// Superadmin-only: Reactivate a deactivated account with proper audit logging
+async function reactivateUser(req, res) {
+  try {
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+
+    const currentRole = await getCurrentUserRole(currentUser.id);
+    if (currentRole !== "superadmin") {
+      return res.status(403).json({ error: "Superadmin only" });
+    }
+
+    const id = req.params.id;
+    const {
+      targetStatus = "active",
+      issueTempPassword: shouldIssueTempPw = false,
+      profileUpdates = {},
+    } = req.body;
+
+    // Validate target status
+    if (!["active", "on_hold"].includes(targetStatus)) {
+      return res.status(400).json({ error: "Target status must be 'active' or 'on_hold'" });
+    }
+
+    // Capture old profile for audit trail
+    const oldProfile = await userRepository.findProfileById(id);
+    if (!oldProfile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    // Ensure the account is actually inactive
+    if ((oldProfile.status || "").toLowerCase() !== "inactive") {
+      return res.status(400).json({ error: "Account is not inactive. Use the normal edit flow instead." });
+    }
+
+    // Build update payload — merge profile field updates with status change
+    const updates = {
+      status: targetStatus,
+      must_change_password: false,
+      temp_expires_at: null,
+    };
+
+    // Apply profile field updates (name, email, username, role) if provided
+    const allowedFields = ["first_name", "last_name", "username", "email", "role"];
+    for (const field of allowedFields) {
+      if (profileUpdates[field] !== undefined && profileUpdates[field] !== "") {
+        updates[field] = profileUpdates[field];
+      }
+    }
+
+    let tempPassword = null;
+    let tempExpiresAt = null;
+
+    // If activating to active AND admin chose to issue a temp password
+    if (targetStatus === "active" && shouldIssueTempPw) {
+      tempPassword = crypto.randomBytes(32).toString("base64url");
+      tempExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      updates.must_change_password = true;
+      updates.temp_expires_at = tempExpiresAt;
+
+      // Update Supabase auth password (and email if it changed)
+      const authUpdate = { password: tempPassword };
+      if (updates.email) {
+        authUpdate.email = updates.email;
+      }
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, authUpdate);
+      if (authError) {
+        console.error("reactivateUser authError:", authError);
+        return res.status(400).json({ error: authError.message });
+      }
+    } else if (updates.email) {
+      // Even without temp PW, update the Supabase auth email if it changed
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+        email: updates.email,
+      });
+      if (authError) {
+        console.error("reactivateUser auth email update error:", authError);
+        return res.status(400).json({ error: authError.message });
+      }
+    }
+
+    const updated = await userRepository.updateProfile(id, updates);
+
+    // Audit log for reactivation
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_REACTIVATE",
+      eventStatus: "SUCCESS",
+      entityType: "USER",
+      entityIdUuid: id,
+      oldValues: oldProfile,
+      newValues: updates,
+      meta: {
+        targetStatus,
+        tempPasswordIssued: !!tempPassword,
+        reactivatedFrom: "inactive",
+        profileFieldsUpdated: Object.keys(profileUpdates).filter(k => profileUpdates[k]),
+      },
+    });
+
+    const response = {
+      message: `Account reactivated to ${targetStatus}`,
+      profile: updated,
+    };
+
+    if (tempPassword) {
+      response.tempPassword = tempPassword;
+      response.tempExpiresAt = tempExpiresAt;
+    }
+
+    return res.json(response);
+  } catch (error) {
+    console.error("reactivateUser error:", error);
+    await logAuditEvent({
+      req,
+      actorId: req.user?.id,
+      eventName: "USER_REACTIVATE",
+      eventStatus: "FAILED",
+      entityType: "USER",
+      entityIdUuid: req.params.id,
+      meta: { error: error.message },
+    }).catch(() => {});
+    return res.status(500).json({ error: "Failed to reactivate user" });
+  }
+}
+
 // Export ALL at bottom (Node sees defined functions)
 module.exports = { 
   //createUser, 
@@ -369,4 +497,5 @@ module.exports = {
   getCurrentProfile, // NEW
   activateUserWithTemp,
   deactivateUser,
+  reactivateUser,
 };
