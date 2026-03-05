@@ -13,6 +13,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   cacheDir: ".vite-cache", // avoid node_modules/.vite lock on Railway
+  preview: {
+    host: true,
+    allowedHosts: "all", // Railway uses dynamic subdomains
+  },
   server: {
     proxy: {
       "/api": {
