@@ -108,18 +108,22 @@ async function getStatusAndMaybeFail(req) {
 
       if (error) throw error;
       if (updated) {
-        // Audit: DETECTION_FAILED
-        await logAuditEvent({
-          req,
-          actorId: row.started_by_profile_id || "00000000-0000-0000-0000-000000000000",
-          eventName: "DETECTION_FAILED",
-          eventStatus: "SUCCESS",
-          entityType: "DETECTION_STATE",
-          entityIdBigint: row.active_scan_id,
-          oldValues: { status: oldRow.status, network_id: oldRow.active_network_id, scan_id: oldRow.active_scan_id },
-          newValues: { status: "FAILED", failure_reason: "heartbeat timeout" },
-          meta: { device_id: DEVICE_ID },
-        }).catch(() => {});
+        // Audit: DETECTION.FAILED — only if we have a real profile FK
+        if (row.started_by_profile_id) {
+          await logAuditEvent({
+            req,
+            actorId: row.started_by_profile_id,
+            eventName: "DETECTION.FAILED",
+            eventStatus: "SUCCESS",
+            entityType: "DETECTION_STATE",
+            entityIdBigint: row.active_scan_id,
+            oldValues: { status: oldRow.status, network_id: oldRow.active_network_id, scan_id: oldRow.active_scan_id },
+            newValues: { status: "FAILED", failure_reason: "heartbeat timeout" },
+            meta: { device_id: DEVICE_ID },
+          }).catch((err) => {
+            console.error("[detectState] DETECTION.FAILED audit error:", err?.message ?? err);
+          });
+        }
 
         row = updated;
         break;
@@ -159,13 +163,13 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
   if (
     row.status === "RUNNING" &&
     row.active_network_id === networkId &&
-    row.active_scan_id === numericScanId
+    Number(row.active_scan_id) === numericScanId
   ) {
     return row;
   }
 
   const isSwitching = row.status === "RUNNING" && (row.active_network_id !== networkId || row.active_scan_id !== numericScanId);
-  const eventName = isSwitching ? "SWITCH_TARGET" : "START_DETECTION";
+  const eventName = isSwitching ? "DETECTION.SWITCH_TARGET" : "DETECTION.START";
   const oldRow = { ...row };
 
   const payload = {
@@ -203,7 +207,9 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
           scan_id: numericScanId,
         },
         meta: { device_id: DEVICE_ID, reason: isSwitching ? "network switch" : "new start" },
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(`[detectState] ${eventName} audit error:`, err?.message ?? err);
+      });
 
       return updated;
     }
@@ -217,7 +223,7 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
     if (
       row.status === "RUNNING" &&
       row.active_network_id === networkId &&
-      row.active_scan_id === numericScanId
+      Number(row.active_scan_id) === numericScanId
     ) {
       return row;
     }
@@ -227,27 +233,47 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
 }
 
 /**
- * Stop detection.
+ * Stop detection (governed).
  *
  * @param {Object} req - Express request
  * @param {string} actorId - UUID of the admin stopping
- * @param {string} [reason] - human-readable stop reason
+ * @param {{ reason_code: string, reason_note?: string }} reasonInfo - structured stop reason
  */
-async function stop(req, actorId, reason) {
+async function stop(req, actorId, reasonInfo) {
+  const { reason_code, reason_note } = reasonInfo || {};
   let row = await ensureRow();
 
-  // Idempotent: already stopped or failed
+  // Idempotent: already STOPPED or FAILED — return row, log DENIED (no-op)
   if (row.status === "STOPPED" || row.status === "FAILED") {
+    await logAuditEvent({
+      req,
+      actorId,
+      eventName: "DETECTION.STOP",
+      eventStatus: "DENIED",
+      entityType: "DETECTION_STATE",
+      entityIdUuid: row.active_scan_id ? null : (row.active_network_id || null),
+      entityIdBigint: row.active_scan_id || null,
+      meta: {
+        noop: true,
+        current_status: row.status,
+        reason_code: reason_code || null,
+        reason_note: reason_note || null,
+        trigger: "manual_stop",
+      },
+    }).catch((err) => {
+      console.error("[detectState] DETECTION.STOP DENIED audit error:", err?.message ?? err);
+    });
     return row;
   }
 
   const now = new Date().toISOString();
   const oldRow = { ...row };
 
+  // STOP is not a failure: failure_reason = NULL
   const payload = {
     status: "STOPPED",
     stopped_at: now,
-    failure_reason: reason || null,
+    failure_reason: null,
     updated_at: now,
   };
 
@@ -256,21 +282,38 @@ async function stop(req, actorId, reason) {
     if (error) throw error;
 
     if (updated) {
+      // SUCCESS audit: only on real RUNNING -> STOPPED transition
       await logAuditEvent({
         req,
         actorId,
-        eventName: "STOP_DETECTION",
+        eventName: "DETECTION.STOP",
         eventStatus: "SUCCESS",
         entityType: "DETECTION_STATE",
-        entityIdBigint: oldRow.active_scan_id,
+        entityIdUuid: oldRow.active_scan_id ? null : (oldRow.active_network_id || null),
+        entityIdBigint: oldRow.active_scan_id || null,
         oldValues: {
           status: oldRow.status,
-          network_id: oldRow.active_network_id,
-          scan_id: oldRow.active_scan_id,
+          active_network_id: oldRow.active_network_id,
+          active_scan_id: oldRow.active_scan_id,
+          stopped_at: oldRow.stopped_at,
+          last_heartbeat_at: oldRow.last_heartbeat_at,
         },
-        newValues: { status: "STOPPED", reason: reason || null },
-        meta: { device_id: DEVICE_ID },
-      }).catch(() => {});
+        newValues: {
+          status: "STOPPED",
+          active_network_id: updated.active_network_id,
+          active_scan_id: updated.active_scan_id,
+          stopped_at: updated.stopped_at,
+          last_heartbeat_at: updated.last_heartbeat_at,
+        },
+        meta: {
+          reason_code: reason_code || null,
+          reason_note: reason_note || null,
+          trigger: "manual_stop",
+          device_id: DEVICE_ID,
+        },
+      }).catch((err) => {
+        console.error("[detectState] DETECTION.STOP SUCCESS audit error:", err?.message ?? err);
+      });
 
       return updated;
     }

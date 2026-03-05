@@ -11,7 +11,7 @@ import useAuditLogs from "../../hooks/useAuditLogs";
 //import { updateUser } from "../../api/userApi";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
-import { updateUser, activateUserWithTemp, deactivateUser } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
+import { updateUser, activateUserWithTemp, deactivateUser, reactivateUser } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
 
 
 const AccountsAudit = () => {
@@ -32,6 +32,9 @@ const AccountsAudit = () => {
 const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
 const [isProcessing, setIsProcessing] = useState(false);
 const [issueTempPassword, setIssueTempPassword] = useState(true);
+const [reactivateTargetStatus, setReactivateTargetStatus] = useState("active");
+const [reactivateIssueTempPw, setReactivateIssueTempPw] = useState(true);
+const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(false);
 
 
   const {
@@ -153,6 +156,36 @@ const [issueTempPassword, setIssueTempPassword] = useState(true);
       await deactivateUser(selectedUser.id, { anonymize: true });
       await fetchUsers();
     }
+
+    // Handle reactivation
+    if (modalMode === "reactivate" && selectedUser) {
+      const profilePayload = pendingUser ? {
+        first_name: pendingUser.firstName,
+        last_name: pendingUser.lastName,
+        username: pendingUser.username,
+        email: pendingUser.email,
+        role: pendingUser.role,
+      } : {};
+
+      const res = await reactivateUser(selectedUser.id, {
+        targetStatus: reactivateTargetStatus,
+        issueTempPassword: reactivateIssueTempPw,
+        profileUpdates: profilePayload,
+      });
+      await fetchUsers();
+
+      // If a temp password was issued, show the temp password modal
+      const tempPassword = res.data?.tempPassword;
+      const tempExpiresAt = res.data?.tempExpiresAt;
+      if (tempPassword) {
+        setTempPasswordInfo({
+          email: res.data?.profile?.email || pendingUser?.email || selectedUser.email,
+          tempPassword,
+          tempExpiresAt,
+        });
+        setShowTempModal(true);
+      }
+    }
   } catch (err) {
     console.error("Confirm action error:", err.response?.data || err);
     // toast.error(err.response?.data?.error || "Failed to save user changes");
@@ -160,11 +193,44 @@ const [issueTempPassword, setIssueTempPassword] = useState(true);
     setIsProcessing(false);
   }
 
+  // After saving details for an inactive user (edit mode), reopen the UserForm
+  // so the admin can proceed to click "Reactivate Account" as step 2
+  const wasInactiveEdit =
+    modalMode === "edit" &&
+    selectedUser &&
+    (selectedUser.status || "").toLowerCase() === "inactive";
+
+  // Capture pendingUser before clearing it
+  const savedPending = pendingUser;
+
   setShowConfirmModal(false);
-  setShowUserModal(false);
-  setPendingUser(null);
-  setSelectedUser(null);
+
+  if (wasInactiveEdit) {
+    // Update the selected user with the saved profile data so UserForm reflects the edits
+    setSelectedUser((prev) => ({
+      ...prev,
+      name: savedPending ? `${savedPending.firstName} ${savedPending.lastName}`.trim() : prev.name,
+      firstName: savedPending?.firstName ?? prev.firstName,
+      lastName: savedPending?.lastName ?? prev.lastName,
+      username: savedPending?.username ?? prev.username,
+      email: savedPending?.email ?? prev.email,
+      role: savedPending?.role ?? prev.role,
+      status: "inactive", // still inactive — not reactivated yet
+    }));
+    setDetailsSavedForReactivation(true); // signal that step 1 is complete
+    setShowUserModal(true); // reopen the UserForm for step 2 (reactivation)
+    setPendingUser(null);
+    // Don't clear selectedUser — we need it for the reactivation step
+  } else {
+    setShowUserModal(false);
+    setPendingUser(null);
+    setSelectedUser(null);
+    setDetailsSavedForReactivation(false);
+  }
+
   setIssueTempPassword(true); // reset for next action
+  setReactivateTargetStatus("active"); // reset for next action
+  setReactivateIssueTempPw(true); // reset for next action
 };
 // EDITED 08:52 PM FEB 13 2026
 
@@ -181,12 +247,26 @@ const cancelUserForm = () => {
   setShowUserModal(false);
   setModalMode("add");
   setSelectedUser(null);
+  setDetailsSavedForReactivation(false);
 };
 
 // Deactivate account handler — called from UserForm
 const handleDeactivate = (user) => {
   setSelectedUser(user);
   setModalMode("deactivate");
+  setReturnToUserModal(true);
+  setShowUserModal(false);
+  setShowConfirmModal(true);
+};
+
+// Reactivate account handler — called from UserForm with edited form data
+const handleReactivate = (formData) => {
+  // formData contains { id, firstName, lastName, username, email, role, name }
+  setPendingUser(formData);
+  setSelectedUser(selectedUser); // keep original user for reference
+  setModalMode("reactivate");
+  setReactivateTargetStatus("active"); // default to active
+  setReactivateIssueTempPw(true); // default to issuing temp password
   setReturnToUserModal(true);
   setShowUserModal(false);
   setShowConfirmModal(true);
@@ -298,6 +378,7 @@ const handleDeactivate = (user) => {
         <UserForm
           mode={modalMode}
           user={selectedUser}
+          detailsSaved={detailsSavedForReactivation}
             onCancel={cancelUserForm}
           onSubmit={(data) => {
             console.log("SAVE USER:", data);
@@ -310,6 +391,7 @@ const handleDeactivate = (user) => {
             openConfirmModal("delete");
           }}
           onDeactivate={handleDeactivate}
+          onReactivate={handleReactivate}
         />
       </AccountsAuditModal>
 
@@ -329,17 +411,21 @@ const handleDeactivate = (user) => {
             
             <button className={ (modalMode === "delete" || modalMode === "deactivate") ? "tertiary-btn" : "confirm-btn" } 
               disabled={isProcessing}
-              onClick={confirmAction}> {isProcessing ? "Processing..." : (modalMode === "deactivate" ? "Deactivate" : "Confirm")} </button>
+              onClick={confirmAction}> {isProcessing ? "Processing..." : (modalMode === "deactivate" ? "Deactivate" : modalMode === "reactivate" ? "Reactivate" : "Confirm")} </button>
           </>
         }
       >
         <p>
           {modalMode === "add" && "Are you sure you want to save this new user?"}
-          {modalMode === "edit" &&
+          {modalMode === "edit" && selectedUser && (selectedUser.status || "").toLowerCase() === "inactive" &&
+            "Are you sure you want to save the updated profile details for this deactivated account? The account will remain inactive — use Reactivate Account to restore login access."}
+          {modalMode === "edit" && !(selectedUser && (selectedUser.status || "").toLowerCase() === "inactive") &&
             "Are you sure you want to save these changes?"}
           {modalMode === "delete" &&
             "This action cannot be undone. Do you really want to delete this account?"}
           {modalMode === "deactivate" &&
+            ""}
+          {modalMode === "reactivate" &&
             ""}
         </p>
 
@@ -359,8 +445,75 @@ const handleDeactivate = (user) => {
               <li>Audit history preserved and linked to this account</li>
             </ul>
             <p style={{ fontSize: '0.8rem', color: '#92400e', marginTop: '8px', fontStyle: 'italic' }}>
-              This can be reversed by editing the account and setting it back to Active or On Hold.
+              This can be reversed by using the Reactivate Account button on the user's Edit modal.
             </p>
+          </div>
+        )}
+
+        {/* Reactivation details panel */}
+        {modalMode === "reactivate" && selectedUser && (
+          <div style={{ padding: '12px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #6ee7b7' }}>
+            <p style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem', color: '#065f46' }}>
+              Reactivate Account
+            </p>
+
+            {/* Show the profile data that will be applied */}
+            {pendingUser && (
+              <div style={{ fontSize: '0.83rem', color: '#333', marginBottom: '12px', background: '#f0fdf4', padding: '8px 10px', borderRadius: '4px', border: '1px solid #bbf7d0' }}>
+                <p style={{ fontWeight: 600, marginBottom: '4px', fontSize: '0.8rem', color: '#166534' }}>Profile details to apply:</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '2px 8px', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#666' }}>Name:</span>
+                  <span><strong>{pendingUser.firstName} {pendingUser.lastName}</strong></span>
+                  <span style={{ color: '#666' }}>Username:</span>
+                  <span><strong>{pendingUser.username}</strong></span>
+                  <span style={{ color: '#666' }}>Email:</span>
+                  <span><strong>{pendingUser.email}</strong></span>
+                  <span style={{ color: '#666' }}>Role:</span>
+                  <span><strong>{pendingUser.role}</strong></span>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#333', display: 'block', marginBottom: '4px' }}>
+                Set status to:
+              </label>
+              <select
+                value={reactivateTargetStatus}
+                onChange={(e) => setReactivateTargetStatus(e.target.value)}
+                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
+              >
+                <option value="active">Active — Can log in normally</option>
+                <option value="on_hold">On Hold — Login suspended, data preserved</option>
+              </select>
+            </div>
+
+            {reactivateTargetStatus === "active" && (
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginBottom: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={reactivateIssueTempPw}
+                  onChange={(e) => setReactivateIssueTempPw(e.target.checked)}
+                  style={{ marginTop: "3px" }}
+                />
+                <span style={{ fontSize: "0.85rem" }}>
+                  Issue a temporary password (forces password reset on first login).
+                  <br />
+                  <span style={{ color: "#666" }}>
+                    {reactivateIssueTempPw
+                      ? "A new temporary password will be generated. The user must use it to log in and will be prompted to change it."
+                      : "The user's existing password will remain valid. If they have forgotten it, they will not be able to log in."}
+                  </span>
+                </span>
+              </label>
+            )}
+
+            <ul style={{ fontSize: '0.8rem', color: '#666', margin: '0', paddingLeft: '18px', lineHeight: '1.6' }}>
+              <li>Account status will change from <strong>Inactive</strong> → <strong>{reactivateTargetStatus === 'active' ? 'Active' : 'On Hold'}</strong></li>
+              <li>Profile details (name, email, username, role) will be updated</li>
+              <li>Login will be {reactivateTargetStatus === 'active' ? 'immediately enabled' : 'still suspended until set to Active'}</li>
+              <li>A <strong>USER_REACTIVATE</strong> audit event will be logged</li>
+            </ul>
           </div>
         )}
 

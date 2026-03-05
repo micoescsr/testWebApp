@@ -33,6 +33,8 @@ const UserForm = ({
   onSubmit,
   onCancel,
   onDeactivate,
+  onReactivate,
+  detailsSaved = false,
   currentUserRole = "superadmin", // Pass this prop from parent to check permissions
 }) => {
   const [formData, setFormData] = useState({
@@ -76,22 +78,52 @@ const UserForm = ({
     });
   };
 
-  // Deactivation is handled by parent via onDeactivate callback
+  // Deactivation / reactivation is handled by parent via callbacks
   const isInactive = (user?.status || "").toLowerCase() === "inactive";
+
+  // Gather form data for reactivation (passes edited fields to parent)
+  const handleReactivateClick = () => {
+    if (onReactivate) {
+      onReactivate({
+        ...formData,
+        id: user?.id,
+        name: `${formData.firstName} ${formData.lastName}`.trim(),
+      });
+    }
+  };
 
   return (
     <div className="user-form">
       {/* --- INACTIVE BANNER --- */}
       {isInactive && (
         <div style={{
-          background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px',
-          padding: '12px', marginBottom: '15px', fontSize: '0.85rem', color: '#92400e'
+          background: detailsSaved ? '#ecfdf5' : '#fef3c7',
+          border: `1px solid ${detailsSaved ? '#6ee7b7' : '#f59e0b'}`,
+          borderRadius: '8px',
+          padding: '12px', marginBottom: '15px', fontSize: '0.85rem',
+          color: detailsSaved ? '#065f46' : '#92400e'
         }}>
-          <strong>This account is deactivated.</strong>
-          <p style={{ margin: '4px 0 0' }}>
-            To reactivate, set the status to Active or On Hold and save. If the user needs a new password, 
-            you'll be prompted to issue a temporary one.
-          </p>
+          {detailsSaved ? (
+            <>
+              <strong>✔ Profile details saved successfully.</strong>
+              <p style={{ margin: '4px 0 0' }}>
+                You can now click <em>Reactivate Account</em> below to restore login access
+                and optionally issue a temporary password.
+              </p>
+            </>
+          ) : (
+            <>
+              <strong>This account is deactivated.</strong>
+              <p style={{ margin: '4px 0 0' }}>
+                <strong>Step 1:</strong> Update the user details below (name, email, username, role), then click
+                <em> Save Details</em> to save the profile changes.
+              </p>
+              <p style={{ margin: '4px 0 0' }}>
+                <strong>Step 2:</strong> Click <em>Reactivate Account</em> to restore login access and optionally
+                issue a temporary password.
+              </p>
+            </>
+          )}
         </div>
       )}
       {/* --- STATUS CONTROL (SUPER ADMIN ONLY) --- */}
@@ -100,23 +132,28 @@ const UserForm = ({
           <label style={{fontWeight: 'bold', color: '#333'}}>Account Status</label>
           <select
             name="status"
-            value={formData.status}
+            value={isInactive ? "inactive" : formData.status}
             onChange={handleChange}
-            style={{width: '100%', padding: '8px', marginTop: '5px', borderColor: formData.status === 'active' ? 'green' : 'orange'}}
+            disabled={isInactive}
+            style={{
+              width: '100%',
+              padding: '8px',
+              marginTop: '5px',
+              borderColor: isInactive ? '#d1d5db' : (formData.status === 'active' ? 'green' : 'orange'),
+              backgroundColor: isInactive ? '#f3f4f6' : '#fff',
+              color: isInactive ? '#9ca3af' : '#333',
+              cursor: isInactive ? 'not-allowed' : 'pointer',
+            }}
           >
+            {isInactive && <option value="inactive">Deactivated — Account is inactive</option>}
             <option value="active">Active — Can log in normally</option>
             <option value="on_hold">On Hold — Login suspended, data preserved</option>
           </select>
           <small style={{color: '#666'}}>
-            {formData.status === 'active' && 'This user can log in and access the system.'}
-            {formData.status === 'on_hold' && 'Login is suspended. The user cannot access the system until reactivated.'}
-            {formData.status === 'inactive' && 'This account is inactive. Change status to Active or On Hold to manage it.'}
+            {!isInactive && formData.status === 'active' && 'This user can log in and access the system.'}
+            {!isInactive && formData.status === 'on_hold' && 'Login is suspended. The user cannot access the system until reactivated.'}
+            {isInactive && 'This account is deactivated. Save your detail edits first, then use Reactivate Account to restore access.'}
           </small>
-          {formData.status === 'inactive' && (
-            <p style={{fontSize: '0.8rem', color: '#b45309', marginTop: '4px'}}>
-              This account is currently inactive. Select a new status above to update it.
-            </p>
-          )}
         </div>
       )}
 
@@ -183,12 +220,30 @@ const UserForm = ({
             </button>
           </div>
         )}
-        {/* For inactive users, show archived state */}
+        {/* For inactive users, show Reactivate button */}
         {currentUserRole === 'superadmin' && user && isInactive && (
-          <div style={{ marginRight: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: 'auto' }}>
             <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
               Account deactivated
             </span>
+            <button
+              type="button"
+              className="reactivate-btn"
+              style={{
+                fontSize: '0.8rem',
+                textAlign: 'left',
+                padding: '6px 12px',
+                background: '#059669',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+              onClick={handleReactivateClick}
+            >
+              Reactivate Account
+            </button>
           </div>
         )}
 
@@ -196,8 +251,11 @@ const UserForm = ({
           <button className="cancel-btn" onClick={onCancel}>
             Cancel
           </button>
-          <button className="confirm-btn" onClick={handleSubmit}>
-            Save Changes
+          <button
+            className="confirm-btn"
+            onClick={handleSubmit}
+          >
+            {isInactive ? "Save Details" : "Save Changes"}
           </button>
         </div>
       </div>

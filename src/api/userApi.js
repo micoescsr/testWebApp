@@ -22,3 +22,12 @@ export const deactivateUser = (id, { anonymize = true } = {}) => {
   return api.post(`webapp/users/profiles/${id}/deactivate`, { anonymize });
 };
 
+// Reactivate a deactivated account (superadmin two-step flow)
+export const reactivateUser = (id, { targetStatus, issueTempPassword, profileUpdates }) => {
+  return api.post(`webapp/users/profiles/${id}/reactivate`, {
+    targetStatus,
+    issueTempPassword,
+    profileUpdates,
+  });
+};
+

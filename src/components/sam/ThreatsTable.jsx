@@ -5,7 +5,7 @@ import Pagination from "../../components/common/Pagination/Pagination";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
-const ThreatsTable = ({ threats = [], onView }) => {
+const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
   const hasThreats = Array.isArray(threats) && threats.length > 0;
   const [expandedIds, setExpandedIds] = useState(new Set());
 
@@ -257,7 +257,13 @@ const ThreatsTable = ({ threats = [], onView }) => {
 
         {!hasThreats && (
           <div className="empty-state">
-            Nothing to analyze. Connect to a Wi‑Fi network to start detecting threats.
+            {detectionStatus === "DETECTING"
+              ? "Monitoring in progress. No threats detected yet."
+              : detectionStatus === "SCANNING"
+                ? "Starting scan\u2026 Please wait."
+                : detectionStatus === "FAILED"
+                  ? "Detection failed. Run a new scan to restart."
+                  : "Nothing to analyze. Connect to a Wi\u2011Fi network to start detecting threats."}
           </div>
         )}
 

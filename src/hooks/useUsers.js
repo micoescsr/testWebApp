@@ -35,7 +35,9 @@ const useUsers = () => {
         username: u.username,
         email: u.email,
         role: u.role,
-        status: u.status || "active",  // ← add this
+        status: u.status || "active",
+        must_change_password: u.must_change_password || false,
+        temp_expires_at: u.temp_expires_at || null,
       }));
 
       setUsers(formattedUsers);

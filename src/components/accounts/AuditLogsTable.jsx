@@ -103,6 +103,7 @@ function formatEventName(name) {
     "DETECTION.START": "Detection Started",
     "DETECTION.STOP": "Detection Stopped",
     "DETECTION.FAILED": "Detection Failed",
+    "DETECTION.SWITCH_TARGET": "Detection Target Switched",
     "DEVICE.AP_ENABLE": "AP Enabled",
     "DEVICE.AP_DISABLE": "AP Disabled",
     "DEVICE.CONFIG_UPDATE": "Device Config",

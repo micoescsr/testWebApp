@@ -24,6 +24,7 @@ const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const detectRoutes = require('./routes/detectRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const piProxyRoutes = require('./routes/piProxyRoutes');
 const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
@@ -133,6 +134,9 @@ app.use("/api/detect", detectRoutes);
 
 // 4) History (JWT-protected, user-scoped per controller logic)
 app.use("/api/history", historyRoutes);
+
+// 5) Pi proxy (signed requests to Pi gateway)
+app.use("/api/pi", piProxyRoutes);
 
 // Phase 2-E: Dead global-auth middleware removed.
 // Auth is now enforced per-route (Phase 2-A/B/C/D).
