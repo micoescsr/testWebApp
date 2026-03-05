@@ -1,6 +1,14 @@
 // src/api/axios.js
 import axios from "axios";
 
+// Guard: fail fast if deployed without a backend URL configured.
+if (import.meta.env.PROD && !import.meta.env.VITE_API_BASE_URL) {
+  throw new Error(
+    "VITE_API_BASE_URL is not set. " +
+    "Add it to Railway env vars and redeploy."
+  );
+}
+
 const api = axios.create({
   // In production (Vite build), use VITE_API_BASE_URL env var.
   // In dev, Vite proxy handles /api → localhost:3000 so "/api" works.

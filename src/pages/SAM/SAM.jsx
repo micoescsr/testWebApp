@@ -11,6 +11,7 @@ import {
   useNetworks,
 } from "../../hooks/useSAM";
 import { triggerScan, sendMetadata } from "../../api/rasPiApi";
+import api from "../../api/axios";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 import { useNetworkContext } from "../../context/NetworkContext";
 import {
@@ -295,25 +296,17 @@ const SAM = () => {
 
     try {
       //const res = await fetch("/api/networks", {
-      const res = await fetch("/api/rasPi/networks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ssid: selectedNetwork.ssid,
-          bssid: selectedNetwork.bssid,
-          channel: selectedNetwork.channel,
-        }),
+      const res = await api.post("/rasPi/networks", {
+        ssid: selectedNetwork.ssid,
+        bssid: selectedNetwork.bssid,
+        channel: selectedNetwork.channel,
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
 
       alert("Network saved to DB!");
     } catch (err) {
       console.error(err);
-      alert(`Save failed: ${err.message}`);
+      const msg = err.response?.data?.error || err.message;
+      alert(`Save failed: ${msg}`);
     }
   };
 

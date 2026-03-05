@@ -1,6 +1,7 @@
 // hooks/useSAM.js
 //import { useState, useEffect } from "react";
 import { useState, useEffect, useRef } from "react"; // Ensure useRef is imported
+import api from "../api/axios";
 import {
   getThreats,
   getVulnerabilities,
@@ -19,12 +20,8 @@ import {
       setLoading(true);
       setError(null);
 
-      const res = await fetch("http://localhost:3000/api/rasPi/networks_list/");
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} testing error`);
-      }
-
-      const body = await res.json(); // { status, networks, cached }
+      const res = await api.get("/rasPi/networks_list/");
+      const body = res.data; // { status, networks, cached }
 
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");
@@ -33,7 +30,7 @@ import {
       setNetworks(body.networks || []);
       setCached(body.cached ?? false);
     } catch (err) {
-      setError(err.message || "Failed to load networks");
+      setError(err.response?.data?.error || err.message || "Failed to load networks");
     } finally {
       setLoading(false);
     }

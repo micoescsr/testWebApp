@@ -1,10 +1,7 @@
 // src/api/deviceApi.js - network_id + scan_id aware; backend owns all config
-import axios from "axios";
-
-const api = axios.create({
-  baseURL: "http://localhost:3000/api",
-  withCredentials: true,
-});
+// Uses the shared axios instance so VITE_API_BASE_URL and Bearer auth work
+// in both dev (Vite proxy) and production (Railway).
+import api from "./axios";
 
 // ─── Announcement (per-network) ──────────────────────────────────
 export const getAnnouncement = (networkId) =>

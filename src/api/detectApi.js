@@ -1,7 +1,7 @@
 // api/detectApi.js
 //
 // Frontend API helpers for the detection lifecycle endpoints.
-// Uses the shared axios instance (baseURL = "http://localhost:3000/api").
+// Uses the shared axios instance (respects VITE_API_BASE_URL env var).
 
 import api from "./axios";
 
