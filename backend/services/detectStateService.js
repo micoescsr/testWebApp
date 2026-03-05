@@ -5,13 +5,12 @@
 
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
+const { piFetch } = require("../utils/piFetch");
 
 const DEVICE_ID = 1;
 const HEARTBEAT_TIMEOUT_SEC = 30; // FAILED after 30 s without heartbeat
 const MAX_RETRIES = 2; // optimistic-lock retry limit
 const SERVER_PING_INTERVAL_MS = 10_000; // 10 s — server-side liveness check interval
-
-const { piFetch } = require("./piGatewayService");
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -244,7 +243,7 @@ async function stop(req, actorId, reasonInfo) {
   const { reason_code, reason_note } = reasonInfo || {};
   let row = await ensureRow();
 
-  // Idempotent: already STOPPED or FAILED → return row, log DENIED (no-op), no SUCCESS audit
+  // Idempotent: already STOPPED or FAILED — return row, log DENIED (no-op)
   if (row.status === "STOPPED" || row.status === "FAILED") {
     await logAuditEvent({
       req,
@@ -283,7 +282,7 @@ async function stop(req, actorId, reasonInfo) {
     if (error) throw error;
 
     if (updated) {
-      // SUCCESS audit: only on real RUNNING → STOPPED transition
+      // SUCCESS audit: only on real RUNNING -> STOPPED transition
       await logAuditEvent({
         req,
         actorId,
@@ -364,13 +363,14 @@ async function serverPing() {
     const row = await fetchRow();
     if (!row || row.status !== "RUNNING") return; // nothing to ping
 
-    // Lightweight signed GET to Pi — just check if it's reachable
-    const r = await piFetch("/detect/poll", {
-      method: "GET",
-      queryString: "max_items=1",
+    // Lightweight GET to FastAPI — just check if it's reachable
+    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    const { ok } = await piFetch("/detect/poll", {
+      query: "max_items=1",
+      timeoutMs: 5000,
     });
 
-    if (r) {
+    if (ok) {
       // Pi is alive — refresh the heartbeat (no req needed)
       const now = new Date().toISOString();
       await lockedUpdate(
@@ -378,10 +378,14 @@ async function serverPing() {
         row.updated_at
       ).catch(() => {}); // best-effort; next ping will retry
     }
+    // If FastAPI returned non-OK, do nothing — heartbeat ages naturally
+    // and getStatusAndMaybeFail() will transition to FAILED after 30 s.
   } catch (err) {
-    // Network error — Pi is unreachable. Do nothing.
+    // Network error, timeout, abort — Pi is unreachable. Do nothing.
     // Heartbeat will age → FAILED via the normal path.
-    console.warn("[serverPing] Pi unreachable:", err.message);
+    if (err.name !== "AbortError") {
+      console.warn("[serverPing] FastAPI unreachable:", err.message);
+    }
   }
 }
 

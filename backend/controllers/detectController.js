@@ -6,7 +6,7 @@
 const detectStateService = require("../services/detectStateService");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
-const { piFetch } = require("../services/piGatewayService");
+const { piFetch } = require("../utils/piFetch");
 
 // ─── Shared helpers (moved from server.js) ──────────────────────
 
@@ -201,7 +201,7 @@ async function getStatus(req, res) {
     return res.json(row);
   } catch (err) {
     console.error("[detect/status] error:", err);
-    return res.status(500).json({ error: "Failed to read detection state", detail: err.message });
+    return res.status(500).json({ error: "Failed to read detection state" });
   }
 }
 
@@ -249,19 +249,17 @@ async function start(req, res) {
     // Audit: detection start failed
     const actorId = req.user?.id;
     if (actorId) {
-      await logAuditEvent({
+      logAuditEvent({
         req,
         actorId,
         eventName: "DETECTION.START",
         eventStatus: "FAILED",
         entityType: "DETECTION_STATE",
         meta: { error: err.message },
-      }).catch((auditErr) => {
-        console.error("[detect/start] audit error:", auditErr?.message ?? auditErr);
-      });
+      }).catch(() => {});
     }
 
-    return res.status(500).json({ error: "Failed to start detection", detail: err.message });
+    return res.status(500).json({ error: "Failed to start detection" });
   }
 }
 
@@ -324,7 +322,7 @@ async function stopDetection(req, res) {
       }).catch(() => {});
     }
 
-    return res.status(500).json({ error: "Failed to stop detection", detail: err.message });
+    return res.status(500).json({ error: "Failed to stop detection" });
   }
 }
 
@@ -337,7 +335,7 @@ async function heartbeat(req, res) {
     return res.json(row);
   } catch (err) {
     console.error("[detect/heartbeat] error:", err);
-    return res.status(500).json({ error: "Failed to update heartbeat", detail: err.message });
+    return res.status(500).json({ error: "Failed to update heartbeat" });
   }
 }
 
@@ -361,27 +359,15 @@ async function poll(req, res) {
       });
     }
 
-    // 2) Proxy to Pi (signed)
+    // 2) Proxy to FastAPI
     const maxItems = Number(req.query.max_items ?? 50);
 
-    let data;
-    try {
-      data = await piFetch("/detect/poll", {
-        method: "GET",
-        queryString: `max_items=${maxItems}`,
-      });
-    } catch (piErr) {
-      // Pi returned non-OK — do NOT mark FAILED (heartbeat timeout handles that)
-      return res.status(200).json({
-        status: stateRow.status,
-        running: true,
-        results: [],
-        threatRows: [],
-        last_error: `Pi error: ${piErr.status || 'unreachable'}`,
-      });
-    }
+    // Sign path only ("/detect/poll"), NOT the querystring — matches Pi verifier.
+    const { ok: piOk, data } = await piFetch("/detect/poll", {
+      query: `max_items=${encodeURIComponent(maxItems)}`,
+    });
 
-    if (data) {
+    if (piOk && data) {
       if (data.results && data.results.length > 0) {
         console.log("THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
       } else {
@@ -406,6 +392,15 @@ async function poll(req, res) {
         threatRows,
       });
     }
+
+    // FastAPI returned non-OK — do NOT mark FAILED (heartbeat timeout handles that)
+    return res.status(200).json({
+      status: stateRow.status,
+      running: true,
+      results: [],
+      threatRows: [],
+      last_error: `FastAPI error: ${r.status}`,
+    });
   } catch (err) {
     console.error("Poll Proxy Exception:", err.message);
     return res.status(200).json({

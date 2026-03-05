@@ -24,7 +24,7 @@ async function addAnnouncement(req, res) {
     if (error) throw error;
     res.json({ success: true, data });  // "Published on" = data.created_at
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -41,7 +41,7 @@ async function toggleAP(req, res) {
     if (error) throw error;
     res.json({ success: true, ap_enabled: newStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 async function updateAnnouncement(req, res) {
@@ -56,6 +56,6 @@ async function updateAnnouncement(req, res) {
     if (error) throw error;
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 } */

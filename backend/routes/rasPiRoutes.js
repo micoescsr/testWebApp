@@ -7,15 +7,18 @@ app.use(express.json());
 const router = express.Router();
 const rasPiController = require("../controllers/rasPiController");
 const { authJWT } = require("../middleware/authMiddleware");
+const { validateUUID } = require("../middleware/validateUUID");
 
-router.get("/networks", rasPiController.getAccessPointDetails);
-router.get("/networks/:networkId", rasPiController.getNetworkById);
+// --- Phase 2-B: All network routes require JWT ---
+// Previously GETs were public -- anyone could enumerate all networks.
+router.get("/networks", authJWT, rasPiController.getAccessPointDetails);
+router.get("/networks/:networkId", authJWT, validateUUID('networkId'), rasPiController.getNetworkById);
 //router.post("/networks", rasPiController.insertMetadata);
 
 //OFFICIAL SCAN ROUTE
 
 router.post('/scan', authJWT, rasPiController.triggerScan );
-router.get('/networks_list', rasPiController.getNetworksList);
+router.get('/networks_list', authJWT, rasPiController.getNetworksList);
 router.post('/networks', authJWT, rasPiController.saveNetworkMetadataScan);  // Matches your SAM.jsx + controller
 
 module.exports = router;

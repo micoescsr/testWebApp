@@ -1,7 +1,7 @@
 // controllers/rasPiController.js
 const crypto = require("crypto");
 const rasPiService = require("../services/rasPiService");
-const { piFetch } = require("../services/piGatewayService");
+const { piFetch } = require("../utils/piFetch");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
 const detectStateService = require("../services/detectStateService");
@@ -28,7 +28,10 @@ async function triggerScan(req, res) {
 
     const payload = { ssid, bssid, channel };
     console.log("triggerScan payload:", payload);
-    const fastapiData = await piFetch("/scan", { method: "POST", jsonBody: payload });
+    const { ok: piOk, status: piStatus, data: fastapiData } = await piFetch("/scan", {
+      method: "POST",
+      jsonBody: payload,
+    });
 
     // Audit: scan triggered
     if (req.user?.id) {
@@ -36,14 +39,14 @@ async function triggerScan(req, res) {
         req,
         actorId: req.user.id,
         eventName: "SCAN_TRIGGER",
-        eventStatus: "SUCCESS",
+        eventStatus: piOk ? "SUCCESS" : "FAILED",
         entityType: "SCAN",
         entityIdUuid: req.user.id,
-        meta: { ssid, bssid, channel },
+        meta: { ssid, bssid, channel, fastapiStatus: piStatus },
       }).catch(() => {});
     }
 
-    return res.json(fastapiData);
+    return res.status(piStatus).json(fastapiData);
   } catch (err) {
     console.error("triggerScan error:", err);
     if (req.user?.id) {
@@ -63,15 +66,14 @@ async function triggerScan(req, res) {
 
 async function getNetworksList(req, res) {
   try {
-    const data = await piFetch("/networks", { method: "GET" });
+    const { status, data } = await piFetch("/networks");
     console.log("getNetworksList response:", data);
-    return res.json(data);
+    return res.status(status).json(data);
 
   } catch (err) {
     return res.status(err.status || 502).json({
       status: "ERROR",
-      error: "Failed to reach Pi /networks",
-      detail: err.data || String(err),
+      error: "Failed to reach FastAPI /networks",
     });
   }
 };
@@ -338,7 +340,6 @@ async function saveNetworkMetadataScan(req, res) {
     return res.status(500).json({
       status: "ERROR",
       error: "Failed to save network data",
-      detail: err.message,
     });
   }
 }

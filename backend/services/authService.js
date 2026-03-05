@@ -12,7 +12,7 @@ class AuthService {
       password
     });
 
-    if (error || !user?.user_metadata?.role === 'super_admin') {
+    if (error || user?.user_metadata?.role !== 'super_admin') {
       throw new Error('Invalid SA credentials');
     }
 

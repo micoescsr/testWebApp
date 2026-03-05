@@ -5,8 +5,7 @@
 
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
-
-const { piFetch } = require('../services/piGatewayService');
+const { piFetch } = require('./piFetch');
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s
@@ -271,18 +270,20 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 
 		const payload = { network_id: networkId, risk: { bucket: patchBucket } };
 
-		console.log(`[riskPipeline] Auto portal/patch (signed)`, JSON.stringify(payload));
+		console.log(`[riskPipeline] Auto portal/patch →`, JSON.stringify(payload));
 
-		let body;
-		try {
-			body = await piFetch('/portal/patch', { method: 'POST', jsonBody: payload });
-		} catch (piErr) {
-			console.error(`[riskPipeline] portal/patch failed: ${piErr.status}`, piErr.data);
+		const { ok: piOk, status: piStatus, data: body } = await piFetch('/portal/patch', {
+			method: 'POST',
+			jsonBody: payload,
+		});
+
+		if (!piOk) {
+			console.error(`[riskPipeline] portal/patch failed: ${piStatus}`, body);
 			await logAuditEvent({
 				req, actorId: null,
 				eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: networkId,
-				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: piErr.status, fastapi_body: piErr.data },
+				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: piStatus, fastapi_body: body },
 			});
 			return false;
 		}
@@ -318,7 +319,7 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 			req, actorId: null,
 			eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: networkId,
-			meta: { reason: 'auto_risk_patch', bucket: patchBucket, stamped_version: postVersion },
+			meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, stamped_version: postVersion },
 		});
 
 		return true;

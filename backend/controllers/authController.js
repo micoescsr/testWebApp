@@ -3,13 +3,21 @@
 const { logAuditEvent } = require("../utils/auditLogger");
 const { supabaseClient } = require("../config/supabaseClient");
 
-// ── cookie options ──────────────────────────────────────
+// ── cookie options (Phase 1-J) ──────────────────────────
+// If frontend and backend share the same Railway domain (single service):
+//   sameSite: "lax"   ← stronger CSRF protection, cookies travel with same-site nav
+// If frontend and backend are on DIFFERENT domains (separate Railway services):
+//   sameSite: "none"  ← required for cross-origin cookies; Secure is mandatory
+//
+// CROSS_ORIGIN_COOKIES=true opts into the cross-origin mode. Default is same-origin.
 function refreshCookieOpts() {
   const isProd = process.env.NODE_ENV === "production";
+  const crossOrigin = process.env.CROSS_ORIGIN_COOKIES === "true";
+
   return {
     httpOnly: true,
-    secure: isProd, // true on HTTPS in prod; false on localhost
-    sameSite: "lax", // baseline CSRF protection
+    secure: isProd || crossOrigin, // always true when cross-origin (browsers require it)
+    sameSite: crossOrigin ? "none" : "lax",
     path: "/api/auth", // cookie only sent to /api/auth/*
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   };
@@ -20,7 +28,13 @@ function refreshCookieOpts() {
 // Non-browser clients (Postman/cURL) typically omit Origin.
 // In dev: allow missing Origin so Postman works.
 // In prod: require Origin and it must be in the allow-list.
-const allowedOrigins = ["http://localhost:5173"];
+//
+// Reads ALLOWED_ORIGINS from env (same source as CORS in server.js) so
+// the allow-list stays consistent and works in Railway production.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 function assertOrigin(req) {
   const origin = req.headers.origin;

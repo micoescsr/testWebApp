@@ -12,8 +12,9 @@ const {
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
+const { validateUUID } = require('../middleware/validateUUID');
+const { piFetch } = require('../utils/piFetch');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -181,8 +182,11 @@ function classifyOrchestrateError(fastapiData) {
 	};
 }
 
+// ─── Phase 2-C: All browser-called device routes require JWT ────
+const { authJWT } = require('../middleware/authMiddleware');
+
 // ─── Legacy toggle signal (keep for backward compat) ────────────
-router.post('/signal_ap', async (req, res) => {
+router.post('/signal_ap', authJWT, async (req, res) => {
 	try {
 		const { toggleState } = req.body;
 		console.log('DeviceMgmt: Received toggleState:', toggleState);
@@ -198,7 +202,7 @@ router.post('/signal_ap', async (req, res) => {
 
 // ─── GET AP state from DB (source of truth) ─────────────────────
 // GET /api/device/ap-state/:networkId
-router.get('/ap-state/:networkId', async (req, res) => {
+router.get('/ap-state/:networkId', authJWT, validateUUID('networkId'), async (req, res) => {
 	try {
 		const { networkId } = req.params;
 
@@ -216,7 +220,7 @@ router.get('/ap-state/:networkId', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /ap-state error:', err);
-		return res.status(500).json({ error: 'Failed to fetch AP state', detail: err.message });
+		return res.status(500).json({ error: 'Failed to fetch AP state' });
 	}
 });
 
@@ -225,7 +229,7 @@ router.get('/ap-state/:networkId', async (req, res) => {
 // Body: { network_id, scan_id?, ap_status, ap_password? }
 //   scan_id required only for enable (not disable)
 //   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
-router.post('/enable-ap', async (req, res) => {
+router.post('/enable-ap', authJWT, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, scan_id, ap_status, ap_password } = req.body;
 	const actorId = req.user?.id || null;
@@ -297,30 +301,28 @@ router.post('/enable-ap', async (req, res) => {
 				ap_status: 'disable',
 			};
 
-			const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+			const orchestrateUrl = '/orchestrate/apply';
 			logFastApiCall('orchestrate/apply (DISABLE)', orchestrateUrl, orchestratePayload, null);
 
-			const fastapiRes = await fetch(orchestrateUrl, {
+			const { ok: piOk, status: piStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(orchestratePayload),
+				jsonBody: orchestratePayload,
 			});
-			const fastapiData = await fastapiRes.json().catch(() => null);
 
 			logFastApiCall('orchestrate/apply RESPONSE (DISABLE)', orchestrateUrl, orchestratePayload, {
-				status: fastapiRes.status,
+				status: piStatus,
 				body: fastapiData,
 			});
 
-			if (!fastapiRes.ok) {
+			if (!piOk) {
 				// Audit: disable failed
 				await logAuditEvent({
 					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'FAILED',
 					entityType: 'NETWORK', entityIdUuid: network_id,
-					meta: { request_id: requestId, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+					meta: { request_id: requestId, fastapi_status: piStatus, fastapi_body: fastapiData },
 				});
 				throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (disable)', {
-					fastapi_status: fastapiRes.status,
+					fastapi_status: piStatus,
 					fastapi_body: fastapiData,
 				});
 			}
@@ -355,7 +357,7 @@ router.post('/enable-ap', async (req, res) => {
 			await logAuditEvent({
 				req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'SUCCESS',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, fastapi_status: fastapiRes.status },
+				meta: { request_id: requestId, fastapi_status: piStatus },
 			});
 
 			const responseBody = {
@@ -437,30 +439,25 @@ router.post('/enable-ap', async (req, res) => {
 				network_id, net.bssid, net.ssid
 			);
 
-			const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+			const portalUrl = '/portal/patch';
 			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
 
-			const portalRes = await fetch(portalUrl, {
+			const { ok: portalOk, status: portalStatus, data: portalData } = await piFetch('/portal/patch', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-				},
-				body: JSON.stringify(patchPayload),
+				jsonBody: patchPayload,
 			});
-			const portalData = await portalRes.json().catch(() => null);
 
 			logFastApiCall('portal/patch RESPONSE (INIT)', portalUrl, patchPayload, {
-				status: portalRes.status,
+				status: portalStatus,
 				body: portalData,
 			});
 
-			if (!portalRes.ok) {
+			if (!portalOk) {
 				// Audit: portal init failed — abort enable
 				await logAuditEvent({
 					req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'FAILED',
 					entityType: 'NETWORK', entityIdUuid: network_id,
-					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status, fastapi_body: portalData },
+					meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalStatus, fastapi_body: portalData },
 				});
 				// Also audit enable request failure so the trail is queryable
 				await logAuditEvent({
@@ -471,7 +468,6 @@ router.post('/enable-ap', async (req, res) => {
 				return res.status(502).json({
 					error: 'PORTAL_PATCH_FAILED',
 					message: 'Failed to initialize captive portal. AP enable aborted.',
-					detail: portalData?.detail || `portal/patch error: ${portalRes.status}`,
 				});
 			}
 
@@ -499,7 +495,7 @@ router.post('/enable-ap', async (req, res) => {
 			await logAuditEvent({
 				req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'SUCCESS',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalRes.status },
+				meta: { request_id: requestId, reason: 'portal_init', fastapi_status: portalStatus },
 			});
 		}
 
@@ -513,30 +509,28 @@ router.post('/enable-ap', async (req, res) => {
 			ap_status: 'enable',
 		};
 
-		const orchestrateUrl = `${FASTAPI_BASE}/orchestrate/apply`;
+		const orchestrateUrl = '/orchestrate/apply';
 		logFastApiCall('orchestrate/apply (ENABLE)', orchestrateUrl, orchestratePayload, null);
 
-		const fastapiRes = await fetch(orchestrateUrl, {
+		const { ok: enableOk, status: enableStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(orchestratePayload),
+			jsonBody: orchestratePayload,
 		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
 
 		logFastApiCall('orchestrate/apply RESPONSE (ENABLE)', orchestrateUrl, orchestratePayload, {
-			status: fastapiRes.status,
+			status: enableStatus,
 			body: fastapiData,
 		});
 
-		if (!fastapiRes.ok) {
+		if (!enableOk) {
 			// Audit: enable failed
 			await logAuditEvent({
 				req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, scan_id, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+				meta: { request_id: requestId, scan_id, fastapi_status: enableStatus, fastapi_body: fastapiData },
 			});
 			throw httpError(502, 'FASTAPI_APPLY_FAILED', fastapiData?.detail || 'FastAPI orchestrate/apply failed (enable)', {
-				fastapi_status: fastapiRes.status,
+				fastapi_status: enableStatus,
 				fastapi_body: fastapiData,
 			});
 		}
@@ -587,7 +581,7 @@ router.post('/enable-ap', async (req, res) => {
 		await logAuditEvent({
 			req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: fastapiRes.status },
+			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus },
 		});
 
 		const responseBody = {
@@ -607,7 +601,7 @@ router.post('/enable-ap', async (req, res) => {
 		const status = err.status || 500;
 		const errorBody = {
 			error: err.code || 'AP_TOGGLE_FAILED',
-			message: err.message,
+			message: 'AP configuration failed',
 			...(err.extra || {}),
 		};
 		return res.status(status).json(errorBody);
@@ -622,7 +616,7 @@ router.post('/enable-ap', async (req, res) => {
 // ─── Admin State Endpoint (cheap, read-only) ─────────────────────
 // GET /api/device/network/:networkId/state
 // Returns authoritative AP + scan + portal + risk state for the UI
-router.get('/network/:networkId/state', async (req, res) => {
+router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), async (req, res) => {
 	const { networkId } = req.params;
 	const maxAgeSeconds = SCAN_MAX_AGE_SECONDS;
 
@@ -707,7 +701,7 @@ router.get('/network/:networkId/state', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /network/:networkId/state error:', err);
-		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: err.message });
+		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: 'Failed to fetch network state' });
 	}
 });
 
@@ -818,7 +812,7 @@ function validatePatchPayload(payload) {
 // ─── Client-Driven Captive Portal Partial Update ─────────────────
 // POST /api/device/portal/update
 // Body: { network_id, update_type, reason?, payload }
-router.post('/portal/update', async (req, res) => {
+router.post('/portal/update', authJWT, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, update_type, reason: rawReason, payload: patch } = req.body;
 	const actorId = req.user?.id || null;
@@ -887,32 +881,27 @@ router.post('/portal/update', async (req, res) => {
 		const fastapiPayload = { network_id, ...patch };
 		const patchedKeys = Object.keys(patch);
 
-		const portalUrl = `${FASTAPI_BASE}/portal/patch`;
+		const portalUrl = '/portal/patch';
 		logFastApiCall(`portal/patch (${update_type})`, portalUrl, fastapiPayload, null);
 
-		const fastapiRes = await fetch(portalUrl, {
+		const { ok: patchOk, status: patchStatus, data: fastapiData } = await piFetch('/portal/patch', {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(fastapiPayload),
+			jsonBody: fastapiPayload,
 		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
 
 		logFastApiCall(`portal/patch RESPONSE (${update_type})`, portalUrl, fastapiPayload, {
-			status: fastapiRes.status,
+			status: patchStatus,
 			body: fastapiData,
 		});
 
-		if (!fastapiRes.ok) {
+		if (!patchOk) {
 			await logAuditEvent({
 				req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, fastapi_body: fastapiData },
+				meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: patchStatus, fastapi_body: fastapiData },
 			});
 			throw httpError(502, 'FASTAPI_PORTAL_PATCH_FAILED', fastapiData?.detail || 'FastAPI portal/patch failed', {
-				fastapi_status: fastapiRes.status,
+				fastapi_status: patchStatus,
 				fastapi_body: fastapiData,
 			});
 		}
@@ -941,7 +930,7 @@ router.post('/portal/update', async (req, res) => {
 		await logAuditEvent({
 			req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: fastapiRes.status, stamped_version: stampedVersion },
+			meta: { request_id: requestId, update_type, reason, patched_keys: patchedKeys, fastapi_status: patchStatus, stamped_version: stampedVersion },
 		});
 
 		return res.json({
@@ -959,7 +948,7 @@ router.post('/portal/update', async (req, res) => {
 		const status = err.status || 500;
 		return res.status(status).json({
 			error: err.code || 'PORTAL_UPDATE_FAILED',
-			message: err.message,
+			message: 'Portal update failed',
 			...(err.extra || {}),
 		});
 	}
@@ -971,12 +960,16 @@ router.post('/portal/update', async (req, res) => {
 // Called by scan runner or external system when a vulnerability_scans
 // row transitions to COMPLETED. Triggers risk pipeline + auto-portal.
 router.post('/scan-completed', async (req, res) => {
-	// Token auth (if configured)
-	if (SCAN_RUNNER_TOKEN) {
-		const token = req.headers['x-scan-runner-token'];
-		if (token !== SCAN_RUNNER_TOKEN) {
-			return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid or missing X-Scan-Runner-Token.' });
-		}
+	// ── Phase 2-C: Fail closed — reject if SCAN_RUNNER_TOKEN is not configured ──
+	// This is a machine-to-machine webhook (Pi → Express), NOT browser-called,
+	// so it uses a shared secret instead of JWT.
+	if (!SCAN_RUNNER_TOKEN) {
+		console.error('[scan-completed] SCAN_RUNNER_TOKEN not configured — rejecting request');
+		return res.status(503).json({ error: 'SERVICE_UNAVAILABLE', message: 'Webhook not configured.' });
+	}
+	const token = req.headers['x-scan-runner-token'];
+	if (token !== SCAN_RUNNER_TOKEN) {
+		return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid or missing X-Scan-Runner-Token.' });
 	}
 
 	const { scan_id } = req.body;
@@ -1019,7 +1012,7 @@ router.post('/scan-completed', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('deviceMgmt /scan-completed error:', err);
-		return res.status(500).json({ error: 'SCAN_COMPLETED_HOOK_FAILED', message: err.message });
+		return res.status(500).json({ error: 'SCAN_COMPLETED_HOOK_FAILED', message: 'Internal error processing scan completion' });
 	}
 });
 

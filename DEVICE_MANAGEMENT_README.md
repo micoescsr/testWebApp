@@ -182,7 +182,4 @@ UPDATE networks SET ap_enabled = false
 | Variable | Default | Description |
 |---|---|---|
 | `SCAN_MAX_AGE_SECONDS` | `300` | Max age (seconds) of a scan before it's considered stale for AP enable |
-| `PI_BASE_URL` | `https://mothership-1.tail781e52.ts.net` | Raspberry Pi Tailscale Funnel HTTPS URL (nginx :9000) |
-| `CONTROL_SIGNING_SECRET` | *(shared with Pi)* | HMAC-SHA256 signing key — must match the Pi's value |
-
-> **Note:** The old `FASTAPI_BASE` env var (port 8000, unsigned) has been replaced by `PI_BASE_URL` + `CONTROL_SIGNING_SECRET`. All Pi calls (`portal/patch`, `orchestrate/apply`) now go through `piFetch()` with HMAC-SHA256 signed headers. See `PI_SIGNING_README.md` for full details.
+| `FASTAPI_BASE` | `http://mothership-1.tail781e52.ts.net:8000` | Raspberry Pi FastAPI base URL |

@@ -4,7 +4,7 @@ This document describes how the threat-detection pipeline works in this codebase
 
 **Scope**: runtime threat detection (live polling from the FastAPI detector, mapping into session/parent objects, optional mock data for local UI, and persistence into the `vulnerabilities_threat` table with `vt_kind = 'threat'`). This does not cover vulnerability scan rules (those are handled separately by the scan endpoints and marked with `vt_kind = 'vulnerability'`).
 
-**Last updated**: March 5, 2026
+**Last updated**: March 2, 2026
 
 ---
 
@@ -43,8 +43,7 @@ RUNNING → FAILED            (heartbeat timeout: last_heartbeat_at > 30s)
 - **User inactivity / background tabs** (server-side heartbeat loop keeps detection alive independently of the browser)
 
 ### What stops detection
-- **"Stop" button on the SAM page** (visible when detection is active) — opens a governed modal requiring a reason code, optional note, and typing "STOP" to confirm. Calls `POST /api/detect/stop`.
-- Explicit `POST /api/detect/stop` (API call)
+- Explicit `POST /api/detect/stop`
 - New scan on a different network (automatic SWITCH_TARGET)
 - Heartbeat timeout (Pi offline for >30s)
 - Express server shutdown (stops the server-side heartbeat loop)
@@ -68,9 +67,9 @@ All endpoints are mounted at `/api/detect` and require JWT auth (`authJWT` middl
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/detect/status` | Returns current detection state, **enriched with `ssid`** from the `networks` table. Auto-marks FAILED if heartbeat timed out (>30s). |
+| `GET` | `/api/detect/status` | Returns current detection state. Auto-marks FAILED if heartbeat timed out (>30s). |
 | `POST` | `/api/detect/start` | Starts detection or switches target. Body: `{ networkId, scanId }`. `scanId` must be a numeric bigint from `public.scans`, **not** a UUID. |
-| `POST` | `/api/detect/stop` | Stops detection (governed). Body: `{ reason_code, reason_note? }`. See **Stop Governance** below. |
+| `POST` | `/api/detect/stop` | Stops detection. Body: `{ reason }` (optional, defaults to `"MANUAL"`). |
 | `POST` | `/api/detect/heartbeat` | Updates `last_heartbeat_at`. Called automatically by the poll endpoint. |
 | `GET` | `/api/detect/poll` | Proxies to FastAPI detector. **Gated**: returns 200 with `{ threatRows: [], skipped: true }` if detection is not RUNNING. On success, calls heartbeat and returns `{ threatRows }`. |
 
@@ -81,107 +80,6 @@ All endpoints are mounted at `/api/detect` and require JWT auth (`authJWT` middl
 - **STOPPED / FAILED** → return `{ threatRows: [], skipped: true, reason }` without hitting FastAPI.
 
 This ensures the FastAPI detector is only contacted when detection is legitimately active.
-
----
-
-## Stop Governance (STOP + AUDIT)
-
-### Endpoint contract
-
-**`POST /api/detect/stop`** — governed stop with structured reason.
-
-**Request body:**
-```json
-{
-  "reason_code": "MAINTENANCE",
-  "reason_note": "Scheduled router firmware update"
-}
-```
-
-**`reason_code`** (required) must be one of:
-| Code | Use case |
-|------|----------|
-| `MAINTENANCE` | Scheduled maintenance window |
-| `DEVICE_RESTART` | Device reboot or power cycle |
-| `FALSE_POSITIVES` | Excessive false positive detections |
-| `CLIENT_REQUEST` | Client / stakeholder requested stop |
-| `SCOPE_CHANGE` | Assessment scope changed |
-| `EVIDENCE_PRESERVATION` | Preserving current evidence state |
-| `OTHER` | Freeform — **`reason_note` is required** |
-
-**`reason_note`** (optional string) — free-text context. **Required and must be non-empty when `reason_code` is `OTHER`.**
-
-### Governance rules
-
-- **STOP is a manual/admin action.** Logout, page refresh, or tab close does **not** stop detection.
-- **STOP is idempotent.** If detection is already `STOPPED` or `FAILED`, the endpoint returns `200` with the current `detection_state` row. A `DENIED` audit log is written (`meta.noop = true`, `meta.current_status`) but no state change occurs.
-- **STOP is not a failure.** On stop: `failure_reason` is set to `NULL`, `stopped_at` is set to `now()`, `last_heartbeat_at` is preserved unchanged.
-- **Validation errors (400)** do not trigger FAILED audit logs. Only real server errors (500) do.
-
-### Audit logging
-
-All STOP audit events use `entityType: "DETECTION_STATE"`.
-
-| Condition | eventName | eventStatus | Where logged |
-|-----------|-----------|-------------|--------------|
-| RUNNING → STOPPED | `DETECTION.STOP` | `SUCCESS` | Service layer (`detectStateService.stop`) |
-| Already STOPPED/FAILED (no-op) | `DETECTION.STOP` | `DENIED` | Service layer (`detectStateService.stop`) |
-| Server error (500) | `DETECTION.STOP` | `FAILED` | Controller catch block |
-
-SUCCESS audit includes:
-- `oldValues` / `newValues`: `{ status, active_network_id, active_scan_id, stopped_at, last_heartbeat_at }`
-- `meta`: `{ reason_code, reason_note, trigger: "manual_stop", device_id }`
-
-There is exactly **one** SUCCESS log per real stop transition (no duplicates).
-
-### Example request / response
-
-**Request:**
-```bash
-curl -X POST http://localhost:3000/api/detect/stop \
-  -H "Authorization: Bearer <JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{"reason_code": "CLIENT_REQUEST", "reason_note": "End of assessment window"}'
-```
-
-**Response (200 — transitioned RUNNING → STOPPED):**
-```json
-{
-  "device_id": 1,
-  "status": "STOPPED",
-  "active_network_id": "abc-123-...",
-  "active_scan_id": 42,
-  "started_by_profile_id": "user-uuid-...",
-  "started_at": "2026-03-05T10:00:00.000Z",
-  "stopped_at": "2026-03-05T12:30:00.000Z",
-  "last_heartbeat_at": "2026-03-05T12:29:55.000Z",
-  "failure_reason": null,
-  "updated_at": "2026-03-05T12:30:00.000Z"
-}
-```
-
-**Response (200 — already STOPPED, idempotent):**
-Same shape, returns current row. A `DENIED` audit log is written with `meta: { noop: true, current_status, reason_code, reason_note, trigger: "manual_stop" }`.
-
-**Response (400 — bad reason_code):**
-```json
-{
-  "error": "reason_code is required and must be one of: MAINTENANCE, DEVICE_RESTART, FALSE_POSITIVES, CLIENT_REQUEST, SCOPE_CHANGE, EVIDENCE_PRESERVATION, OTHER",
-  "received": "INVALID"
-}
-```
-
-### How to verify in DB
-
-```sql
--- Latest DETECTION.STOP audit entries
-SELECT id, created_at, event_name, event_status, entity_type,
-       old_values, new_values, meta
-FROM   public.audit_logging
-WHERE  event_name = 'DETECTION.STOP'
-ORDER  BY created_at DESC
-LIMIT  10;
-```
 
 ---
 
@@ -211,27 +109,14 @@ This prevents race conditions when multiple tabs or users attempt simultaneous s
 
 ## Audit events
 
-All detection lifecycle transitions are logged to `public.audit_logging` with `entityType: "DETECTION_STATE"`.
-Event names use **dot-notation** consistently.
+All detection lifecycle transitions are logged to the audit table:
 
-| Event Name | Status | Detail |
-|---|---|---|
-| `DETECTION.START` | SUCCESS | Detection started (includes network_id, scan_id in oldValues/newValues) |
-| `DETECTION.SWITCH_TARGET` | SUCCESS | Network/scan changed while detection was already running |
-| `DETECTION.STOP` | SUCCESS | RUNNING → STOPPED transition. Includes `reason_code`, `reason_note`, `trigger: "manual_stop"` in meta. See **Stop Governance** above. |
-| `DETECTION.STOP` | DENIED | Stop called when already STOPPED or FAILED (no-op). `meta.noop = true`, `meta.current_status` shows why. |
-| `DETECTION.STOP` | FAILED | Server error during stop attempt (logged by controller catch block). |
-| `DETECTION.FAILED` | SUCCESS | Heartbeat timeout (>30 s) auto-marked RUNNING → FAILED. Only logged when `started_by_profile_id` is non-null. |
-
-**Verify in DB:**
-```sql
-SELECT id, created_at, event_name, event_status, entity_type,
-       actor_id, old_values, new_values, meta
-FROM   public.audit_logging
-WHERE  event_name LIKE 'DETECTION.%'
-ORDER  BY created_at DESC
-LIMIT  20;
-```
+| Action | Detail |
+|---|---|
+| `START_DETECTION` | Detection started (includes network_id, scan_id) |
+| `STOP_DETECTION` | Detection stopped (includes reason) |
+| `SWITCH_TARGET` | Network/scan changed while detection was running |
+| `DETECTION_FAILED` | Heartbeat timeout triggered automatic failure |
 
 ---
 
@@ -239,18 +124,16 @@ LIMIT  20;
 
 ### Backend
 - **Detection state service**: [backend/services/detectStateService.js](backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, `startServerHeartbeatLoop`, `stopServerHeartbeatLoop`, optimistic locking).
-- **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. `getStatus()` JOINs the `networks` table to enrich the response with the monitored SSID. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
-- **Detection status test**: [backend/__tests__/unit/detectGetStatus.test.js](backend/__tests__/unit/detectGetStatus.test.js) — Unit tests for SSID enrichment in `getStatus()` (6 cases: found, not found, stopped, empty string, DB error, field preservation).
+- **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
 - **Detection routes**: [backend/routes/detectRoutes.js](backend/routes/detectRoutes.js) — Express router mapping endpoints to controller handlers.
 - **Server mount**: [backend/server.js](backend/server.js) — mounts `detectRoutes` at `/api/detect`, calls `detectStateService.ensureRow()` and `detectStateService.startServerHeartbeatLoop()` on startup.
 - **Auto-start on scan save**: [backend/controllers/rasPiController.js](backend/controllers/rasPiController.js) — calls `detectStateService.startOrSwitch()` after risk pipeline.
 - **Threat detail endpoint** (modal data): [backend/controllers/samController.js](backend/controllers/samController.js) at `/api/sam/threats/:idOrName`.
 
 ### Frontend
-- **Detection API helpers**: [src/api/detectApi.js](src/api/detectApi.js) — `getDetectStatus()`, `startDetect()`, `stopDetect(reasonCode, reasonNote)`, `pollDetect()`.
+- **Detection API helpers**: [src/api/detectApi.js](src/api/detectApi.js) — `getDetectStatus()`, `startDetect()`, `stopDetect()`, `pollDetect()`.
 - **Detection hook**: [src/hooks/useSAM.js](src/hooks/useSAM.js) — `useThreatDetection()` bootstraps from `/detect/status` on mount, runs axios-based polling at 3s intervals, exposes `refreshStatus()`.
-- **SAM page**: [src/pages/SAM/SAM.jsx](src/pages/SAM/SAM.jsx) — destructures `failureReason`/`refreshStatus` from hook, shows FAILED banner, shows **Stop Detection** button when monitoring.
-- **Stop Detection modal**: [src/components/modals/StopDetectionModal/StopDetectionModal.jsx](src/components/modals/StopDetectionModal/StopDetectionModal.jsx) — governed stop modal with reason code dropdown, optional note, and "STOP" confirmation.
+- **SAM page**: [src/pages/SAM/SAM.jsx](src/pages/SAM/SAM.jsx) — destructures `failureReason`/`refreshStatus` from hook, shows FAILED banner.
 - **Display**: [src/components/sam/ThreatsTable.jsx](src/components/sam/ThreatsTable.jsx) — renders parent rows and expanded sessions panel.
 
 ---
@@ -268,7 +151,7 @@ LIMIT  20;
 
 - **Mock data**: `src/data/mockThreats.js` provides `mappedThreats` and `rawPollSamples` for UI testing when the detector is offline.
 - **Against real detector**:
-  1. Ensure the Pi is reachable and `PI_BASE_URL` + `CONTROL_SIGNING_SECRET` are set in backend `.env` (see `PI_SIGNING_README.md`).
+  1. Ensure FastAPI detector is reachable and `FASTAPI_BASE` is set in backend `.env`.
   2. Start Express backend (`npm run dev` in `backend/`).
   3. Start Vite frontend (`npm run dev` in root).
   4. Open SAM page → trigger a scan → detection auto-starts after save.
@@ -328,4 +211,4 @@ LIMIT  20;
 - [backend/controllers/samController.js](backend/controllers/samController.js)
 
 ---
-Updated on March 5, 2026
+Updated on March 2, 2026

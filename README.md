@@ -4,6 +4,159 @@ A Web-based Security Assessment Tool using Microcontroller applied to Unsecured 
 
 ---
 
+## Tech Stack
+
+| Layer     | Technology                                                        |
+|-----------|-------------------------------------------------------------------|
+| Frontend  | React 19 (Vite), React Router 7, Recharts, Axios                 |
+| Backend   | Express 5, Node.js                                                |
+| Database  | PostgreSQL via Supabase (SDK — zero raw SQL)                      |
+| Auth      | JWKS JWT (in-memory access token) + HttpOnly refresh cookie       |
+| Hardware  | Raspberry Pi (FastAPI), Tailscale Funnel for remote connectivity  |
+| Hosting   | Railway (frontend: `serve -s dist`, backend: Express)             |
+| Testing   | Jest (backend unit/integration), Playwright (E2E), Burp/ZAP (security) |
+
+---
+
+## Project Structure
+
+```
+whypii/
+├── src/                    # React frontend (Vite)
+│   ├── api/                # Axios instance + API helpers
+│   ├── components/         # Reusable UI components
+│   ├── context/            # React context providers (auth, threat detection)
+│   ├── hooks/              # Custom React hooks
+│   ├── layouts/            # Sidebar, page layouts
+│   ├── pages/              # Route-level page components
+│   └── lib/                # Utilities
+├── backend/                # Express.js API server
+│   ├── controllers/        # Route handlers
+│   ├── services/           # Business logic
+│   ├── repositories/       # Supabase data access
+│   ├── middleware/         # Auth, roles, rate limiting, request ID
+│   ├── routes/             # Express route definitions
+│   ├── validators/         # Input validation
+│   ├── utils/              # Shared utilities
+│   └── __tests__/          # Jest test suites
+├── e2e/                    # Playwright E2E tests
+└── public/                 # Static assets
+```
+
+---
+
+## Architecture
+
+```
+Browser (React SPA)
+    │
+    │  HTTPS / cookies
+    ▼
+Railway (Express API)
+    │
+    ├──→ Supabase (PostgreSQL + Auth)
+    │
+    └──→ Tailscale Funnel (public HTTPS)
+              │
+              ▼
+         Raspberry Pi
+         ├── nginx (127.0.0.1:9000 — gateway)
+         └── FastAPI (scanning, AP control, detection)
+```
+
+- **Express is the only caller of the Pi.** The browser never talks to the Pi directly.
+- **Tailscale Funnel** exposes the Pi because Railway cannot join a tailnet.
+- **HMAC signing** authenticates Express→Pi commands; **nginx rate limits** protect availability.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- Supabase project (with service role key)
+- Raspberry Pi with FastAPI + nginx (for device features)
+
+### Frontend
+
+```bash
+npm install
+npm run dev          # Vite dev server on http://localhost:5173
+```
+
+### Backend
+
+```bash
+cd backend
+npm install
+cp .env.example .env  # Fill in Supabase keys, JWT secret, etc.
+npm start             # Express on http://localhost:3001
+```
+
+### Tests
+
+```bash
+# Backend unit/integration tests
+cd backend
+npm test
+npm run test:coverage
+
+# E2E tests (Playwright)
+npm run test:e2e
+npm run test:e2e:headed
+```
+
+---
+
+## Security Hardening
+
+The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md).
+
+### Current Security Posture: 8/10
+
+| Phase | Name                        | Status       | Key Items                                                      |
+|-------|-----------------------------|--------------|----------------------------------------------------------------|
+| 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `PORTAL_PATCH_TOKEN` + `CONTROL_SIGNING_SECRET` in env |
+| 1     | P0 Infrastructure           | **Done**     | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies (`CROSS_ORIGIN_COOKIES`) |
+| 2     | Route Auth Lockdown         | **Done**     | `authJWT` on all 9 route groups, `requireSuperadmin` on audit  |
+| 3     | Bug Fixes & Info Disclosure | **Partial**  | Most leaks sealed; residual `err.message` in rasPi/auth/user/detect controllers |
+| 4     | Deployment Readiness        | **Partial**  | CORS via env, `VITE_API_BASE_URL` in axios; `deviceApi.js` still hardcoded |
+| 4.5   | Pi Connectivity Readiness   | Not started  | Funnel URL stability, nginx binding, timeouts, Idempotency-Key |
+| 5     | Optional Polish             | **Done**     | UUID validation middleware on device/user/rasPi routes          |
+| 6     | Testing Deliverables        | **Done**     | Jest unit + integration tests, Playwright E2E, coverage reports |
+
+### Deployment Watchlist Items
+
+1. **CSP `connect-src`** — auto-configured per environment; Railway + Supabase domains added in prod
+2. **CORS / cookies** — set `CROSS_ORIGIN_COOKIES=true` on Railway backend for `SameSite=None; Secure`
+3. **Multi-instance** — in-memory rate limiter resets on restart; Redis required if Railway auto-scales
+4. **`deviceApi.js` hardcoded URL** — still uses `localhost:3000`; should use shared axios instance
+5. **Funnel ports** — Funnel only listens on 443/8443/10000; nginx 9000 is internal only
+
+---
+
+## Documentation Index
+
+| Document                                                                  | Covers                                              |
+|---------------------------------------------------------------------------|------------------------------------------------------|
+| [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md)               | Full phased security plan, audit findings, risk notes |
+| [`DEVICE_MANAGEMENT_README.md`](DEVICE_MANAGEMENT_README.md)             | Device management feature (AP, portal, scans)        |
+| [`AP_ENABLE_PORTAL_README.md`](AP_ENABLE_PORTAL_README.md)               | Access Point & captive portal flow                   |
+| [`ACCOUNTS_FLOW_README.md`](ACCOUNTS_FLOW_README.md)                     | User account management flow                         |
+| [`AUDIT_README.md`](AUDIT_README.md)                                     | Audit logging system                                 |
+| [`SESSION_PERSISTENCE_README.md`](SESSION_PERSISTENCE_README.md)         | Session persistence & token refresh                  |
+| [`SAM_CHANGES_README.md`](SAM_CHANGES_README.md)                         | Security Assessment Management changes               |
+| [`HISTORY_CHANGES_README.md`](HISTORY_CHANGES_README.md)                 | History/vulnerability tracking changes               |
+| [`CHANGES_README.md`](CHANGES_README.md)                                 | General changelog                                    |
+| [`scanREADME.md`](scanREADME.md)                                         | Scan workflow                                        |
+| [`threatsREADME.md`](threatsREADME.md)                                   | Threat detection system                              |
+| [`clearListREADME.md`](clearListREADME.md)                               | Clear list functionality                             |
+| [`backend/TESTING.md`](backend/TESTING.md)                               | Backend test guide                                   |
+| [`backend/THREATS.md`](backend/THREATS.md)                                | Backend threat model                                 |
+
+---
+
 ## UI Updates — Threat Detection Indicator (Global)
 
 ### What changed
@@ -56,85 +209,3 @@ A Web-based Security Assessment Tool using Microcontroller applied to Unsecured 
 - `activeNetwork` in the sidebar tooltip and monitoring pill uses a fallback chain: backend `ssid` field → SAM-pushed `setActiveNetwork()` override → local `lastScannedNetwork`/`selectedNetwork`. The SSID is pushed into global context when a scan starts and when SAM restores a session.
 - Badge count uses `displayThreats.length`; it does not distinguish between active vs. cleared threat sessions.
 - The "Updated Xs ago" timestamp refreshes only when the context re-renders (every ~3 s during active detection).
-
----
-
-## UI Updates — Logout Confirmation Prompt (Detection-Aware)
-
-### What changed
-
-1. **New `LogoutConfirmModal` component** (`src/components/modals/LogoutConfirmModal/`)
-   - Reusable confirmation modal built on top of the existing `BaseModal` component.
-   - Accepts `isDetectionRunning` and `activeNetwork` props to determine the message shown.
-   - **When detection is running** (`DETECTING` or `SCANNING`):
-     - Displays a prominent amber/yellow warning box with ⚠️ icon.
-     - Informs the user that threat detection is currently active (includes the network name when available).
-     - Clearly states: _"Logging out will not stop the ongoing detection process — it will continue running in the background. You can log back in later to view results or stop detection."_
-   - **When detection is idle/stopped**: Shows a simple "Are you sure you want to logout?" confirmation.
-   - Footer contains **Cancel** (stays logged in) and **Logout** (red, proceeds with logout) buttons.
-
-2. **Sidebar logout** (`src/layouts/Sidebar.jsx`)
-   - Both the desktop sidebar and mobile drawer logout buttons now open the `LogoutConfirmModal` instead of logging out immediately.
-   - The modal reads `detectionStatus` and `activeNetwork` from `ThreatDetectionContext` to decide whether to show the detection warning.
-
-3. **UserMenu logout** (`src/components/common/UserMenu/UserMenu.jsx`)
-   - The dropdown menu "Logout" option now also opens the `LogoutConfirmModal`.
-   - The logout logic was upgraded to use the proper `apiLogout()` API call (matching the Sidebar's implementation) and `clearSessionState()` to wipe `wf:*` session keys, replacing the previous `localStorage.removeItem('token')` approach.
-
-### Files added
-
-| File | Purpose |
-|------|---------|
-| `src/components/modals/LogoutConfirmModal/LogoutConfirmModal.jsx` | Modal component with detection-aware warning |
-| `src/components/modals/LogoutConfirmModal/LogoutConfirmModal.css` | Styles (amber warning box, red confirm button) |
-
-### Files modified
-
-| File | Change |
-|------|--------|
-| `src/layouts/Sidebar.jsx` | Imported `LogoutConfirmModal`; added `showLogoutModal` state; logout buttons call `requestLogout()` → opens modal; `confirmLogout()` proceeds with actual logout |
-| `src/components/common/UserMenu/UserMenu.jsx` | Imported `LogoutConfirmModal`, `useThreatDetectionContext`, `apiLogout`, `setAccessToken`, `clearSessionState`; logout opens modal; upgraded logout to use proper API call |
-
-### How to test manually
-
-1. Start the backend and frontend dev servers.
-2. Log in and click the **Logout** button (sidebar or user menu dropdown).
-   - A confirmation modal should appear asking "Are you sure you want to logout?"
-   - Click **Cancel** — nothing happens, user stays logged in.
-   - Click **Logout** — user is logged out and redirected to `/login`.
-3. Start a threat detection scan from the SAM page.
-4. While detection is running (`DETECTING` or `SCANNING`), click **Logout** again.
-   - The modal should now display the amber warning box informing the user that detection is active.
-   - The warning should include the network name (e.g., _Threat detection is currently running on "MyNetwork"_).
-   - The message should clearly state that detection will continue in the background after logout.
-   - Click **Logout** to confirm — user is logged out; detection continues on the backend.
-5. Log back in and verify detection status is still active on the SAM page.
-
-### Known limitations
-
-- The modal checks `detectionStatus` from `ThreatDetectionContext`. If the context hasn't finished its initial `/detect/status` bootstrap call, the modal may not show the detection warning on the very first render after login.
-- The warning message is informational only — there is no option to stop detection from within the logout modal. Users must navigate to the SAM page and use the Stop Detection flow to halt detection before logging out.
-
----
-
-## Bug Fix — UserMenu Not Displaying
-
-### Problem
-
-The `UserMenu` component (floating pill-shaped dropdown in the top-right corner showing the user's name, role, and providing Profile/Logout actions) was not visible on any authenticated page. The import in `App.jsx` was commented out and the component was never rendered, even though `App.css` already reserved space for it (`padding-top: 80px` on `.main-content`).
-
-### What changed
-
-| File | Change |
-|------|--------|
-| `src/App.jsx` | Uncommented the `UserMenu` import; added `<UserMenu />` to the authenticated layout (rendered between `<Sidebar />` and `<main>` inside `ThreatDetectionProvider`) |
-
-### How to verify
-
-1. Start the frontend dev server.
-2. Log in with any valid account.
-3. The **UserMenu** pill should appear fixed in the top-right corner of the page, showing the logged-in user's name and role.
-4. Click the pill — a dropdown should open with **Profile** and **Logout** options.
-5. Clicking **Logout** should open the `LogoutConfirmModal` (with the detection-aware warning if detection is active).
-6. Verify the menu is visible and functional on all authenticated pages (Dashboard, SAM, Device Management, etc.).
-7. On mobile (≤ 768 px), the menu should reposition slightly (`top: 12px; right: 12px`) but remain accessible.

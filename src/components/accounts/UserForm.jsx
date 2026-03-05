@@ -105,7 +105,7 @@ const UserForm = ({
         }}>
           {detailsSaved ? (
             <>
-              <strong>✓ Profile details saved successfully.</strong>
+              <strong>✔ Profile details saved successfully.</strong>
               <p style={{ margin: '4px 0 0' }}>
                 You can now click <em>Reactivate Account</em> below to restore login access
                 and optionally issue a temporary password.
@@ -115,11 +115,11 @@ const UserForm = ({
             <>
               <strong>This account is deactivated.</strong>
               <p style={{ margin: '4px 0 0' }}>
-                <strong>Step 1:</strong> Update the user details below (name, email, username, role), then click 
+                <strong>Step 1:</strong> Update the user details below (name, email, username, role), then click
                 <em> Save Details</em> to save the profile changes.
               </p>
               <p style={{ margin: '4px 0 0' }}>
-                <strong>Step 2:</strong> Click <em>Reactivate Account</em> to restore login access and optionally 
+                <strong>Step 2:</strong> Click <em>Reactivate Account</em> to restore login access and optionally
                 issue a temporary password.
               </p>
             </>

@@ -353,7 +353,7 @@ const SAM = () => {
     setIsModalOpen(false);
   };
 
-  // ─── Stop Detection handler ──────────────────────────────────
+  // ——— Stop Detection handler ———
   const handleStopDetection = async (reasonCode, reasonNote) => {
     setStopProcessing(true);
     try {
@@ -445,7 +445,7 @@ const SAM = () => {
           <div className="status-banner redirect-banner">
             <span>
               Switching to <strong>Threats</strong> tab in{" "}
-              <strong>{redirectCountdown}s</strong>…
+              <strong>{redirectCountdown}s</strong>\u2026
             </span>
             <button
               className="dismiss-banner-btn"

@@ -3,8 +3,7 @@
 
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('../utils/auditLogger');
-
-const { piFetch } = require('../services/piGatewayService');
+const { piFetch } = require('../utils/piFetch');
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared helpers (exported for use in deviceMgmtRoutes)
@@ -610,8 +609,16 @@ async function syncPortal(req, res) {
 			net.ssid
 		);
 
-		// Forward to Pi (signed)
-		const fastapiData = await piFetch('/portal/patch', { method: 'POST', jsonBody: payload });
+		// Forward to FastAPI
+		const { ok: piOk, data: fastapiData } = await piFetch('/portal/patch', {
+			method: 'POST',
+			jsonBody: payload,
+		});
+		if (!piOk) {
+			throw new Error(
+				fastapiData?.detail || `portal/patch error`
+			);
+		}
 
 		res.json({ status: 'synced', fastapi: fastapiData, payload });
 
@@ -630,7 +637,7 @@ async function syncPortal(req, res) {
 		}
 	} catch (err) {
 		console.error('captivePortal syncPortal error:', err);
-		res.status(500).json({ error: 'Failed to sync portal', detail: err.message });
+		res.status(500).json({ error: 'Failed to sync portal' });
 	}
 }
 

@@ -210,7 +210,7 @@ async function getVulnerabilitiesLatest(req, res) {
 
   } catch (error) {
     console.error("getVulnerabilitiesLatest error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Failed to load vulnerabilities" });
   }
 }
 

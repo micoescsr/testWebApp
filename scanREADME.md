@@ -4,7 +4,7 @@ This project exposes backend endpoints used by the frontend to trigger vulnerabi
 
 - **Trigger scan (frontend → backend → FastAPI on Pi)**: `POST /api/rasPi/scan`
 	- Payload: `{ ssid: string, bssid: string, channel: number }`
-	- Behavior: Handled by `rasPiController.triggerScan` which proxies the request to the Pi `/scan` endpoint via signed `piFetch()` (HMAC-SHA256). See `PI_SIGNING_README.md` for signing details.
+	- Behavior: Handled by `rasPiController.triggerScan` which proxies the request to the FastAPI `/scan` endpoint on the configured `FASTAPI_BASE`.
 	- Frontend call: `src/api/rasPiApi.js` -> `triggerScan(network)` posts to `/rasPi/scan`.
 
 - **Save network + scan + findings**: `POST /api/rasPi/networks`

@@ -21,7 +21,7 @@ import api, { setAccessToken, getAccessToken } from "./api/axios";
 import { NetworkProvider } from "./context/NetworkContext";
 import { ThreatDetectionProvider } from "./context/ThreatDetectionContext";
 import "./App.css";
-import UserMenu from "./components/common/UserMenu/UserMenu";
+//import UserMenu from "./components/common/UserMenu/UserMenu";
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -74,7 +74,6 @@ function App() {
                 <ThreatDetectionProvider>
                   <div className="app">
                     <Sidebar />
-                    <UserMenu />
                     <main className="main-content">
                       <Routes>
                         <Route path="/dashboard" element={<Dashboard />} />

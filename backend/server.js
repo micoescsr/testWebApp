@@ -1,12 +1,18 @@
 // server.js
 
 require("dotenv").config();
+
+// ── Fail-fast env validation (Phase 1-I) ─────────────────────────────
+// Must run BEFORE any Express setup so we crash immediately on bad config.
+const { validateEnv } = require("./config/envValidation");
+validateEnv();
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const FASTAPI_BASE = "http://mothership-1.tail781e52.ts.net:8000"; //ADDED 06:13 PM - 01/29/2026
-//const FASTAPI_BASE = process.env.FASTAPI_BASE_URL || "http://127.0.0.1:8000"; //ADDED 06:10 PM - 01/29/2026
-const crypto = require("crypto"); // ADDED 03:22 PM - FEB 11
+const helmet = require("helmet");
+const crypto = require("crypto");
+const { piFetch } = require("./utils/piFetch");
 
 const webAppRoutes = require("./routes/webAppRoutes");
 const rasPiRoutes = require("./routes/rasPiRoutes");
@@ -37,9 +43,57 @@ function getRiskLabel(score) {
 }
 
 const app = express();
-const allowedOrigins = ["http://localhost:5173"]; // Vite dev server
+
+// ── Trust proxy (Phase 1-A) ──────────────────────────────────────────
+// Railway uses a single-layer reverse proxy. Without this, express-rate-limit
+// keys on the proxy IP (all users share one bucket) and req.ip is wrong.
+app.set('trust proxy', 1);
+
+// Hide Express fingerprint on ALL responses (including pre-middleware health check)
+app.disable('x-powered-by');
+
+// ── Health check (Phase 2-new) ──────────────────────────────────────
+// Placed BEFORE any middleware so Railway uptime probes are never blocked
+// by rate limiting, auth, or CORS.
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use(cookieParser());
+
+// ── Helmet + CSP (Phase 1-C) ────────────────────────────────────────
+const connectSources = ["'self'"];
+const appEnv = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
+if (appEnv === 'production') {
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    connectSources.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+  }
+  if (process.env.SUPABASE_URL) {
+    connectSources.push(process.env.SUPABASE_URL);
+  }
+} else {
+  connectSources.push('http://localhost:*', 'ws://localhost:*');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      connectSrc: connectSources,
+      imgSrc:     ["'self'", "data:", "blob:"],
+    },
+  },
+  hsts: appEnv === 'production',
+}));
+
+// ── CORS (Phase 4-A) ────────────────────────────────────────────────
+// Env-based origins: ALLOWED_ORIGINS="https://prod.example.com,https://www.prod.example.com"
+// Falls back to Vite dev server for local development.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -57,6 +111,11 @@ app.use(
 
 app.use(express.json());
 app.use(requestIdMiddleware);
+
+// ── Global rate limiter (Phase 1-F) ─────────────────────────────────
+// Applied AFTER health check so uptime probes aren't throttled.
+const { globalLimiter } = require('./middleware/rateLimiter');
+app.use(globalLimiter);
 app.use("/api/webapp", webAppRoutes); 
 app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect routes
 //app.use('/api/rasPi_scan', scanRoutes);
@@ -76,28 +135,24 @@ app.use("/api/detect", detectRoutes);
 // 4) History (JWT-protected, user-scoped per controller logic)
 app.use("/api/history", historyRoutes);
 
-// 5) Pi proxy – signed requests to Pi FastAPI gateway (nginx :9000 via Funnel)
+// 5) Pi proxy (signed requests to Pi gateway)
 app.use("/api/pi", piProxyRoutes);
 
-// 2) Everything else under /api requires JWT + active profile
-//app.use("/api", authJWT, requireActiveProfile);
+// Phase 2-E: Dead global-auth middleware removed.
+// Auth is now enforced per-route (Phase 2-A/B/C/D).
+// Keeping this commented block was a false-safety trap —
+// it looked like blanket auth existed when it didn't.
 
-// 3) Protected sub-routers
-//app.use("/api/webApp", webAppRoutes);
-//app.use("/api/rasPi", rasPiRoutes);
-//app.use("/api/rasPi_scan", scanRoutes);
-//app.use("/api/captivePortal", captivePortalRoutes);
-
-app.get("/api/device/status", async (req, res) => {
-  const { piFetch } = require("./services/piGatewayService");
+// Phase 2-D: Device status requires JWT (browser-called)
+app.get("/api/device/status", authJWT, async (req, res) => {
   try {
-    const data = await piFetch("/device/status", { method: "GET" });
-    return res.json(data);
+    const { status, data } = await piFetch("/device/status");
+    return res.status(status).json(data);
   } catch (err) {
+    console.error('[device/status] FastAPI proxy error:', err);
     return res.status(err.status || 502).json({
       status: "ERROR",
-      error: "Failed to reach Pi /device/status",
-      detail: err.data || String(err),
+      error: "Failed to reach device status endpoint",
     });
   }
 });
@@ -359,7 +414,25 @@ async function persistThreatRows(threatRows, targetBssid, supabaseClient) {
 // );
 
 
-const PORT = 3000;
+// ── Global error handler (Phase 6 — error leak prevention) ──────────
+// Express 4 error middleware must have exactly 4 params: (err, req, res, next).
+// This catches unhandled throw / next(err) from any route or middleware
+// and returns a safe generic message — no stack traces, no internal details.
+app.use((err, _req, res, _next) => {
+  // JSON parse errors from express.json()
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'INVALID_JSON', message: 'Malformed JSON in request body' });
+  }
+  // CORS errors
+  if (err.message === 'CORS not allowed') {
+    return res.status(403).json({ error: 'CORS_REJECTED' });
+  }
+  // Everything else — log internally, return generic
+  console.error(`[global-error] ${err.message}`, { stack: err.stack });
+  return res.status(err.status || 500).json({ error: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
+});
+
+const PORT = process.env.PORT || 3000;
 const { execSync } = require('child_process');
 
 function killPort(port) {

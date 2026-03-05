@@ -228,7 +228,7 @@ CREATE INDEX idx_audit_archive_event ON audit_logging_archive(event_name);
 |----------|-----------|
 | UUID primary key | Prevents sequential ID enumeration attacks |
 | FK to `profiles.id` (active only) | Ensures actor traceability; archive drops FK so logs survive profile purges |
-| Dual entity ID columns (uuid + bigint) | Supports both UUID-based and legacy bigint-based entities. Check constraint enforces exactly one is set. |
+| Dual entity ID columns (uuid + bigint) | Supports both UUID-based and legacy bigint-based entities |
 | JSONB `old_values` / `new_values` | Full change capture without separate diff tables |
 | JSONB `meta` | Extensible context (device info, error messages, etc.) |
 | `event_status` enum (OK/FAIL/DENY) | DB-enforced valid states; mapped to user-friendly labels in app |
@@ -266,15 +266,13 @@ await logAuditEvent({
   eventName: "SCAN.START",               // Dot-notation preferred (old names auto-migrated)
   eventStatus: "SUCCESS",                 // SUCCESS | FAILED | DENIED â†’ auto-mapped to OK | FAIL | DENY
   entityType: "SCAN",                     // Category
-  entityIdUuid: scanId,                   // Target entity UUID (optional)
-  entityIdBigint: null,                   // Target entity bigint PK (optional)
+  entityIdUuid: scanId,                   // Target entity (optional)
+  entityIdBigint: null,                   // For bigint PKs (optional)
   oldValues: { status: "IDLE" },          // Before snapshot (optional)
   newValues: { status: "RUNNING" },       // After snapshot (optional)
   meta: { network_id: "..." },           // Extra context (optional)
 });
 ```
-
-> **⚠️ Entity ID constraint:** The DB enforces `audit_logging_entity_id_oneof` — exactly **one** of `entityIdUuid` or `entityIdBigint` must be set, not both. If neither is provided, the logger auto-falls back to `actorId` as `entity_id_uuid`. If `entityIdBigint` is provided, `entity_id_uuid` is left null automatically.
 
 ### Event Name Migration
 
@@ -292,7 +290,8 @@ Old callers using underscore names (e.g., `LOGIN_SUCCESS`, `SCAN_TRIGGER`) conti
 ### Safety guarantees
 
 - **Never throws** â€” audit failures are caught and logged to console, never breaking the primary operation.
-- **Graceful degradation** â€” if `actorId` is missing, the event is skipped with a console warning.- **Entity ID one-of** — respects the `audit_logging_entity_id_oneof` check constraint: when `entityIdBigint` is provided, `entity_id_uuid` is set to null; when neither is provided, falls back to `actorId` as uuid.- **Status mapping** â€” accepts friendly labels (`SUCCESS`, `FAILED`, `DENIED`) and auto-maps to DB enum (`OK`, `FAIL`, `DENY`).
+- **Graceful degradation** â€” if `actorId` is missing, the event is skipped with a console warning.
+- **Status mapping** â€” accepts friendly labels (`SUCCESS`, `FAILED`, `DENIED`) and auto-maps to DB enum (`OK`, `FAIL`, `DENY`).
 - **IP normalization** â€” strips IPv6-mapped prefix (`::ffff:`) for Postgres `inet` compatibility.
 - **Request correlation** â€” picks up `req.requestId` from `requestIdMiddleware` automatically.
 
@@ -358,30 +357,8 @@ Old callers using underscore names (e.g., `LOGIN_SUCCESS`, `SCAN_TRIGGER`) conti
 
 | Event Name | Status | Entity Type | Trigger | Logged By |
 |------------|--------|-------------|---------|-----------|
-| `DETECTION.START` | OK | DETECTION_STATE | Threat detection started (new start) | `detectStateService.startOrSwitch` |
-| `DETECTION.START` | FAIL | DETECTION_STATE | Server error during start attempt | `detectController.start` (catch block) |
-| `DETECTION.SWITCH_TARGET` | OK | DETECTION_STATE | Network/scan changed while already RUNNING | `detectStateService.startOrSwitch` |
-| `DETECTION.STOP` | OK | DETECTION_STATE | RUNNING → STOPPED transition (manual stop) | `detectStateService.stop` |
-| `DETECTION.STOP` | DENY | DETECTION_STATE | Stop called but already STOPPED or FAILED (no-op) | `detectStateService.stop` |
-| `DETECTION.STOP` | FAIL | DETECTION_STATE | Server error during stop attempt | `detectController.stopDetection` (catch block) |
-| `DETECTION.FAILED` | OK | DETECTION_STATE | Heartbeat timeout (>30 s) auto-marked RUNNING → FAILED | `detectStateService.getStatusAndMaybeFail` |
-
-> **DETECTION.STOP governance rules:**
-> - SUCCESS is logged **once**, in the service layer, only on a real RUNNING → STOPPED transition.
-> - If already STOPPED/FAILED, the endpoint returns 200 idempotently and logs a **DENIED** audit (`meta.noop = true`, `meta.current_status`).
-> - FAILED audit is logged only on 500 server errors, **not** on 400 validation errors.
-> - `meta` includes `{ reason_code, reason_note, trigger: "manual_stop" }`.
-> - `oldValues`/`newValues` include: `status`, `active_network_id`, `active_scan_id`, `stopped_at`, `last_heartbeat_at`.
-> - All detection audit events use `entityType: "DETECTION_STATE"` consistently.
-
-> **DETECTION.FAILED notes:**
-> - Only logged when `started_by_profile_id` is non-null (to satisfy FK constraint on `actor_profile_id`).
-> - `eventStatus` is `OK` (the FAILED refers to the detection state, not the audit operation).
-
-> **Entity ID constraint (`audit_logging_entity_id_oneof`):**
-> - Detection events use `entityIdBigint` (scan_id) as the entity identifier.
-> - `entityIdUuid` is left null when `entityIdBigint` is set (the DB enforces exactly one of the two).
-> - The network_id is captured in `oldValues`/`newValues`/`meta` instead.
+| `DETECTION.START` | OK/FAIL | DETECTION | Threat detection started | `detectController.start` |
+| `DETECTION.STOP` | OK/FAIL | DETECTION | Threat detection stopped | `detectController.stopDetection` |
 
 ### Device Management Events
 
@@ -769,7 +746,7 @@ npm test -- __tests__/unit/auditRepository.test.js  # Single file
 | `violates foreign key constraint "audit_logging_actor_profile_id_fkey"` | Actor UUID doesn't exist in `profiles` | Ensure user has a profile row before logging |
 | `invalid input value for enum audit_event_status` | Wrong status value | Use only `OK`, `FAIL`, or `DENY` |
 | `Audit logs are immutable` | Attempted UPDATE/DELETE on audit table | This is by design â€” audit logs cannot be modified |
-| `violates check constraint "audit_logging_entity_id_oneof"` | Both entity_id columns are set, or both are null | Pass exactly **one** of `entityIdUuid` or `entityIdBigint`. If neither is passed, logger falls back to `actorId` as uuid. If `entityIdBigint` is passed, do **not** also pass `entityIdUuid`. |
+| `violates check constraint` on entity IDs | Both entity_id columns are null | Pass at least `entityIdUuid` (logger auto-falls back to actorId) |
 
 ---
 
@@ -788,7 +765,7 @@ npm test -- __tests__/unit/auditRepository.test.js  # Single file
 - [x] Auth events logged (login, logout, token refresh, failed attempts, temp expired)
 - [x] User lifecycle events logged (create, update, delete, activate, deactivate)
 - [x] Scan events logged (start, save)
-- [x] Detection events logged (start, switch_target, stop with SUCCESS/DENIED, failed)
+- [x] Detection events logged (start, stop)
 - [x] Device management events logged (AP enable/disable)
 - [x] Captive portal events logged (announcement, terms, tips, sync)
 - [x] Authorization denial logged (403 from requireSuperadmin)
