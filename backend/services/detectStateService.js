@@ -11,8 +11,7 @@ const HEARTBEAT_TIMEOUT_SEC = 30; // FAILED after 30 s without heartbeat
 const MAX_RETRIES = 2; // optimistic-lock retry limit
 const SERVER_PING_INTERVAL_MS = 10_000; // 10 s — server-side liveness check interval
 
-const FASTAPI_BASE =
-  process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const { piFetch } = require("./piGatewayService");
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -122,7 +121,9 @@ async function getStatusAndMaybeFail(req) {
             oldValues: { status: oldRow.status, network_id: oldRow.active_network_id, scan_id: oldRow.active_scan_id },
             newValues: { status: "FAILED", failure_reason: "heartbeat timeout" },
             meta: { device_id: DEVICE_ID },
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error("[detectState] DETECTION.FAILED audit error:", err?.message ?? err);
+          });
         }
 
         row = updated;
@@ -163,7 +164,7 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
   if (
     row.status === "RUNNING" &&
     row.active_network_id === networkId &&
-    row.active_scan_id === numericScanId
+    Number(row.active_scan_id) === numericScanId
   ) {
     return row;
   }
@@ -207,7 +208,9 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
           scan_id: numericScanId,
         },
         meta: { device_id: DEVICE_ID, reason: isSwitching ? "network switch" : "new start" },
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(`[detectState] ${eventName} audit error:`, err?.message ?? err);
+      });
 
       return updated;
     }
@@ -221,7 +224,7 @@ async function startOrSwitch(req, actorId, networkId, scanIdBigint) {
     if (
       row.status === "RUNNING" &&
       row.active_network_id === networkId &&
-      row.active_scan_id === numericScanId
+      Number(row.active_scan_id) === numericScanId
     ) {
       return row;
     }
@@ -249,7 +252,7 @@ async function stop(req, actorId, reasonInfo) {
       eventName: "DETECTION.STOP",
       eventStatus: "DENIED",
       entityType: "DETECTION_STATE",
-      entityIdUuid: row.active_network_id || null,
+      entityIdUuid: row.active_scan_id ? null : (row.active_network_id || null),
       entityIdBigint: row.active_scan_id || null,
       meta: {
         noop: true,
@@ -258,7 +261,9 @@ async function stop(req, actorId, reasonInfo) {
         reason_note: reason_note || null,
         trigger: "manual_stop",
       },
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error("[detectState] DETECTION.STOP DENIED audit error:", err?.message ?? err);
+    });
     return row;
   }
 
@@ -285,7 +290,7 @@ async function stop(req, actorId, reasonInfo) {
         eventName: "DETECTION.STOP",
         eventStatus: "SUCCESS",
         entityType: "DETECTION_STATE",
-        entityIdUuid: oldRow.active_network_id || null,
+        entityIdUuid: oldRow.active_scan_id ? null : (oldRow.active_network_id || null),
         entityIdBigint: oldRow.active_scan_id || null,
         oldValues: {
           status: oldRow.status,
@@ -307,7 +312,9 @@ async function stop(req, actorId, reasonInfo) {
           trigger: "manual_stop",
           device_id: DEVICE_ID,
         },
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error("[detectState] DETECTION.STOP SUCCESS audit error:", err?.message ?? err);
+      });
 
       return updated;
     }
@@ -357,18 +364,13 @@ async function serverPing() {
     const row = await fetchRow();
     if (!row || row.status !== "RUNNING") return; // nothing to ping
 
-    // Lightweight HEAD or GET to FastAPI — just check if it's reachable
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5 s hard timeout
-
-    const r = await fetch(`${FASTAPI_BASE}/detect/poll?max_items=1`, {
+    // Lightweight signed GET to Pi — just check if it's reachable
+    const r = await piFetch("/detect/poll", {
       method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
+      queryString: "max_items=1",
     });
-    clearTimeout(timeout);
 
-    if (r.ok) {
+    if (r) {
       // Pi is alive — refresh the heartbeat (no req needed)
       const now = new Date().toISOString();
       await lockedUpdate(
@@ -376,14 +378,10 @@ async function serverPing() {
         row.updated_at
       ).catch(() => {}); // best-effort; next ping will retry
     }
-    // If FastAPI returned non-OK, do nothing — heartbeat ages naturally
-    // and getStatusAndMaybeFail() will transition to FAILED after 30 s.
   } catch (err) {
-    // Network error, timeout, abort — Pi is unreachable. Do nothing.
+    // Network error — Pi is unreachable. Do nothing.
     // Heartbeat will age → FAILED via the normal path.
-    if (err.name !== "AbortError") {
-      console.warn("[serverPing] FastAPI unreachable:", err.message);
-    }
+    console.warn("[serverPing] Pi unreachable:", err.message);
   }
 }
 

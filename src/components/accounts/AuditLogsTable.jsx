@@ -101,6 +101,7 @@ function formatEventName(name) {
     "SCAN.COMPLETE": "Scan Complete",
     "SCAN.FAILED": "Scan Failed",
     "DETECTION.START": "Detection Started",
+    "DETECTION.SWITCH_TARGET": "Detection Target Switched",
     "DETECTION.STOP": "Detection Stopped",
     "DETECTION.FAILED": "Detection Failed",
     "DEVICE.AP_ENABLE": "AP Enabled",

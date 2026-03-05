@@ -30,7 +30,7 @@ Two inline endpoints were added to serve the History page:
 
 #### `GET /api/detect/poll`
 
-- Proxies requests to the FastAPI detector at `${FASTAPI_BASE}/detect/poll`.
+- Proxies requests to the Pi detector via signed `piFetch("/detect/poll")` (see `PI_SIGNING_README.md`).
 - On receiving threat results, calls `loadThreatDefinitions()` to fetch all `vulnerability_threat_details` rows and builds a lookup map by `vt_code`.
 - Calls `mapPollResultsToThreatRows()` to group raw detection results by threat type (`evil_twin`, `mac_spoofing`, `deauthentication`), resolving each against the DB definitions for `vt_name`, `vt_severity_rating`, and `vt_cvss_base_score`.
 - Each mapped threat includes: `id`, `name`, `severity`, `score`, `status`, `occurrences`, `detectedTime`, `sessions[]`, and `raw[]`.
@@ -48,8 +48,8 @@ Two inline endpoints were added to serve the History page:
 
 #### `GET /api/device/status`
 
-- Proxies to `${FASTAPI_BASE}/device/status` and forwards the FastAPI response status code and JSON body.
-- Returns `502` with diagnostic info if FastAPI is unreachable.
+- Proxies to the Pi via signed `piFetch("/device/status")` (see `PI_SIGNING_README.md`) and forwards the response JSON.
+- Returns `502` with diagnostic info if the Pi is unreachable.
 
 ### Captive Portal Endpoints — Updated
 
@@ -124,13 +124,13 @@ Still queries `networks` for `city, province, notes` by BSSID. No modifications.
 ### `triggerScan(req, res)` — Minimal Changes
 
 - Validates `ssid`, `bssid`, and `channel` from request body.
-- Proxies `POST` to `${FASTAPI_BASE}/scan` with the payload.
-- Returns the FastAPI response status and JSON directly.
+- Proxies `POST` to the Pi via signed `piFetch("/scan", { method: "POST", jsonBody: payload })` (see `PI_SIGNING_README.md`).
+- Returns the Pi response JSON directly.
 
 ### `getNetworksList(req, res)` — Added
 
-- Proxies `GET` to `${FASTAPI_BASE}/networks` and returns the list of available networks from the scanning device.
-- Returns `502` with diagnostic info if FastAPI is unreachable.
+- Proxies `GET` to the Pi via signed `piFetch("/networks")` (see `PI_SIGNING_README.md`) and returns the list of available networks.
+- Returns `502` with diagnostic info if the Pi is unreachable.
 
 ### `saveNetworkMetadataScan(req, res)` — Rewritten
 
@@ -361,7 +361,7 @@ useThreatDetection() → startPolling()
 runPoll() → GET /api/detect/poll (Express)
     │             │
     │             ▼
-    │         Express → GET ${FASTAPI_BASE}/detect/poll
+    │         Express → piFetch("/detect/poll") (HMAC-signed)
     │             │
     │             ▼
     │         loadThreatDefinitions() + mapPollResultsToThreatRows()
@@ -379,3 +379,25 @@ setDisplayThreats(mapped) → ThreatsTable renders
     ▼
 setTimeout(runPoll, 2000)  // repeat
 ```
+
+---
+
+## SAM — Dynamic Empty State & Redirect Countdown
+
+### `src/components/sam/ThreatsTable.jsx`
+
+- **New prop: `detectionStatus`** — drives dynamic empty-state messaging.
+- Empty-state text now varies: `IDLE` → connect prompt, `SCANNING` → starting message, `DETECTING` → monitoring message, `FAILED` → failure message.
+
+### `src/pages/SAM/SAM.jsx`
+
+- **Passes `detectionStatus`** to `<ThreatsTable>`.
+- **New state: `redirectCountdown`** — counts down from 5 after a successful scan.
+- **New ref: `redirectTimerRef`** — holds the `setInterval` ID for the countdown.
+- **Redirect countdown banner** — after scan success, a blue info banner appears: "Switching to Threats tab in Ns…" with a **Cancel** button.
+- Replaces the previous silent `setTimeout(() => setActiveTab("threats"), 5000)` with a visible, cancellable countdown.
+
+### `src/pages/SAM/SAM.css`
+
+- **`.redirect-banner`** — blue info-level banner styles (`#eff6ff` background, `#1e40af` text, `#93c5fd` border).
+- **`.redirect-banner .dismiss-banner-btn`** — matching blue Cancel button with hover state.

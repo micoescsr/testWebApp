@@ -4,8 +4,7 @@
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('../utils/auditLogger');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
-const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
+const { piFetch } = require('../services/piGatewayService');
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared helpers (exported for use in deviceMgmtRoutes)
@@ -611,21 +610,8 @@ async function syncPortal(req, res) {
 			net.ssid
 		);
 
-		// Forward to FastAPI
-		const fastapiRes = await fetch(`${FASTAPI_BASE}/portal/patch`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(payload),
-		});
-		const fastapiData = await fastapiRes.json().catch(() => null);
-		if (!fastapiRes.ok) {
-			throw new Error(
-				fastapiData?.detail || `portal/patch error: ${fastapiRes.status}`
-			);
-		}
+		// Forward to Pi (signed)
+		const fastapiData = await piFetch('/portal/patch', { method: 'POST', jsonBody: payload });
 
 		res.json({ status: 'synced', fastapi: fastapiData, payload });
 

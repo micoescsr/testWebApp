@@ -114,7 +114,7 @@ This ensures the FastAPI detector is only contacted when detection is legitimate
 ### Governance rules
 
 - **STOP is a manual/admin action.** Logout, page refresh, or tab close does **not** stop detection.
-- **STOP is idempotent.** If detection is already `STOPPED` or `FAILED`, the endpoint returns `200` with the current `detection_state` row and does **not** write a SUCCESS audit log.
+- **STOP is idempotent.** If detection is already `STOPPED` or `FAILED`, the endpoint returns `200` with the current `detection_state` row. A `DENIED` audit log is written (`meta.noop = true`, `meta.current_status`) but no state change occurs.
 - **STOP is not a failure.** On stop: `failure_reason` is set to `NULL`, `stopped_at` is set to `now()`, `last_heartbeat_at` is preserved unchanged.
 - **Validation errors (400)** do not trigger FAILED audit logs. Only real server errors (500) do.
 
@@ -125,6 +125,7 @@ All STOP audit events use `entityType: "DETECTION_STATE"`.
 | Condition | eventName | eventStatus | Where logged |
 |-----------|-----------|-------------|--------------|
 | RUNNING → STOPPED | `DETECTION.STOP` | `SUCCESS` | Service layer (`detectStateService.stop`) |
+| Already STOPPED/FAILED (no-op) | `DETECTION.STOP` | `DENIED` | Service layer (`detectStateService.stop`) |
 | Server error (500) | `DETECTION.STOP` | `FAILED` | Controller catch block |
 
 SUCCESS audit includes:
@@ -160,7 +161,7 @@ curl -X POST http://localhost:3000/api/detect/stop \
 ```
 
 **Response (200 — already STOPPED, idempotent):**
-Same shape, returns current row. No audit log written.
+Same shape, returns current row. A `DENIED` audit log is written with `meta: { noop: true, current_status, reason_code, reason_note, trigger: "manual_stop" }`.
 
 **Response (400 — bad reason_code):**
 ```json
@@ -267,7 +268,7 @@ LIMIT  20;
 
 - **Mock data**: `src/data/mockThreats.js` provides `mappedThreats` and `rawPollSamples` for UI testing when the detector is offline.
 - **Against real detector**:
-  1. Ensure FastAPI detector is reachable and `FASTAPI_BASE` is set in backend `.env`.
+  1. Ensure the Pi is reachable and `PI_BASE_URL` + `CONTROL_SIGNING_SECRET` are set in backend `.env` (see `PI_SIGNING_README.md`).
   2. Start Express backend (`npm run dev` in `backend/`).
   3. Start Vite frontend (`npm run dev` in root).
   4. Open SAM page → trigger a scan → detection auto-starts after save.

@@ -938,3 +938,28 @@ th.sortable {
 .dismiss-banner-btn:hover {
   background: rgba(230, 81, 0, 0.1);
 }
+
+/* ─── Redirect countdown banner ─── */
+
+.redirect-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #eff6ff;
+  color: #1e40af;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  border: 1px solid #93c5fd;
+  font-size: 14px;
+}
+
+.redirect-banner .dismiss-banner-btn {
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.redirect-banner .dismiss-banner-btn:hover {
+  background: rgba(30, 64, 175, 0.08);
+}

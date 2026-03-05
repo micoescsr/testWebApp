@@ -6,8 +6,7 @@
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
 
-const FASTAPI_BASE = process.env.FASTAPI_BASE || 'http://mothership-1.tail781e52.ts.net:8000';
-const PORTAL_TOKEN = process.env.PORTAL_TOKEN || '';
+const { piFetch } = require('../services/piGatewayService');
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s
@@ -271,27 +270,19 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 		const patchBucket = preNet?.risk_bucket || bucket;
 
 		const payload = { network_id: networkId, risk: { bucket: patchBucket } };
-		const url = `${FASTAPI_BASE}/portal/patch`;
 
-		console.log(`[riskPipeline] Auto portal/patch → ${url}`, JSON.stringify(payload));
+		console.log(`[riskPipeline] Auto portal/patch (signed)`, JSON.stringify(payload));
 
-		const res = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...(PORTAL_TOKEN && { 'x-portal-token': PORTAL_TOKEN }),
-			},
-			body: JSON.stringify(payload),
-		});
-		const body = await res.json().catch(() => null);
-
-		if (!res.ok) {
-			console.error(`[riskPipeline] portal/patch failed: ${res.status}`, body);
+		let body;
+		try {
+			body = await piFetch('/portal/patch', { method: 'POST', jsonBody: payload });
+		} catch (piErr) {
+			console.error(`[riskPipeline] portal/patch failed: ${piErr.status}`, piErr.data);
 			await logAuditEvent({
 				req, actorId: null,
 				eventName: 'PORTAL_UPDATE', eventStatus: 'FAILED',
 				entityType: 'NETWORK', entityIdUuid: networkId,
-				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, fastapi_body: body },
+				meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: piErr.status, fastapi_body: piErr.data },
 			});
 			return false;
 		}
@@ -327,7 +318,7 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 			req, actorId: null,
 			eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: networkId,
-			meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, stamped_version: postVersion },
+			meta: { reason: 'auto_risk_patch', bucket: patchBucket, stamped_version: postVersion },
 		});
 
 		return true;

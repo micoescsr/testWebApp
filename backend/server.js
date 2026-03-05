@@ -18,6 +18,7 @@ const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const detectRoutes = require('./routes/detectRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const piProxyRoutes = require('./routes/piProxyRoutes');
 const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
@@ -75,6 +76,9 @@ app.use("/api/detect", detectRoutes);
 // 4) History (JWT-protected, user-scoped per controller logic)
 app.use("/api/history", historyRoutes);
 
+// 5) Pi proxy – signed requests to Pi FastAPI gateway (nginx :9000 via Funnel)
+app.use("/api/pi", piProxyRoutes);
+
 // 2) Everything else under /api requires JWT + active profile
 //app.use("/api", authJWT, requireActiveProfile);
 
@@ -85,25 +89,15 @@ app.use("/api/history", historyRoutes);
 //app.use("/api/captivePortal", captivePortalRoutes);
 
 app.get("/api/device/status", async (req, res) => {
+  const { piFetch } = require("./services/piGatewayService");
   try {
-    const r = await fetch(`${FASTAPI_BASE}/device/status`, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-    });
-
-    const data = await r.json().catch(() => null);
-
-    // Forward FastAPI status code and JSON
-    return res.status(r.status).json(
-      data ?? { status: "ERROR", error: "Non-JSON response from FastAPI" }
-    );
-
+    const data = await piFetch("/device/status", { method: "GET" });
+    return res.json(data);
   } catch (err) {
-    return res.status(502).json({
+    return res.status(err.status || 502).json({
       status: "ERROR",
-      error: "Failed to reach FastAPI /device/status",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
+      error: "Failed to reach Pi /device/status",
+      detail: err.data || String(err),
     });
   }
 });

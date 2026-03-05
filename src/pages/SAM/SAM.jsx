@@ -56,6 +56,8 @@ const SAM = () => {
   const [dismissCounter, setDismissCounter] = useState(0);
   const [showStopModal, setShowStopModal] = useState(false);
   const [stopProcessing, setStopProcessing] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(null);
+  const redirectTimerRef = useRef(null);
 
   const { threats, fetchThreatDetail, threatDetail, threatDetailLoading } =
     useThreats();
@@ -279,11 +281,21 @@ const SAM = () => {
       const normalizedBssid = (selectedNetwork.bssid || "").toUpperCase();
       await reloadVulnerabilities(normalizedBssid);
 
-      // 5. Show vulnerabilities first, then auto-switch to Threats after 5 seconds
+      // 5. Show vulnerabilities first, then auto-switch to Threats after countdown
       setActiveTab("vulnerabilities");
-      setTimeout(() => {
-        setActiveTab("threats");
-      }, 5000);
+      setRedirectCountdown(5);
+      if (redirectTimerRef.current) clearInterval(redirectTimerRef.current);
+      redirectTimerRef.current = setInterval(() => {
+        setRedirectCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(redirectTimerRef.current);
+            redirectTimerRef.current = null;
+            setActiveTab("threats");
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (err) {
       console.error("Scan error:", err);
       alert("Scan failed");
@@ -429,6 +441,28 @@ const SAM = () => {
           </div>
         )}
 
+        {redirectCountdown !== null && (
+          <div className="status-banner redirect-banner">
+            <span>
+              Switching to <strong>Threats</strong> tab in{" "}
+              <strong>{redirectCountdown}s</strong>…
+            </span>
+            <button
+              className="dismiss-banner-btn"
+              onClick={() => {
+                if (redirectTimerRef.current) {
+                  clearInterval(redirectTimerRef.current);
+                  redirectTimerRef.current = null;
+                }
+                setRedirectCountdown(null);
+              }}
+              title="Stay on Vulnerabilities"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         {selectedNetwork?._notInRange && showOutOfRangeBanner && (
           <div className="status-banner warning out-of-range-banner">
             <span>
@@ -468,7 +502,7 @@ const SAM = () => {
         </div>
 
         {activeTab === "threats" && (
-          <ThreatsTable threats={displayThreats} onView={openThreatDetail} />
+          <ThreatsTable threats={displayThreats} onView={openThreatDetail} detectionStatus={detectionStatus} />
         )}
 
         {activeTab === "vulnerabilities" && (

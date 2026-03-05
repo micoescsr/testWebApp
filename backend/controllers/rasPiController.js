@@ -1,7 +1,7 @@
 // controllers/rasPiController.js
 const crypto = require("crypto");
 const rasPiService = require("../services/rasPiService");
-const FASTAPI_BASE = process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const { piFetch } = require("../services/piGatewayService");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
 const detectStateService = require("../services/detectStateService");
@@ -28,13 +28,7 @@ async function triggerScan(req, res) {
 
     const payload = { ssid, bssid, channel };
     console.log("triggerScan payload:", payload);
-    const r = await fetch(`${FASTAPI_BASE}/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const fastapiData = await r.json();
+    const fastapiData = await piFetch("/scan", { method: "POST", jsonBody: payload });
 
     // Audit: scan triggered
     if (req.user?.id) {
@@ -42,14 +36,14 @@ async function triggerScan(req, res) {
         req,
         actorId: req.user.id,
         eventName: "SCAN_TRIGGER",
-        eventStatus: r.ok ? "SUCCESS" : "FAILED",
+        eventStatus: "SUCCESS",
         entityType: "SCAN",
         entityIdUuid: req.user.id,
-        meta: { ssid, bssid, channel, fastapiStatus: r.status },
+        meta: { ssid, bssid, channel },
       }).catch(() => {});
     }
 
-    return res.status(r.status).json(fastapiData);
+    return res.json(fastapiData);
   } catch (err) {
     console.error("triggerScan error:", err);
     if (req.user?.id) {
@@ -69,21 +63,15 @@ async function triggerScan(req, res) {
 
 async function getNetworksList(req, res) {
   try {
-    const r = await fetch(`${FASTAPI_BASE}/networks`, { //dpt aligned sa endpoint ni kerby which is naka /network lng
-      method: "GET",
-      headers: { "Accept": "application/json" },
-    });
-
-    const data = await r.json();
+    const data = await piFetch("/networks", { method: "GET" });
     console.log("getNetworksList response:", data);
-    return res.status(r.status).json(data);
+    return res.json(data);
 
   } catch (err) {
-    return res.status(502).json({
+    return res.status(err.status || 502).json({
       status: "ERROR",
-      error: "Failed to reach FastAPI /networks",
-      detail: String(err),
-      fastapi_base: FASTAPI_BASE,
+      error: "Failed to reach Pi /networks",
+      detail: err.data || String(err),
     });
   }
 };

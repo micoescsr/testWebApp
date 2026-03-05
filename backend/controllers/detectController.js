@@ -6,9 +6,7 @@
 const detectStateService = require("../services/detectStateService");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
-
-const FASTAPI_BASE =
-  process.env.FASTAPI_BASE || "http://mothership-1.tail781e52.ts.net:8000";
+const { piFetch } = require("../services/piGatewayService");
 
 // ─── Shared helpers (moved from server.js) ──────────────────────
 
@@ -241,17 +239,8 @@ async function start(req, res) {
 
     const row = await detectStateService.startOrSwitch(req, actorId, network_id, numericScanId);
 
-    // Audit: detection started
-    logAuditEvent({
-      req,
-      actorId,
-      eventName: "DETECTION.START",
-      eventStatus: "SUCCESS",
-      entityType: "DETECTION",
-      entityIdUuid: network_id,
-      entityIdBigint: numericScanId,
-      meta: { network_id, scan_id: numericScanId },
-    }).catch(() => {});
+    // Audit is already written inside detectStateService.startOrSwitch()
+    // (DETECTION.START or DETECTION.SWITCH_TARGET with entityType DETECTION_STATE)
 
     return res.json(row);
   } catch (err) {
@@ -260,14 +249,16 @@ async function start(req, res) {
     // Audit: detection start failed
     const actorId = req.user?.id;
     if (actorId) {
-      logAuditEvent({
+      await logAuditEvent({
         req,
         actorId,
         eventName: "DETECTION.START",
         eventStatus: "FAILED",
-        entityType: "DETECTION",
+        entityType: "DETECTION_STATE",
         meta: { error: err.message },
-      }).catch(() => {});
+      }).catch((auditErr) => {
+        console.error("[detect/start] audit error:", auditErr?.message ?? auditErr);
+      });
     }
 
     return res.status(500).json({ error: "Failed to start detection", detail: err.message });
@@ -370,17 +361,27 @@ async function poll(req, res) {
       });
     }
 
-    // 2) Proxy to FastAPI
+    // 2) Proxy to Pi (signed)
     const maxItems = Number(req.query.max_items ?? 50);
 
-    const r = await fetch(
-      `${FASTAPI_BASE}/detect/poll?max_items=${maxItems}`,
-      { method: "GET", headers: { Accept: "application/json" } }
-    );
+    let data;
+    try {
+      data = await piFetch("/detect/poll", {
+        method: "GET",
+        queryString: `max_items=${maxItems}`,
+      });
+    } catch (piErr) {
+      // Pi returned non-OK — do NOT mark FAILED (heartbeat timeout handles that)
+      return res.status(200).json({
+        status: stateRow.status,
+        running: true,
+        results: [],
+        threatRows: [],
+        last_error: `Pi error: ${piErr.status || 'unreachable'}`,
+      });
+    }
 
-    const data = await r.json().catch(() => null);
-
-    if (r.ok && data) {
+    if (data) {
       if (data.results && data.results.length > 0) {
         console.log("THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
       } else {
@@ -405,15 +406,6 @@ async function poll(req, res) {
         threatRows,
       });
     }
-
-    // FastAPI returned non-OK — do NOT mark FAILED (heartbeat timeout handles that)
-    return res.status(200).json({
-      status: stateRow.status,
-      running: true,
-      results: [],
-      threatRows: [],
-      last_error: `FastAPI error: ${r.status}`,
-    });
   } catch (err) {
     console.error("Poll Proxy Exception:", err.message);
     return res.status(200).json({
