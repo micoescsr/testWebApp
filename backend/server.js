@@ -56,6 +56,30 @@ app.disable('x-powered-by');
 // by rate limiting, auth, or CORS.
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// ── Pi smoke test (deploy verification) ─────────────────────────────
+// Calls /device/status through piFetch to confirm signing + connectivity.
+// Protected: in production requires Authorization: Bearer <INTERNAL_SMOKE_TOKEN>.
+// In dev (no token configured) it's open for convenience.
+app.get('/internal/pi-smoke', async (req, res) => {
+  const token = process.env.INTERNAL_SMOKE_TOKEN;
+  if (token) {
+    const auth = req.headers.authorization || '';
+    if (auth !== `Bearer ${token}`) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
+
+  try {
+    const { ok, status, data } = await piFetch('/device/status', { timeoutMs: 8000 });
+    res.json({ pi_reachable: ok, pi_status: status, pi_data: data });
+  } catch (err) {
+    res.status(502).json({
+      pi_reachable: false,
+      error: err.message || 'Pi unreachable',
+    });
+  }
+});
+
 app.use(cookieParser());
 
 // ── Helmet + CSP (Phase 1-C) ────────────────────────────────────────

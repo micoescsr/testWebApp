@@ -12,18 +12,28 @@ const PI_BASE_URL = () =>
 const SIGNING_SECRET = () => process.env.CONTROL_SIGNING_SECRET || "";
 
 /**
+ * Should signing be enforced right now?
+ * Production: always.  Dev: skip ONLY if PI_SIGNING_OPTIONAL=true.
+ */
+function signingRequired() {
+  const env = (process.env.NODE_ENV || "development").toLowerCase();
+  if (env === "production") return true;
+  return process.env.PI_SIGNING_OPTIONAL !== "true";
+}
+
+/**
  * Fetch a Pi FastAPI endpoint with HMAC-signed headers.
  *
- * @param {string} path       - URL path, may include query string
- *                               (e.g. "/device/status" or "/detect/poll?max_items=50").
+ * @param {string} path       - URL path (e.g. "/device/status" or "/detect/poll").
  * @param {Object} [opts]
  * @param {string} [opts.method="GET"]
  * @param {Object} [opts.jsonBody]     - Will be JSON-stringified and sent as body.
- * @param {string} [opts.query]        - Querystring to append (e.g. "max_items=50").
- *                                        Merged into path for URL and signing.
+ * @param {string|Object} [opts.query] - Querystring to append.
+ *                                        String: "max_items=50" (no leading "?").
+ *                                        Object: { max_items: 50 } — serialized via URLSearchParams.
  * @param {Object} [opts.extraHeaders] - Additional headers to merge.
  * @param {number} [opts.timeoutMs=10000] - Abort timeout in milliseconds.
- * @returns {Promise<{ ok: boolean, status: number, data: any }>}
+ * @returns {Promise<{ ok: boolean, status: number, data: any, rawText: string }>}
  */
 async function piFetch(path, {
   method = "GET",
@@ -35,10 +45,18 @@ async function piFetch(path, {
   const base = PI_BASE_URL();
   const secret = SIGNING_SECRET();
 
+  // Normalize query — accept string or object
+  let qs = "";
+  if (query && typeof query === "object") {
+    qs = new URLSearchParams(query).toString();
+  } else if (query) {
+    qs = String(query);
+  }
+
   // Build full path with query — used for both URL and signing.
   let pathWithQuery = path;
-  if (query) {
-    pathWithQuery += (path.includes("?") ? "&" : "?") + query;
+  if (qs) {
+    pathWithQuery += (path.includes("?") ? "&" : "?") + qs;
   }
 
   const url = `${base}${pathWithQuery}`;
@@ -59,6 +77,12 @@ async function piFetch(path, {
   if (secret) {
     const signed = buildSignedHeaders({ method, pathWithQuery, bodyBytes, secret });
     Object.assign(headers, signed);
+  } else if (signingRequired()) {
+    // Never silently omit signing in production.
+    throw new Error(
+      "CONTROL_SIGNING_SECRET is not set — cannot sign Pi request. " +
+      "Set PI_SIGNING_OPTIONAL=true in dev or provide the secret."
+    );
   }
 
   // Accept JSON by default
@@ -77,17 +101,25 @@ async function piFetch(path, {
     });
     clearTimeout(timer);
 
-    const text = await res.text();
+    const rawText = await res.text();
     let data;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(rawText);
     } catch {
-      data = { raw: text };
+      data = { raw: rawText };
+    }
+
+    // Log non-OK responses (never log secrets or full signature).
+    if (!res.ok) {
+      console.error(
+        `[piFetch] ${method} ${pathWithQuery} → ${res.status}`,
+        typeof data === "object" ? (data.detail || data.error || "") : ""
+      );
     }
 
     // Always return — let callers decide how to handle non-OK responses.
     // This avoids swallowing status-specific logic at call sites.
-    return { ok: res.ok, status: res.status, data };
+    return { ok: res.ok, status: res.status, data, rawText };
   } catch (err) {
     clearTimeout(timer);
 

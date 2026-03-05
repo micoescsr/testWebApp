@@ -58,11 +58,12 @@ function validateEnv() {
       );
     }
 
-    // Prod should be deploying from main branch (Railway sets RAILWAY_GIT_BRANCH)
+    // Prod should be deploying from main or security branch (Railway sets RAILWAY_GIT_BRANCH)
     const branch = process.env.RAILWAY_GIT_BRANCH;
-    if (branch && branch !== 'main') {
+    const allowedBranches = ['main', 'security'];
+    if (branch && !allowedBranches.includes(branch)) {
       errors.push(
-        `[SAFETY] APP_ENV=production but deploying from branch "${branch}" (expected "main")`
+        `[SAFETY] APP_ENV=production but deploying from branch "${branch}" (expected one of: ${allowedBranches.join(', ')})`
       );
     }
   } else {
