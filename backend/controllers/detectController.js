@@ -69,41 +69,24 @@ function mapPollResultsToThreatRows(results, defsByCode) {
   return Array.from(grouped.values());
 }
 
-async function findLatestScanIdForBssid(targetBssid) {
-  if (!targetBssid) return null;
-
-  const { data: networks, error: netErr } = await supabaseClient
-    .from("networks")
-    .select("network_id, bssid, created_at")
-    .eq("bssid", targetBssid)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  if (netErr || !networks || networks.length === 0) return null;
-  const networkId = networks[0].network_id;
-
-  const { data: scans, error: scansErr } = await supabaseClient
-    .from("scans")
-    .select("scan_id, network_id, created_at")
-    .eq("network_id", networkId)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  if (scansErr || !scans || scans.length === 0) return null;
-  return scans[0].scan_id;
-}
-
-async function persistThreatRows(threatRows, targetBssid) {
+/**
+ * Persist threat rows using detection_state's scan_id (no BSSID lookup).
+ * - Inserts event history into vulnerability_threat_events
+ * - Upserts current state in vulnerabilities_threat per (scan_id, vt_detail_id)
+ * - Recomputes risk via RPC compute_scan_risk
+ * - Calls riskPipeline.updateNetworkRisk with real score
+ */
+async function persistThreatRows(threatRows, scanId, activeNetworkId) {
   if (!Array.isArray(threatRows) || threatRows.length === 0) return;
-
-  const normalizedBssid = targetBssid ? targetBssid.toUpperCase() : null;
-  const scanId = await findLatestScanIdForBssid(normalizedBssid);
   if (!scanId) {
-    console.warn("No scan_id found, skipping threat persistence");
+    console.warn("[persistThreatRows] No scanId provided, skipping threat persistence");
     return;
   }
 
+  const now = new Date().toISOString();
+
   for (const t of threatRows) {
+    // Resolve vt_detail_id from vt_code
     const { data: detail, error: detailErr } = await supabaseClient
       .from("vulnerability_threat_details")
       .select("vt_detail_id, vt_kind, vt_cvss_base_score")
@@ -111,66 +94,128 @@ async function persistThreatRows(threatRows, targetBssid) {
       .maybeSingle();
 
     if (detailErr || !detail) {
-      console.error("Missing vt_detail for code", t.id, detailErr);
+      console.error("[persistThreatRows] Missing vt_detail for code", t.id, detailErr);
       continue;
     }
 
     const sessions = t.sessions || t.raw || [];
     const lastSession = sessions[sessions.length - 1] || null;
-    const vtStatus = lastSession?.state === "DETECTED" ? "DETECTED" : "CLEARED";
+    const isDetected = lastSession?.state === "DETECTED";
+    const eventType = isDetected ? "DETECTED" : "CLEARED";
 
-    const payload = {
-      scan_id: scanId,
-      vt_name: t.name,
-      vt_status: vtStatus,
-      vt_value: t.name,
-      vt_detail_id: detail.vt_detail_id,
-      vt_kind: detail.vt_kind,
-      severity_score: detail.vt_cvss_base_score,
-    };
+    // 1) Append event to vulnerability_threat_events (append-only audit log)
+    const { error: eventErr } = await supabaseClient
+      .from("vulnerability_threat_events")
+      .insert({
+        scan_id: scanId,
+        vt_detail_id: detail.vt_detail_id,
+        event_state: eventType,
+        event_time: now,
+      });
 
-    const { error: insertErr } = await supabaseClient
+    if (eventErr) {
+      console.error("[persistThreatRows] Event insert failed", eventErr);
+    }
+
+    // 2) Upsert current state in vulnerabilities_threat keyed on (scan_id, vt_detail_id)
+    const { data: existing, error: lookErr } = await supabaseClient
       .from("vulnerabilities_threat")
-      .insert(payload);
+      .select("vt_id, occurrence_count, first_seen_at")
+      .eq("scan_id", scanId)
+      .eq("vt_detail_id", detail.vt_detail_id)
+      .maybeSingle();
 
-    if (insertErr) {
-      console.error("Error inserting threat row", insertErr, payload);
+    if (lookErr) {
+      console.error("[persistThreatRows] Lookup failed", lookErr);
+      continue;
+    }
+
+    if (existing) {
+      // Update existing row
+      const updatePayload = isDetected
+        ? {
+            vt_status: "ACTIVE",
+            occurrence_count: (existing.occurrence_count || 0) + 1,
+            last_seen_at: now,
+          }
+        : {
+            vt_status: "INACTIVE",
+            last_seen_at: now,
+          };
+
+      const { error: updErr } = await supabaseClient
+        .from("vulnerabilities_threat")
+        .update(updatePayload)
+        .eq("vt_id", existing.vt_id);
+
+      if (updErr) {
+        console.error("[persistThreatRows] Update failed", updErr);
+      }
+    } else {
+      // Insert new row
+      const insertPayload = {
+        scan_id: scanId,
+        vt_name: t.name,
+        vt_status: isDetected ? "ACTIVE" : "INACTIVE",
+        vt_value: t.name,
+        vt_detail_id: detail.vt_detail_id,
+        vt_kind: detail.vt_kind,
+        severity_score: detail.vt_cvss_base_score,
+        occurrence_count: isDetected ? 1 : 0,
+        first_seen_at: isDetected ? now : null,
+        last_seen_at: now,
+      };
+
+      const { error: insErr } = await supabaseClient
+        .from("vulnerabilities_threat")
+        .insert(insertPayload);
+
+      if (insErr) {
+        console.error("[persistThreatRows] Insert failed", insErr);
+      }
     }
   }
 
-  // Recompute risk score
-  const { computeRiskScore } = require("../utils/scoring");
-  const findings = threatRows.map((t) => ({ score: t.score ?? 0 }));
-  const riskScore = computeRiskScore(findings);
+  // Recompute risk score via authoritative DB RPC; fall back to JS scoring if RPC is unavailable
+  let effectiveScore = 0;
+  const { data: rpcScore, error: rpcErr } = await supabaseClient.rpc(
+    "compute_scan_risk",
+    { p_scan_id: scanId }
+  );
 
-  const { error: scoreErr } = await supabaseClient
-    .from("scans")
-    .update({ risk_score: riskScore })
-    .eq("scan_id", scanId);
-
-  if (scoreErr) {
-    console.error("Failed to update scan risk_score", scoreErr);
+  if (rpcErr) {
+    console.warn("[persistThreatRows] compute_scan_risk RPC failed, falling back to JS scoring", rpcErr);
+    const { computeRiskScore } = require("../utils/scoring");
+    const findings = threatRows.map((t) => ({ score: t.score ?? 0 }));
+    effectiveScore = computeRiskScore(findings);
+    const { error: scoreErr } = await supabaseClient
+      .from("scans")
+      .update({ risk_score: effectiveScore })
+      .eq("scan_id", scanId);
+    if (scoreErr) {
+      console.error("[persistThreatRows] Fallback risk_score update failed", scoreErr);
+    } else {
+      console.log(`[persistThreatRows] Fallback risk_score ${effectiveScore} written for scan ${scanId}`);
+    }
   } else {
-    console.log(`Scan ${scanId} risk_score updated to ${riskScore}`);
+    effectiveScore = rpcScore ?? 0;
+    console.log(`[persistThreatRows] compute_scan_risk returned ${effectiveScore} for scan ${scanId}`);
   }
 
-  // Risk pipeline
-  if (normalizedBssid) {
-    const { data: netRow } = await supabaseClient
-      .from("networks")
-      .select("network_id")
-      .eq("bssid", normalizedBssid)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (netRow?.network_id) {
-      try {
-        const { onThreatEvent } = require("../utils/riskPipeline");
-        await onThreatEvent(netRow.network_id, threatRows);
-      } catch (pipeErr) {
-        console.error("[riskPipeline] onThreatEvent error (non-fatal):", pipeErr.message);
-      }
+  // Risk pipeline: update network risk with effective score + official bucket
+  if (activeNetworkId) {
+    try {
+      const { bucketize, updateNetworkRisk } = require("../utils/riskPipeline");
+      const newScore = effectiveScore;
+      const newBucket = bucketize(newScore);
+      await updateNetworkRisk(activeNetworkId, {
+        newBucket,
+        newScore,
+        reason: "threat_detected",
+        scanId,
+      });
+    } catch (pipeErr) {
+      console.error("[riskPipeline] updateNetworkRisk error (non-fatal):", pipeErr.message);
     }
   }
 }
@@ -282,6 +327,42 @@ async function stopDetection(req, res) {
       meta: { reason: reason || "manual" },
     }).catch(() => {});
 
+    // Finalization: recompute risk one last time + stamp scan_end + update network risk (best-effort)
+    if (row.active_scan_id) {
+      try {
+        let score = 0;
+        const { data: finalScore, error: rpcErr } = await supabaseClient.rpc("compute_scan_risk", { p_scan_id: row.active_scan_id });
+        if (rpcErr) {
+          console.warn("[stopDetection] compute_scan_risk RPC failed, using fallback", rpcErr);
+          const { computeRiskScore } = require("../utils/scoring");
+          score = computeRiskScore([]);  // no threat rows available at stop time; score derived from DB state
+        } else {
+          score = finalScore ?? 0;
+          console.log(`[stopDetection] Final compute_scan_risk returned ${score} for scan ${row.active_scan_id}`);
+        }
+
+        // Update network risk with final score
+        if (row.active_network_id) {
+          const { bucketize, updateNetworkRisk } = require("../utils/riskPipeline");
+          await updateNetworkRisk(row.active_network_id, {
+            newBucket: bucketize(score),
+            newScore: score,
+            reason: "detection_stopped",
+            scanId: row.active_scan_id,
+          });
+        }
+      } catch (err) {
+        console.error("[stopDetection] Final risk recompute failed (non-fatal):", err.message);
+      }
+
+      await supabaseClient
+        .from("scans")
+        .update({ scan_end: new Date().toISOString() })
+        .eq("scan_id", row.active_scan_id)
+        .then(() => console.log(`[stopDetection] scan_end stamped for scan ${row.active_scan_id}`))
+        .catch((err) => console.error("[stopDetection] scan_end update failed (non-fatal):", err.message));
+    }
+
     return res.json(row);
   } catch (err) {
     console.error("[detect/stop] error:", err);
@@ -354,10 +435,8 @@ async function poll(req, res) {
       const defsByCode = await loadThreatDefinitions();
       const threatRows = mapPollResultsToThreatRows(data.results || [], defsByCode);
 
-      // Persist threat rows
-      const firstResult = (data.results || [])[0] || null;
-      const targetBssid = firstResult?.bssid ? firstResult.bssid.toUpperCase() : null;
-      await persistThreatRows(threatRows, targetBssid);
+      // Persist threat rows using detection_state's scan_id and network_id
+      await persistThreatRows(threatRows, stateRow.active_scan_id, stateRow.active_network_id);
 
       // 3) Heartbeat on successful poll (redundant with server-side ping,
       //    but harmless — keeps heartbeat fresh from both sources)
