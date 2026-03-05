@@ -123,6 +123,12 @@ async function piFetch(path, {
   } catch (err) {
     clearTimeout(timer);
 
+    // Detailed logging for network/timeout errors
+    console.error(`[piFetch] ${method} ${pathWithQuery} failed:`);
+    console.error(`  err:        ${String(err)}`);
+    console.error(`  cause.code: ${err.cause?.code ?? "(none)"}`);
+    console.error(`  cause.msg:  ${err.cause?.message ?? "(none)"}`);
+
     // Wrap network/timeout errors
     const wrapped = new Error(
       err.name === "AbortError"
