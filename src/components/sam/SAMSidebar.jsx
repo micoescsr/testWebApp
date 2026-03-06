@@ -181,7 +181,7 @@ const SAMSidebar = ({
           ))
         ) : (
           <div className="network-item py-4 text-center text-gray-500">
-            {networkSearch ? "No matching networks" : "No networks found"}
+            {networkSearch ? "No matching networks" : "No networks found. Please try again."}
           </div>
         )}
       </div>
