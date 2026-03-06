@@ -14,6 +14,7 @@ import { triggerScan, sendMetadata } from "../../api/rasPiApi";
 import api from "../../api/axios";
 import FindingDetailModal from "../../components/modals/FindingDetailModal/FindingDetailModal";
 import StopDetectionModal from "../../components/modals/StopDetectionModal/StopDetectionModal";
+import ScanConfirmModal from "../../components/modals/ScanConfirmModal/ScanConfirmModal";
 import { stopDetect } from "../../api/detectApi";
 import { useNetworkContext } from "../../context/NetworkContext";
 import {
@@ -59,6 +60,11 @@ const SAM = () => {
   const [stopProcessing, setStopProcessing] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(null);
   const redirectTimerRef = useRef(null);
+  const [scanConfirm, setScanConfirm] = useState({
+    open: false,
+    networkId: null,
+    ssid: null,
+  });
 
   const { threats, fetchThreatDetail, threatDetail, threatDetailLoading } =
     useThreats();
@@ -272,9 +278,11 @@ const SAM = () => {
       // Store both in React context (in-memory, not localStorage)
       setNetworkScan(networkId, scanId);
 
-      alert(
-        `Scan saved! Network ID: ${networkId}. Starting threat detection...`,
-      );
+      setScanConfirm({
+        open: true,
+        networkId,
+        ssid: selectedNetwork.ssid || "",
+      });
 
       // 4. Detection auto-started by backend (detectStateService.startOrSwitch)
       //    Refresh UI state from the backend's detection_state row.
@@ -356,7 +364,8 @@ const SAM = () => {
       setShowStopModal(false);
     } catch (err) {
       console.error("[stop detection]", err);
-      const msg = err?.response?.data?.error || err.message || "Failed to stop detection";
+      const msg =
+        err?.response?.data?.error || err.message || "Failed to stop detection";
       alert(msg);
     } finally {
       setStopProcessing(false);
@@ -495,7 +504,11 @@ const SAM = () => {
         </div>
 
         {activeTab === "threats" && (
-          <ThreatsTable threats={displayThreats} onView={openThreatDetail} detectionStatus={detectionStatus} />
+          <ThreatsTable
+            threats={displayThreats}
+            onView={openThreatDetail}
+            detectionStatus={detectionStatus}
+          />
         )}
 
         {activeTab === "vulnerabilities" && (
@@ -540,6 +553,15 @@ const SAM = () => {
         onClose={() => setShowStopModal(false)}
         onConfirm={handleStopDetection}
         isProcessing={stopProcessing}
+      />
+
+      <ScanConfirmModal
+        isOpen={scanConfirm.open}
+        onClose={() =>
+          setScanConfirm({ open: false, networkId: null, ssid: null })
+        }
+        networkId={scanConfirm.networkId}
+        ssid={scanConfirm.ssid}
       />
     </div>
   );

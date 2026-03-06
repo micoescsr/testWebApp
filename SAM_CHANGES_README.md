@@ -48,10 +48,10 @@ The modal would open but stay stuck on "Loading..." because no detail data was e
 
 **Route table (after change):**
 
-| Method | Path                              | Handler          |
-|--------|-----------------------------------|------------------|
-| GET    | `/api/sam/threats/:idOrName`      | `getThreatDetail` |
-| GET    | `/api/sam/vulnerabilities/:idOrName` | `getVulnDetail` |
+| Method | Path                                 | Handler           |
+| ------ | ------------------------------------ | ----------------- |
+| GET    | `/api/sam/threats/:idOrName`         | `getThreatDetail` |
+| GET    | `/api/sam/vulnerabilities/:idOrName` | `getVulnDetail`   |
 
 ### 3. `src/hooks/useSAM.js` — `useVulnerabilities` hook
 
@@ -126,11 +126,90 @@ FindingDetailModal renders with full detail data
 
 **`vulnerability_threat_details`** — columns used:
 
-| Column                   | Usage                        |
-|--------------------------|------------------------------|
-| `vt_code`                | Lookup key (e.g. `WFVT-001`)|
-| `vt_name`                | Lookup fallback + display    |
-| `vt_kind`                | `"threat"` or `"vulnerability"` |
-| `vt_cvss_base_score`     | CVSS score (e.g. `9.4`)     |
-| `vt_severity_rating`     | Severity label (e.g. `CRITICAL`) |
-| `vt_cvss_vector_string`  | CVSS vector (e.g. `AV:A/AC:L/...`) |
+| Column                  | Usage                              |
+| ----------------------- | ---------------------------------- |
+| `vt_code`               | Lookup key (e.g. `WFVT-001`)       |
+| `vt_name`               | Lookup fallback + display          |
+| `vt_kind`               | `"threat"` or `"vulnerability"`    |
+| `vt_cvss_base_score`    | CVSS score (e.g. `9.4`)            |
+| `vt_severity_rating`    | Severity label (e.g. `CRITICAL`)   |
+| `vt_cvss_vector_string` | CVSS vector (e.g. `AV:A/AC:L/...`) |
+
+---
+
+# SAM — Scan Confirmation Modal (replaces browser `alert()`)
+
+## Summary
+
+After a successful scan, the SAM page showed a **browser `alert()`** dialog:
+
+```
+Scan saved! Network ID: c953829c-8dda-4e40-afa2-147e1f272801.
+Starting threat detection...
+```
+
+This was replaced with a **styled confirmation modal** (`ScanConfirmModal`) that:
+
+- Uses the project's existing `BaseModal` component for consistent look and feel.
+- Displays the network SSID and Network ID in a detail box.
+- Includes a clear "Scan Saved" header and success icon.
+- Shows a note about the upcoming redirect to the Threats tab.
+- Dismisses via an **OK** button or overlay click.
+
+---
+
+## Files Changed
+
+### 1. `src/components/modals/ScanConfirmModal/ScanConfirmModal.jsx` — **NEW**
+
+New modal component built on `BaseModal`. Props:
+
+| Prop        | Type     | Description                              |
+| ----------- | -------- | ---------------------------------------- |
+| `isOpen`    | boolean  | Controls visibility                      |
+| `onClose`   | function | Called when OK is clicked or overlay tap |
+| `networkId` | string   | UUID of the saved network                |
+| `ssid`      | string   | SSID of the scanned network              |
+
+**Rendered sections:**
+
+- Success icon (checkmark)
+- Confirmation message
+- Detail box with Network name and Network ID
+- Note about the Threats tab redirect
+- OK button in the footer
+
+### 2. `src/components/modals/ScanConfirmModal/ScanConfirmModal.css` — **NEW**
+
+Styles for the modal (`.scm-*` class prefix) including:
+
+- Success icon circle with green accent
+- Detail box with label/value rows
+- OK button matching the project's dark button style
+
+### 3. `src/pages/SAM/SAM.jsx` — Updated
+
+**Changes:**
+
+1. **Imported** `ScanConfirmModal` from `../../components/modals/ScanConfirmModal/ScanConfirmModal`.
+2. **Added state** — `scanConfirm` (`{ open, networkId, ssid }`) to control the modal.
+3. **Replaced `alert()`** in `handleScan()` — instead of:
+   ```js
+   alert(`Scan saved! Network ID: ${networkId}. Starting threat detection...`);
+   ```
+   now sets:
+   ```js
+   setScanConfirm({ open: true, networkId, ssid: selectedNetwork.ssid || "" });
+   ```
+4. **Rendered `ScanConfirmModal`** at the bottom of the component alongside the other modals (`FindingDetailModal`, `StopDetectionModal`).
+
+---
+
+## Before / After
+
+| Aspect        | Before                     | After                                         |
+| ------------- | -------------------------- | --------------------------------------------- |
+| Feedback type | Browser `alert()` dialog   | Styled `ScanConfirmModal` (BaseModal)         |
+| Content       | Plain text with Network ID | Header, icon, SSID, Network ID, redirect note |
+| Dismissal     | Single OK button (native)  | OK button + overlay click                     |
+| Consistency   | Breaks app design language | Matches existing modal patterns               |

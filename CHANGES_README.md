@@ -55,14 +55,14 @@ Two inline endpoints were added to serve the History page:
 
 All announcement and terms endpoints were changed from using a hardcoded `NETWORK_ID` constant to accepting a dynamic `network_id` parameter:
 
-| Endpoint                        | Change                                                             |
-|---------------------------------|--------------------------------------------------------------------|
-| `GET /api/announcement`         | Now requires `?network_id=` query param; filters by that network   |
-| `GET /api/announcement/history` | Same — requires `?network_id=` query param                         |
-| `POST /api/announcement`        | Reads `network_id` from request body instead of constant           |
-| `GET /api/terms`                | Now requires `?network_id=` query param                            |
-| `GET /api/terms/history`        | Same — requires `?network_id=` query param                         |
-| `POST /api/terms`               | Reads `network_id` from request body instead of constant           |
+| Endpoint                        | Change                                                           |
+| ------------------------------- | ---------------------------------------------------------------- |
+| `GET /api/announcement`         | Now requires `?network_id=` query param; filters by that network |
+| `GET /api/announcement/history` | Same — requires `?network_id=` query param                       |
+| `POST /api/announcement`        | Reads `network_id` from request body instead of constant         |
+| `GET /api/terms`                | Now requires `?network_id=` query param                          |
+| `GET /api/terms/history`        | Same — requires `?network_id=` query param                       |
+| `POST /api/terms`               | Reads `network_id` from request body instead of constant         |
 
 ### User Activation Endpoint — Added
 
@@ -104,6 +104,7 @@ app.use("/api/auth", authRoutes);          // ← NEW mount (public, no JWT)
 4. **`vt_kind` filter** — Added `.ilike("vt_kind", "vulnerability")` to exclude threat rows from the response. This prevents runtime threat detections (e.g., Evil Twin, Deauthentication) from appearing in the SAM vulnerabilities table.
 
 5. **Row mapping fix** — The mapping code now correctly handles the unaliased `scans` property (which may be an object or single-item array from Supabase) and extracts `networks` from within it:
+
    ```js
    const scanObj = Array.isArray(item.scans) ? item.scans[0] : item.scans;
    const netObj = scanObj?.networks;
@@ -169,7 +170,7 @@ module.exports = {
   getNetworksList,
   saveNetworkMetadataScan,
   getAccessPointDetails,
-  getNetworkById
+  getNetworkById,
 };
 ```
 
@@ -186,6 +187,7 @@ Mirrors `getThreatDetail` but for vulnerabilities. Key differences:
 - **Lookup logic** — Same as `getThreatDetail`: checks if the key looks like a `vt_code` (regex `/^[A-Z0-9]+-\d+$/i`) and uses `.eq("vt_code", key)` if so, otherwise falls back to `.ilike("vt_name", key)` for case-insensitive name match.
 
 **Response shape**:
+
 ```json
 {
   "severity": "CRITICAL",
@@ -204,11 +206,11 @@ Mirrors `getThreatDetail` but for vulnerabilities. Key differences:
 
 ### Helper Functions — Added
 
-| Function                  | Purpose                                                                   |
-|---------------------------|---------------------------------------------------------------------------|
-| `looksLikeVtCode(s)`      | Heuristic regex test to distinguish vt_codes (`WFVT-006`) from names     |
-| `defaultRecommendations()`| Returns generic NIST and OWASP recommendation arrays                      |
-| `defaultDescription(vtName, vtCode)` | Generates a default description string from the name and code  |
+| Function                             | Purpose                                                              |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `looksLikeVtCode(s)`                 | Heuristic regex test to distinguish vt_codes (`WFVT-006`) from names |
+| `defaultRecommendations()`           | Returns generic NIST and OWASP recommendation arrays                 |
+| `defaultDescription(vtName, vtCode)` | Generates a default description string from the name and code        |
 
 ### Exports — Updated
 
@@ -231,13 +233,16 @@ router.get("/vulnerabilities/:idOrName", getVulnDetail);
 ### Import Updated
 
 ```js
-const { getThreatDetail, getVulnDetail } = require("../controllers/samController");
+const {
+  getThreatDetail,
+  getVulnDetail,
+} = require("../controllers/samController");
 ```
 
 ### Route Table (After Changes)
 
-| Method | Path                                 | Handler          |
-|--------|--------------------------------------|------------------|
+| Method | Path                                 | Handler           |
+| ------ | ------------------------------------ | ----------------- |
 | GET    | `/api/sam/threats/:idOrName`         | `getThreatDetail` |
 | GET    | `/api/sam/vulnerabilities/:idOrName` | `getVulnDetail`   |
 
@@ -289,8 +294,8 @@ return {
   vulnDetail,
   vulnDetailLoading,
   fetchVulnDetail,
-  reloadVulnerabilities: loadVulnerabilities,  // ← NEW
-  clearVulnerabilities,                         // ← NEW
+  reloadVulnerabilities: loadVulnerabilities, // ← NEW
+  clearVulnerabilities, // ← NEW
 };
 ```
 
@@ -379,3 +384,30 @@ setDisplayThreats(mapped) → ThreatsTable renders
     ▼
 setTimeout(runPoll, 2000)  // repeat
 ```
+
+---
+
+## 7. Scan Confirmation Modal — `alert()` → `ScanConfirmModal`
+
+### Problem
+
+After a successful scan, `SAM.jsx` called `alert()` to confirm the scan was saved. This showed a plain browser dialog that broke the app's design language.
+
+### New Component: `src/components/modals/ScanConfirmModal/ScanConfirmModal.jsx`
+
+A styled modal built on `BaseModal` that displays:
+
+- **Header**: "Scan Saved"
+- **Body**: Success icon, confirmation message, detail box (Network SSID + Network ID), redirect note
+- **Footer**: OK button
+
+Props: `isOpen`, `onClose`, `networkId`, `ssid`.
+
+Accompanied by `ScanConfirmModal.css` (`.scm-*` class prefix).
+
+### Changes in `src/pages/SAM/SAM.jsx`
+
+1. Imported `ScanConfirmModal`.
+2. Added `scanConfirm` state (`{ open, networkId, ssid }`).
+3. Replaced `alert(...)` in `handleScan()` with `setScanConfirm({ open: true, networkId, ssid })`.
+4. Rendered `<ScanConfirmModal>` alongside existing modals.
