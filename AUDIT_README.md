@@ -544,23 +544,20 @@ The audit export is accessible directly from the **Audit Logs** tab in the `Acco
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Date range inputs | `AccountsAudit.jsx` top bar | **From** and **To** date pickers shown when Audit Logs tab is active |
-| "Export CSV" button | `AuditLogsTable.jsx` export bar | Triggers the export flow; disabled until both dates are selected |
-| Confirmation dialog | `AuditLogsTable.jsx` overlay | Shows date range and warns the action will be recorded; Cancel / Export buttons |
-| Error message | `AuditLogsTable.jsx` export bar | Inline red text if export fails or rate-limited |
+| "Export CSV" button | `AuditLogsTable.jsx` export bar | Triggers the export date range modal; always clickable (no pre-selection required) |
+| Export date range modal | `AuditLogsTable.jsx` overlay | Modal with **From** / **To** date pickers and validation. User selects dates, then confirms export |
+| Error message | `AuditLogsTable.jsx` modal + export bar | Inline red text for validation errors (missing dates, invalid range) or server failures |
 
 **Export Flow:**
 
 ```
-1. Superadmin selects From + To dates in the top bar filters
-2. "Export CSV" button becomes enabled
-3. Click → confirmation overlay appears:
-     "Export audit logs from {from} to {to} as CSV?
-      This action will be recorded in the audit log."
-4. Click "Export" → useAuditLogs.handleExport() fires:
-     a. Rate-limit check (5-second cooldown between exports)
-     b. Validate both dates present and from ≤ to
-     c. Call auditApi.exportAuditLogs({ from, to, status })
+1. Superadmin clicks "Export CSV" button in the audit logs tab
+2. A modal overlay appears with From and To date pickers
+3. Superadmin selects both dates
+4. Click "Export" in the modal:
+     a. Client-side validation: both dates required, from ≤ to
+     b. Rate-limit check (5-second cooldown between exports)
+     c. Call useAuditLogs.handleExport(from, to) which calls auditApi.exportAuditLogs({ from, to, status })
      d. Receive CSV blob response
      e. Create temporary <a> element, trigger download
      f. Filename: audit_logs_{from}_{to}.csv
@@ -569,12 +566,13 @@ The audit export is accessible directly from the **Audit Logs** tab in the `Acco
 
 **Safeguards:**
 
-- **Date range required** — export button is disabled unless both From and To dates are set
+- **Date range modal** — dates are selected inside a dedicated modal with clear UX
+- **Validation** — both dates required; start date cannot be after end date; errors shown inline in modal
 - **Rate limiting** — 5-second cooldown between consecutive exports (client-side)
-- **Date validation** — start date cannot be after end date
 - **Loading state** — button text changes to "Exporting…" and is disabled during the request
-- **Error display** — validation errors and server errors shown inline below the button
+- **Error display** — validation errors shown in modal; server errors shown inline below the button
 - **Role check** — export bar only renders for users with `role === "superadmin"`
+- **Overlay dismiss** — clicking outside the modal cancels the export
 
 ---
 

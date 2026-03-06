@@ -3,6 +3,7 @@
   grid-template-columns: 1fr 320px;
   gap: 24px;
   padding: 0;
+  align-items: start;
 }
 
 .sam-main {
@@ -11,6 +12,12 @@
 
 .sam-page {
   padding: 0;
+}
+
+/* Fixed-height scrollable area for vulnerability/threat table content */
+.sam-card-inner {
+  max-height: 480px;
+  overflow-y: auto;
 }
 
 .page-title {
@@ -189,6 +196,10 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 
 .sidebar-section {

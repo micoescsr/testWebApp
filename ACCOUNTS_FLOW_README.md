@@ -332,11 +332,16 @@ Rows are expandable — clicking shows IP, entity ID, and a full field-by-field 
 | `src/pages/AccountsAudit/AccountsAudit.jsx` | Main page — tabs, modals, state management |
 | `src/components/accounts/UserForm.jsx` | Add/Edit user form with role, status, deactivate |
 | `src/components/accounts/AccountsTable.jsx` | User list table |
-| `src/components/accounts/AuditLogsTable.jsx` | Audit logs table with expand/collapse |
+| `src/components/accounts/AuditLogsTable.jsx` | Audit logs table with expand/collapse + export modal |
 | `src/components/modals/AccountsAuditModal/AccountsAuditModal.jsx` | Modal wrapper |
 | `src/components/common/Modal/BaseModal.jsx` | Base modal (overlay close control) |
 | `src/api/userApi.js` | API calls: updateUser, activateUserWithTemp, deactivateUser |
 | `src/api/authApi.js` | API calls: login, refresh, logout |
+| `src/hooks/useSessionState.js` | Session-storage-backed useState for tab persistence |
+
+### Tab Persistence
+
+The active tab (Accounts vs Audit Logs) is persisted across page refreshes using `useSessionState` with key `wf:accountsAuditTab`. When a user is on the Audit Logs tab and refreshes the page, they remain on the Audit Logs tab instead of being reset to the default Accounts tab.
 
 ### Modal Modes
 

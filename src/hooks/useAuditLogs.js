@@ -101,9 +101,13 @@ const useAuditLogs = () => {
   /**
    * Export audit logs as CSV.
    * Rate-limited to one export every 5 seconds.
+   * Accepts optional date overrides from the export modal.
    * Returns true on success, false on failure.
    */
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async (exportFromDate, exportToDate) => {
+    const effectiveFrom = exportFromDate || fromDate;
+    const effectiveTo = exportToDate || toDate;
+
     // Rate limiting: 5-second cooldown
     const now = Date.now();
     if (now - lastExportRef.current < 5000) {
@@ -112,13 +116,13 @@ const useAuditLogs = () => {
     }
 
     // Require at least a date range
-    if (!fromDate || !toDate) {
+    if (!effectiveFrom || !effectiveTo) {
       setExportError("Please select both a start and end date before exporting.");
       return false;
     }
 
     // Validate date order
-    if (new Date(fromDate) > new Date(toDate)) {
+    if (new Date(effectiveFrom) > new Date(effectiveTo)) {
       setExportError("Start date cannot be after end date.");
       return false;
     }
@@ -129,8 +133,8 @@ const useAuditLogs = () => {
       lastExportRef.current = now;
 
       const res = await exportAuditLogs({
-        from: fromDate,
-        to: toDate,
+        from: effectiveFrom,
+        to: effectiveTo,
         status: statusFilter,
       });
 
@@ -139,7 +143,7 @@ const useAuditLogs = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `audit_logs_${fromDate}_${toDate}.csv`);
+      link.setAttribute("download", `audit_logs_${effectiveFrom}_${effectiveTo}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

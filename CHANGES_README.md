@@ -1,6 +1,64 @@
 # Consolidated File-Level Changelog
 
-This document describes the specific and explicit changes made to the six key files across our chat sessions: `server.js`, `metadataController.js`, `rasPiController.js`, `samController.js`, `samRoutes.js`, and `useSAM.js`.
+This document describes the specific and explicit changes made across chat sessions.
+
+---
+
+## UI/UX Fixes — March 7, 2026
+
+### 1. Login Page — Removed "Welcome back" text
+
+**File:** `src/pages/Login/Login.jsx`
+
+- Removed the `<p className="login-welcome">Welcome back</p>` element from the login card.
+- The login page now shows only the logo icon and "Login to your account" heading for a cleaner appearance.
+
+### 2. Dashboard — Fixed corrupted Unicode characters (mojibake)
+
+**Files:**
+- `src/components/dashboard/SummarySection.jsx`
+- `src/components/dashboard/NetworkSection.jsx`
+- `src/components/dashboard/DashboardHeader.jsx`
+
+Several text elements had garbled characters due to UTF-8 encoding corruption:
+- `ΓÇö` → `—` (em dash) — used as fallback for missing dates and encryption status
+- `ΓåÉ` / `ΓåÆ` → `▼` / `▶` — legend toggle button icons
+- `ΓùÅ` → `✓` — device online status checkmark
+
+### 3. SAM Page — Fixed layout with fixed-height table and aligned sidebar
+
+**File:** `src/pages/SAM/SAM.css`
+
+- Added `align-items: start` to `.sam-layout` grid to keep sidebar aligned with the top of the main content area.
+- Added `.sam-card-inner` with `max-height: 480px` and `overflow-y: auto` to give the vulnerability/threat table a fixed scrollable height.
+- Made `.sam-sidebar` sticky (`position: sticky; top: 24px`) with a max viewport height and its own scroll, so the sidebar stays visible while scrolling the table.
+
+### 4. Accounts & Audit — Export CSV modal + tab retention
+
+**Files:**
+- `src/pages/AccountsAudit/AccountsAudit.jsx`
+- `src/components/accounts/AuditLogsTable.jsx`
+- `src/hooks/useAuditLogs.js`
+- `src/pages/AccountsAudit/AccountsAudit.css`
+
+**Export CSV changes:**
+- The "Export CSV" button no longer requires pre-selecting dates in the top bar filters.
+- Clicking "Export CSV" now opens a **modal dialog** with From/To date pickers.
+- The modal includes inline validation (both dates required, start ≤ end) and a note that the action is audited.
+- `handleExport` in `useAuditLogs.js` now accepts optional `(exportFromDate, exportToDate)` parameters so the modal can pass dates directly.
+- Added `.export-date-fields` and `.export-date-label` CSS classes for the modal date picker layout.
+
+**Tab retention changes:**
+- Changed `useState("accounts")` to `useSessionState("wf:accountsAuditTab", "accounts")` for the active tab.
+- When a user is on the Audit Logs tab and refreshes the page, they remain on the Audit Logs tab.
+
+### 5. Profile Page — Centered layout
+
+**File:** `src/pages/Profile/Profile.css`
+
+- Added `display: flex; flex-direction: column; align-items: center; max-width: 560px; margin: 0 auto` to `.profile-page`.
+- Set `.profile-header` and `.profile-card` to `width: 100%` for full-width alignment within the centered container.
+- Replaced `max-width: 480px` on `.profile-card` and `.profile-form` with `width: 100%` to fill the centered parent.
 
 ---
 
