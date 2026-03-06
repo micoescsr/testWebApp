@@ -37,7 +37,7 @@ The JS `computeRiskScore()` used a simplistic weighted sum that diverged from th
 
 **What was added:**
 - `persistThreatRows(threatRows, scanId, activeNetworkId)` — new signature accepting IDs from `detection_state` directly
-- **Event history**: each poll inserts a row into `vulnerability_threat_events` with `event_type: DETECTED|CLEARED`
+- **Event history**: each poll inserts a row into `vulnerability_threat_events` with `event_state: DETECTED|CLEARED`
 - **Upsert logic** for `vulnerabilities_threat` keyed on `(scan_id, vt_detail_id)`:
   - DETECTED → `vt_status='ACTIVE'`, increment `occurrence_count`, set `first_seen_at` if null
   - CLEARED → `vt_status='INACTIVE'`, set `last_seen_at`

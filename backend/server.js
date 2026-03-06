@@ -11,7 +11,6 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
-const crypto = require("crypto");
 const { piFetch } = require("./utils/piFetch");
 
 const webAppRoutes = require("./routes/webAppRoutes");
@@ -24,22 +23,12 @@ const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const detectRoutes = require('./routes/detectRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const piProxyRoutes = require('./routes/piProxyRoutes');
 const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
 const { authJWT } = require("./middleware/authMiddleware");
-const { requireActiveProfile } = require("./middleware/statusMiddleware");
 const { supabaseClient } = require("./config/supabaseClient");
-
-// Risk-score label (0–100 scale) — mirrors rasPiController.getRiskLabel
-function getRiskLabel(score) {
-  const s = Number(score) || 0;
-  if (s === 0) return "NONE";
-  if (s <= 39) return "LOW";
-  if (s <= 69) return "MEDIUM";
-  if (s <= 89) return "HIGH";
-  return "CRITICAL";
-}
 
 const app = express();
 
@@ -158,6 +147,9 @@ app.use("/api/detect", detectRoutes);
 // 4) History (JWT-protected, user-scoped per controller logic)
 app.use("/api/history", historyRoutes);
 
+// 5) Pi proxy (signed requests to Pi gateway)
+app.use("/api/pi", piProxyRoutes);
+
 // Phase 2-E: Dead global-auth middleware removed.
 // Auth is now enforced per-route (Phase 2-A/B/C/D).
 // Keeping this commented block was a false-safety trap —
@@ -179,228 +171,9 @@ app.get("/api/device/status", authJWT, async (req, res) => {
 
 // Old /api/detect/poll handler removed — now in controllers/detectController.js via detectRoutes
 
-
-async function loadThreatDefinitions(supabaseClient) {
-  const { data, error } = await supabaseClient
-    .from("vulnerability_threat_details")
-    .select("vt_code, vt_name, vt_cvss_base_score, vt_severity_rating, vt_kind");
-
-  if (error) throw error;
-  const map = new Map();
-  for (const d of data) {
-    map.set(d.vt_code, d);
-  }
-  return map;
-}
-
-function mapPollResultsToThreatRows(results, defsByCode) {
-  const grouped = new Map();
-  const findingKeys = ["evil_twin", "mac_spoofing", "deauthentication"]; // add more types here
-
-  for (const r of results || []) {
-    for (const key of findingKeys) {
-      const f = r?.findings?.[key];
-      if (!f) continue;                     // allow DETECTED or CLEARED
-
-      const vtCode = f.id;           // e.g. WFVT-006, WFVT-007
-      const detail = defsByCode.get(vtCode);
-      if (!detail) continue;
-
-      const firstSeen = f.details?.first_seen_epoch;
-      const lastSeen  = f.details?.last_seen_epoch;
-      const mapKey = vtCode;         // or `${vtCode}:${key}` if you want them separate
-
-      if (!grouped.has(mapKey)) {
-        grouped.set(mapKey, {
-          id: vtCode,
-          name: detail.vt_name,
-          severity: detail.vt_severity_rating,
-          score: detail.vt_cvss_base_score,
-          status: f.status,         //DETECTED or CLEARED
-          occurrences: 1,
-          detectedTime: firstSeen
-            ? new Date(firstSeen * 1000).toISOString()
-            : r.detection_cycle_start,
-          // sessions array for expanded rows
-          sessions: [{
-            firstSeen,
-            lastSeen,
-            state: f.status,         // DETECTED or CLEARED
-          }],
-          raw: [r],
-        });
-      } else {
-        const agg = grouped.get(mapKey);
-        agg.occurrences += 1;
-        agg.status = f.status; //latest state (CLEARED should override)
-        if (lastSeen) {
-          agg.detectedTime = new Date(lastSeen * 1000).toISOString();
-        }
-       agg.sessions.push({
-          firstSeen,
-          lastSeen,
-          state: f.status,
-        });
-        agg.raw.push(r);
-      }
-    }
-  }
-
-  return Array.from(grouped.values());
-}
-
-
-/**
- * [LEGACY — server.js] Persist threat rows using scan_id from detection_state.
- * - Inserts event history into vulnerability_threat_events
- * - Upserts current state in vulnerabilities_threat per (scan_id, vt_detail_id)
- * - Recomputes risk via RPC compute_scan_risk
- * - Calls riskPipeline.updateNetworkRisk with real RPC score
- *
- * NOTE: The primary path is detectController.persistThreatRows.
- * This copy is kept for any remaining legacy callers in server.js.
- */
-async function persistThreatRows(threatRows, scanId, activeNetworkId, supabaseClient) {
-  if (!Array.isArray(threatRows) || threatRows.length === 0) return;
-  if (!scanId) {
-    console.warn("[persistThreatRows/legacy] No scanId provided, skipping threat persistence");
-    return;
-  }
-
-  const now = new Date().toISOString();
-
-  for (const t of threatRows) {
-    const { data: detail, error: detailErr } = await supabaseClient
-      .from("vulnerability_threat_details")
-      .select("vt_detail_id, vt_kind, vt_cvss_base_score")
-      .eq("vt_code", t.id)
-      .maybeSingle();
-
-    if (detailErr || !detail) {
-      console.error("[persistThreatRows/legacy] Missing vt_detail for code", t.id, detailErr);
-      continue;
-    }
-
-    const sessions = t.sessions || t.raw || [];
-    const lastSession = sessions[sessions.length - 1] || null;
-    const isDetected = lastSession?.state === "DETECTED";
-    const eventType = isDetected ? "DETECTED" : "CLEARED";
-
-    // 1) Append event to vulnerability_threat_events
-    const { error: eventErr } = await supabaseClient
-      .from("vulnerability_threat_events")
-      .insert({
-        scan_id: scanId,
-        vt_detail_id: detail.vt_detail_id,
-        event_state: eventType,
-        event_time: now,
-      });
-
-    if (eventErr) {
-      console.error("[persistThreatRows/legacy] Event insert failed", eventErr);
-    }
-
-    // 2) Upsert current state in vulnerabilities_threat keyed on (scan_id, vt_detail_id)
-    const { data: existing, error: lookErr } = await supabaseClient
-      .from("vulnerabilities_threat")
-      .select("vt_id, occurrence_count, first_seen_at")
-      .eq("scan_id", scanId)
-      .eq("vt_detail_id", detail.vt_detail_id)
-      .maybeSingle();
-
-    if (lookErr) {
-      console.error("[persistThreatRows/legacy] Lookup failed", lookErr);
-      continue;
-    }
-
-    if (existing) {
-      const updatePayload = isDetected
-        ? {
-            vt_status: "ACTIVE",
-            occurrence_count: (existing.occurrence_count || 0) + 1,
-            last_seen_at: now,
-          }
-        : {
-            vt_status: "INACTIVE",
-            last_seen_at: now,
-          };
-
-      const { error: updErr } = await supabaseClient
-        .from("vulnerabilities_threat")
-        .update(updatePayload)
-        .eq("vt_id", existing.vt_id);
-
-      if (updErr) {
-        console.error("[persistThreatRows/legacy] Update failed", updErr);
-      }
-    } else {
-      const insertPayload = {
-        scan_id: scanId,
-        vt_name: t.name,
-        vt_status: isDetected ? "ACTIVE" : "INACTIVE",
-        vt_value: t.name,
-        vt_detail_id: detail.vt_detail_id,
-        vt_kind: detail.vt_kind,
-        severity_score: detail.vt_cvss_base_score,
-        occurrence_count: isDetected ? 1 : 0,
-        first_seen_at: isDetected ? now : null,
-        last_seen_at: now,
-      };
-
-      const { error: insErr } = await supabaseClient
-        .from("vulnerabilities_threat")
-        .insert(insertPayload);
-
-      if (insErr) {
-        console.error("[persistThreatRows/legacy] Insert failed", insErr);
-      }
-    }
-  }
-
-  // Recompute risk score via authoritative DB RPC; fall back to JS scoring if RPC is unavailable
-  let effectiveScore = 0;
-  const { data: rpcScore, error: rpcErr } = await supabaseClient.rpc(
-    "compute_scan_risk",
-    { p_scan_id: scanId }
-  );
-
-  if (rpcErr) {
-    console.warn("[persistThreatRows/legacy] compute_scan_risk RPC failed, falling back to JS scoring", rpcErr);
-    const { computeRiskScore } = require('./utils/scoring');
-    const findings = threatRows.map((t) => ({ score: t.score ?? 0 }));
-    effectiveScore = computeRiskScore(findings);
-    const { error: scoreErr } = await supabaseClient
-      .from('scans')
-      .update({ risk_score: effectiveScore })
-      .eq('scan_id', scanId);
-    if (scoreErr) {
-      console.error('[persistThreatRows/legacy] Fallback risk_score update failed', scoreErr);
-    } else {
-      console.log(`[persistThreatRows/legacy] Fallback risk_score ${effectiveScore} written for scan ${scanId}`);
-    }
-  } else {
-    effectiveScore = rpcScore ?? 0;
-    console.log(`[persistThreatRows/legacy] compute_scan_risk returned ${effectiveScore} for scan ${scanId}`);
-  }
-
-  // Risk pipeline: update network risk with effective score + official bucket
-  if (activeNetworkId) {
-    try {
-      const { bucketize, updateNetworkRisk } = require('./utils/riskPipeline');
-      const newScore = effectiveScore;
-      const newBucket = bucketize(newScore);
-      await updateNetworkRisk(activeNetworkId, {
-        newBucket,
-        newScore,
-        reason: 'threat_detected',
-        scanId,
-      });
-    } catch (pipeErr) {
-      console.error('[riskPipeline] updateNetworkRisk error (non-fatal):', pipeErr.message);
-    }
-  }
-}
-
+// Legacy helpers (getRiskLabel, loadThreatDefinitions, mapPollResultsToThreatRows,
+// persistThreatRows) removed — canonical versions live in detectController.js
+// and utils/scoring.js. See commit history for the original code.
 
 //========================================
 // History endpoints moved to controllers/historyController.js + routes/historyRoutes.js

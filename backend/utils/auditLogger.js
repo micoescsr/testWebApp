@@ -122,9 +122,15 @@ async function logAuditEvent({
     // Normalize event name to dot-notation
     const normalizedName = normalizeEventName(eventName);
 
-    // DB check constraint: at least one entity_id must be set.
-    // Fall back to actorId when no explicit entity ID is given.
-    const safeEntityIdUuid = entityIdUuid || actorId;
+    // DB check constraint `audit_logging_entity_id_oneof`:
+    //   exactly ONE of entity_id_uuid / entity_id_bigint must be set.
+    // Fall back to actorId (uuid) ONLY when neither ID is supplied.
+    // When entityIdBigint is provided, do NOT also set entity_id_uuid.
+    const safeEntityIdUuid = entityIdUuid
+      ? entityIdUuid
+      : entityIdBigint
+        ? null        // bigint is set → uuid must be NULL
+        : actorId;    // neither set → use actorId as uuid fallback
 
     // Extract IP — strip IPv6-mapped prefix (::ffff:) so Postgres inet accepts it
     const forwarded = req?.headers?.["x-forwarded-for"];

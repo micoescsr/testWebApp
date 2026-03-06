@@ -229,6 +229,20 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
 async function getStatus(req, res) {
   try {
     const row = await detectStateService.getStatusAndMaybeFail(req);
+
+    // Enrich with SSID from networks table so the frontend can display
+    // which network is being monitored — even after a page refresh.
+    if (row.active_network_id) {
+      const { data: net } = await supabaseClient
+        .from("networks")
+        .select("ssid")
+        .eq("network_id", row.active_network_id)
+        .maybeSingle();
+      row.ssid = net?.ssid || null;
+    } else {
+      row.ssid = null;
+    }
+
     return res.json(row);
   } catch (err) {
     console.error("[detect/status] error:", err);
@@ -270,17 +284,8 @@ async function start(req, res) {
 
     const row = await detectStateService.startOrSwitch(req, actorId, network_id, numericScanId);
 
-    // Audit: detection started
-    logAuditEvent({
-      req,
-      actorId,
-      eventName: "DETECTION.START",
-      eventStatus: "SUCCESS",
-      entityType: "DETECTION",
-      entityIdUuid: network_id,
-      entityIdBigint: numericScanId,
-      meta: { network_id, scan_id: numericScanId },
-    }).catch(() => {});
+    // Audit is already written inside detectStateService.startOrSwitch()
+    // (DETECTION.START or DETECTION.SWITCH_TARGET with entityType DETECTION_STATE)
 
     return res.json(row);
   } catch (err) {
@@ -294,7 +299,7 @@ async function start(req, res) {
         actorId,
         eventName: "DETECTION.START",
         eventStatus: "FAILED",
-        entityType: "DETECTION",
+        entityType: "DETECTION_STATE",
         meta: { error: err.message },
       }).catch(() => {});
     }
@@ -303,9 +308,20 @@ async function start(req, res) {
   }
 }
 
+// Allowed reason_code values for governed STOP
+const STOP_REASON_CODES = [
+  "MAINTENANCE",
+  "DEVICE_RESTART",
+  "FALSE_POSITIVES",
+  "CLIENT_REQUEST",
+  "SCOPE_CHANGE",
+  "EVIDENCE_PRESERVATION",
+  "OTHER",
+];
+
 /**
  * POST /api/detect/stop
- * Body: { reason? }
+ * Body: { reason_code: string, reason_note?: string }
  */
 async function stopDetection(req, res) {
   try {
@@ -314,18 +330,25 @@ async function stopDetection(req, res) {
       return res.status(401).json({ error: "No authenticated user" });
     }
 
-    const { reason } = req.body || {};
-    const row = await detectStateService.stop(req, actorId, reason || null);
+    const { reason_code, reason_note } = req.body || {};
 
-    // Audit: detection stopped
-    logAuditEvent({
-      req,
-      actorId,
-      eventName: "DETECTION.STOP",
-      eventStatus: "SUCCESS",
-      entityType: "DETECTION",
-      meta: { reason: reason || "manual" },
-    }).catch(() => {});
+    // Validate reason_code
+    if (!reason_code || !STOP_REASON_CODES.includes(reason_code)) {
+      return res.status(400).json({
+        error: `reason_code is required and must be one of: ${STOP_REASON_CODES.join(", ")}`,
+        received: reason_code,
+      });
+    }
+
+    // Validate reason_note required when OTHER
+    if (reason_code === "OTHER" && (!reason_note || !reason_note.trim())) {
+      return res.status(400).json({
+        error: "reason_note is required when reason_code is OTHER",
+      });
+    }
+
+    // Delegate to service (SUCCESS audit is written there, not here)
+    const row = await detectStateService.stop(req, actorId, { reason_code, reason_note: reason_note || null });
 
     // Finalization: recompute risk one last time + stamp scan_end + update network risk (best-effort)
     if (row.active_scan_id) {
@@ -367,7 +390,7 @@ async function stopDetection(req, res) {
   } catch (err) {
     console.error("[detect/stop] error:", err);
 
-    // Audit: detection stop failed
+    // Audit: detection stop failed (server error only, not 400 validation)
     const actorId = req.user?.id;
     if (actorId) {
       logAuditEvent({
@@ -375,7 +398,7 @@ async function stopDetection(req, res) {
         actorId,
         eventName: "DETECTION.STOP",
         eventStatus: "FAILED",
-        entityType: "DETECTION",
+        entityType: "DETECTION_STATE",
         meta: { error: err.message },
       }).catch(() => {});
     }

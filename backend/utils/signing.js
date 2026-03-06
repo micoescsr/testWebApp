@@ -25,7 +25,7 @@ function buildSignedHeaders({ method, pathWithQuery, bodyBytes, secret }) {
   if (!secret) throw new Error("CONTROL_SIGNING_SECRET missing");
 
   const ts = Math.floor(Date.now() / 1000).toString();
-  const nonce = crypto.randomUUID();
+  const nonce = crypto.randomBytes(16).toString("hex"); // 32 hex chars
 
   const bodySha256 = crypto
     .createHash("sha256")

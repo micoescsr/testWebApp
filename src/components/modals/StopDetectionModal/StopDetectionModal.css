@@ -1,0 +1,136 @@
+/* components/modals/StopDetectionModal/StopDetectionModal.css */
+
+.sdm-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #991b1b;
+}
+
+.sdm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sdm-warning {
+  margin: 0;
+  padding: 8px 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sdm-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-top: 4px;
+}
+
+.sdm-required {
+  color: #dc2626;
+}
+
+.sdm-select,
+.sdm-input,
+.sdm-textarea {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.sdm-select:focus,
+.sdm-input:focus,
+.sdm-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.sdm-select:disabled,
+.sdm-input:disabled,
+.sdm-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sdm-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.sdm-error {
+  margin: 0;
+  padding: 6px 10px;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Footer buttons */
+.sdm-cancel-btn,
+.sdm-confirm-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.sdm-cancel-btn {
+  background: #fff;
+  color: #374151;
+}
+
+.sdm-cancel-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.sdm-confirm-btn {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+
+.sdm-confirm-btn:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.sdm-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sdm-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Stop button in the detection pill area */
+.stop-detection-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  margin-left: 8px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.stop-detection-btn:hover {
+  background: #fecaca;
+}
