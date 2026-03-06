@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
+import ExportDropdown from "./ExportDropdown";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -273,6 +274,10 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
           onPrev={goPrev}
           onNext={goNext}
         />
+
+        <div className="sam-actions">
+          <ExportDropdown />
+        </div>
 
       </div>
     </div>

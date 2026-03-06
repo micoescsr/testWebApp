@@ -2,6 +2,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
+import ExportDropdown from "./ExportDropdown";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -282,7 +283,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
           />
 
         <div className="sam-actions">
-          <button className="export-btn">📎 Export</button>
+          <ExportDropdown />
           <button
             className="clear-btn"
             onClick={() => {

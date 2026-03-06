@@ -1,4 +1,13 @@
+import { perNetworkMockData } from "../../data/mockReportData";
+import { generatePerNetworkReportHTML } from "../../utils/reportTemplates";
+import { exportReport } from "../../utils/exportReport";
+
 const ThreatDetail = ({ threat, onBack }) => {
+  const handleExport = () => {
+    const html = generatePerNetworkReportHTML(perNetworkMockData);
+    exportReport(html);
+  };
+
   return (
     <div className="sam-page">
       <button className="back-btn" onClick={onBack}>
@@ -35,7 +44,7 @@ const ThreatDetail = ({ threat, onBack }) => {
         </div>
       </div>
 
-      <button className="export-btn">Export</button>
+      <button className="export-btn" onClick={handleExport}>Export</button>
     </div>
   );
 };
