@@ -1,4 +1,4 @@
-// pages/Dashboard/Dashboard.jsx
+﻿// pages/Dashboard/Dashboard.jsx
 import "./Dashboard.css";
 import { useDashboard } from "../../hooks/useDashboard";
 import DashboardHeader from "../../components/dashboard/DashboardHeader";
@@ -7,22 +7,22 @@ import NetworkSection from "../../components/dashboard/NetworkSection";
 
 const Dashboard = () => {
   const {
-  viewMode,
-  setViewMode,
-  isSummary,
-  showLegend,
-  toggleLegend,
-  loading,
-  error,
-  summary,
-  networkData,
-  hoverContext,
-  setHoverContext,
-  clearHoverContext,
-  networks,
-  scanOptions,
-  selectedScanId,
-  setSelectedScanId,
+    viewMode,
+    setViewMode,
+    isSummary,
+    showLegend,
+    toggleLegend,
+    loading,
+    error,
+    summary,
+    networkData,
+    hoverContext,
+    setHoverContext,
+    clearHoverContext,
+    networks,
+    scanList,
+    selectedScanId,
+    setSelectedScanId,
   } = useDashboard();
 
   return (
@@ -32,9 +32,9 @@ const Dashboard = () => {
         setViewMode={setViewMode}
         isSummary={isSummary}
         networks={networks}
-        scanOptions={scanOptions}
+        scanList={scanList}
         selectedScanId={selectedScanId}
-        setSelectedScanId={setSelectedScanId}
+        onScanChange={setSelectedScanId}
       />
 
       {loading && <p>Loading...</p>}

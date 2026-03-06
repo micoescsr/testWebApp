@@ -1,59 +1,77 @@
-// components/dashboard/DashboardHeader.jsx
+﻿// components/dashboard/DashboardHeader.jsx
 const DashboardHeader = ({
   viewMode,
   setViewMode,
   isSummary,
   networks,
-  scanOptions = [],
+  scanList,
   selectedScanId,
-  setSelectedScanId,
-}) => (
-  <div className={isSummary ? "dash-header-summary" : "dash-header"}>
-    <h1>Dashboard</h1>
+  onScanChange,
+}) => {
+  // Format ISO date for display in dropdown
+  const formatDate = (iso) => {
+    if (!iso) return "Unknown";
+    try {
+      return new Date(iso).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return "Unknown";
+    }
+  };
 
-    <div className="dash-filters">
-      <div className="filter-group">
-        <label>NETWORK</label>
-        <select
-          value={viewMode}
-          onChange={(e) => setViewMode(e.target.value)}
-        >
-          <option value="Summary">Summary</option>
-          {networks.map((n) => (
-            <option key={n.network_id} value={n.network_id}>
-              {n.ssid}
-            </option>
-          ))}
-        </select>
-      </div>
+  return (
+    <div className={isSummary ? "dash-header-summary" : "dash-header"}>
+      <h1>Dashboard</h1>
 
-      {!isSummary && (
+      <div className="dash-filters">
         <div className="filter-group">
-          <label>DATE</label>
+          <label>NETWORK</label>
           <select
-            value={selectedScanId ?? ""}
-            onChange={(e) => setSelectedScanId(Number(e.target.value))}
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value)}
           >
-            {scanOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
+            <option value="Summary">Summary</option>
+            {(networks || []).map((n) => (
+              <option key={n.network_id} value={n.network_id}>
+                {n.ssid || "Unnamed Network"}
               </option>
             ))}
           </select>
         </div>
-      )}
-    </div>
 
-    <div className="device-status">
-      <p className="status-label">Device Status:</p>
-      <p className="status-line">
-        Model: <span>Raspberry Pi 5</span>
-      </p>
-      <p className="status-line">
-        Status: <span className="status-online">Online ●</span>
-      </p>
+        {!isSummary && (
+          <div className="filter-group">
+            <label>DATE</label>
+            <select
+              value={selectedScanId || ""}
+              onChange={(e) => onScanChange(e.target.value || null)}
+              disabled={!scanList || scanList.length === 0}
+            >
+              <option value="">Latest</option>
+              {(scanList || []).map((s) => (
+                <option key={s.scan_id} value={s.scan_id}>
+                  {formatDate(s.finished_at)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="device-status">
+        <p className="status-label">Device Status:</p>
+        <p className="status-line">
+          Model: <span>Raspberry Pi 5</span>
+        </p>
+        <p className="status-line">
+          Status: <span className="status-online">Online ΓùÅ</span>
+        </p>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default DashboardHeader;
