@@ -133,15 +133,68 @@ export const useDevice = (networkId, scanId) => {
       const res = await toggleAP(payload);
       console.log("enable-ap response:", res.data);
 
+      // Backend may have reconciled after a timeout — Pi succeeded despite proxy timeout
+      if (res.data?.reconciled) {
+        setApEnabled(res.data.ap_enabled);
+        await fetchAdminState();
+        if (!res.data.ap_enabled && nextState) {
+          setError("Request timed out and the AP did not turn on. Please try again.");
+        }
+        return;
+      }
+
       // Refresh admin state from DB after success
       await fetchAdminState();
     } catch (err) {
       console.error("AP toggle failed:", err);
+      const httpStatus = err?.response?.status;
       const backendError = err?.response?.data?.error;
       const backendMsg = err?.response?.data?.message || err?.response?.data?.user_message;
 
       // Revert optimistic toggle on failure
       setApEnabled(!nextState);
+
+      // Refresh admin state so ap_apply_in_progress clears
+      await fetchAdminState();
+
+      // Gateway timeout — the hosting proxy cut the request before the Pi responded
+      if (httpStatus === 504 || httpStatus === 502 || httpStatus === 503) {
+        // The backend may still be running (Railway killed the frontend connection
+        // before the backend finished). Poll admin state after delays to reconcile.
+        setError("Request timed out. Checking device status…");
+
+        const pollAndReconcile = async () => {
+          try {
+            const stateRes = await getNetworkState(networkId);
+            const s = stateRes.data;
+            setAdminState(s);
+            setApEnabled(s.ap_enabled ?? false);
+            setPortalInitialized(s.portal_initialized ?? false);
+
+            // If the AP ended up in the state the user wanted, clear the error
+            if ((s.ap_enabled ?? false) === nextState) {
+              setError(null);
+              return true; // reconciled
+            }
+          } catch { /* non-fatal */ }
+          return false;
+        };
+
+        // First poll after 5s (backend may still be running)
+        setTimeout(async () => {
+          const ok = await pollAndReconcile();
+          if (!ok) {
+            // Second poll after 15s total
+            setTimeout(async () => {
+              const ok2 = await pollAndReconcile();
+              if (!ok2) {
+                setError("Request timed out. The device may still be processing — try again in a moment.");
+              }
+            }, 10_000);
+          }
+        }, 5_000);
+        return;
+      }
 
       // Map all backend error codes to scanError + user-friendly message
       switch (backendError) {

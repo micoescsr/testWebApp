@@ -212,7 +212,7 @@ const DeviceManagement = () => {
           scanError={scanError}
           hasScanId={hasScanId}
           adminState={adminState}
-          onRetry={refetch}
+          onRetry={() => { refetch(); refetchState(); }}
           onToggle={handleToggleAccessPoint}
           onUpdatePortal={handleUpdatePortal}
         />

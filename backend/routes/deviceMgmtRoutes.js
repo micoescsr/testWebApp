@@ -326,6 +326,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 			const { ok: piOk, status: piStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 				method: 'POST',
 				jsonBody: orchestratePayload,
+				timeoutMs: 60_000,
 			});
 
 			logFastApiCall('orchestrate/apply RESPONSE (DISABLE)', orchestrateUrl, orchestratePayload, {
@@ -534,6 +535,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 		const { ok: enableOk, status: enableStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 			method: 'POST',
 			jsonBody: orchestratePayload,
+			timeoutMs: 60_000,
 		});
 
 		logFastApiCall('orchestrate/apply RESPONSE (ENABLE)', orchestrateUrl, orchestratePayload, {
@@ -617,13 +619,47 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 		return res.json(responseBody);
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
-		const status = err.status || 500;
+
+		// ── Timeout reconciliation ────────────────────────────────
+		// If the Pi request timed out (504) or hit a gateway error (502/503),
+		// the AP may have actually succeeded on the Pi. Poll /device/status
+		// to check and reconcile DB state.
+		const httpStatus = err.status || 500;
+		if ([502, 503, 504].includes(httpStatus)) {
+			try {
+				const { ok: statusOk, data: statusData } = await piFetch('/device/status', { timeoutMs: 8_000 });
+				if (statusOk && statusData) {
+					const piApOn = statusData.ap_enabled === true || statusData.ap_status === 'on';
+					console.log(`[reconcile] Pi reports ap_enabled=${piApOn} after timeout for ${network_id}`);
+
+					// Update DB to match Pi's actual state
+					await supabaseClient
+						.from('networks')
+						.update({ ap_enabled: piApOn, ap_last_applied_at: new Date().toISOString() })
+						.eq('network_id', network_id);
+
+					return res.status(200).json({
+						ok: true,
+						reconciled: true,
+						network_id,
+						ap_enabled: piApOn,
+						message: piApOn
+							? 'Request timed out but AP is confirmed ON.'
+							: 'Request timed out and AP is confirmed OFF.',
+					});
+				}
+			} catch (reconcileErr) {
+				console.error('[reconcile] Failed to poll Pi status after timeout:', reconcileErr.message);
+			}
+		}
+
 		const errorBody = {
 			error: err.code || 'AP_TOGGLE_FAILED',
 			message: 'AP configuration failed',
+			timeout: [502, 503, 504].includes(httpStatus),
 			...(err.extra || {}),
 		};
-		return res.status(status).json(errorBody);
+		return res.status(httpStatus).json(errorBody);
 	} finally {
 		// ── ALWAYS release the lock ──────────────────────────────
 		if (lockAcquired) {
