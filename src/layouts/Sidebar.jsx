@@ -104,7 +104,7 @@ const Sidebar = () => {
       label: "Accounts & Audit",
       superadminOnly: true,
     },
-    { path: "/history", icon: "📊", label: "History" },
+    { path: "/history", icon: "📊", label: "Scan History" },
     { path: "/profile", icon: "👤", label: "Profile" },
   ];
 
