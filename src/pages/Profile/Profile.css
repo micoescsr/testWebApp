@@ -2,38 +2,108 @@
 
 .profile-page {
   padding: 0;
+  animation: profileFadeIn 0.4s ease;
+}
+
+@keyframes profileFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Header / avatar area ---------- */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 32px;
+}
+
+.profile-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2f7df6 0%, #6366f1 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(47, 125, 246, 0.30);
+  letter-spacing: 1px;
+  user-select: none;
+}
+
+.profile-header-text {
+  display: flex;
+  flex-direction: column;
 }
 
 .page-title {
-  margin-bottom: 30px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
 }
 
+.profile-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* ---------- Card ---------- */
+.profile-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 36px;
+  max-width: 480px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+/* ---------- Form fields ---------- */
 .profile-form {
-  max-width: 420px;
-  margin: 0 auto;
+  max-width: 480px;
 }
 
 .form-group {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .form-group label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   margin-bottom: 6px;
-  color: #111;
+  color: #6b7280;
 }
 
 .form-group input {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 4px;
-  border: 1px solid #999;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #e5e7eb;
   font-size: 14px;
-  background-color: #f3f3f3;
-  color: #333;
+  background-color: #f9fafb;
+  color: #1f2937;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.form-group input:focus {
+  outline: none;
+  border-color: #2f7df6;
+  box-shadow: 0 0 0 3px rgba(47, 125, 246, 0.12);
+}
+
+.form-group input[readonly] {
+  cursor: default;
+}
+
+/* ---------- Password row ---------- */
 .password-label-row {
   display: flex;
   justify-content: space-between;
@@ -42,19 +112,20 @@
 }
 
 .reset-link {
-  font-size: 13px;
-  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2f7df6;
   cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .reset-link:hover {
-  text-decoration: underline;
+  background-color: #eff6ff;
+  text-decoration: none;
+  color: #1d4ed8;
 }
-
-/* Remove these if ProfileModal now uses BaseModal:
-.modal-overlay, .modal, .modal-title, .modal-body, .modal-actions,
-.cancel-btn, .save-btn
-*/
 
 /* ==============
    Responsive
@@ -68,7 +139,11 @@
 
   .page-title {
     font-size: 20px;
-    margin-bottom: 20px;
+  }
+
+  .profile-card {
+    padding: 24px 20px;
+    max-width: 100%;
   }
 
   .profile-form {
@@ -78,17 +153,32 @@
 
 /* Phone */
 @media (max-width: 640px) {
+  .profile-header {
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .profile-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 17px;
+  }
+
   .page-title {
     font-size: 18px;
-    text-align: left;
+  }
+
+  .profile-card {
+    padding: 20px 16px;
+    border-radius: 12px;
   }
 
   .form-group {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
   }
 
   .form-group input {
-    padding: 8px 10px;
+    padding: 9px 12px;
     font-size: 13px;
   }
 
@@ -98,10 +188,11 @@
   }
 
   .reset-link {
-    font-size: 12px;
+    font-size: 11px;
   }
 }
 
+/* ---------- Password validation ---------- */
 .password-errors {
   margin: 4px 0 0;
   padding-left: 18px;

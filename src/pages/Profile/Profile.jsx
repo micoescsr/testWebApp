@@ -26,43 +26,52 @@ const Profile = () => {
   }
 
   const fullName = `${profile.firstName} ${profile.lastName}`;
+  const initials = `${profile.firstName?.[0] ?? ""}${profile.lastName?.[0] ?? ""}`.toUpperCase();
 
   return (
     <div className="profile-page">
-      <h1 className="page-title">Welcome, {fullName}!</h1>
-
-      <div className="profile-form">
-        <div className="form-group">
-          <label>Email</label>
-          <input type="text" value={profile.email} readOnly />
+      <div className="profile-header">
+        <div className="profile-avatar">{initials}</div>
+        <div className="profile-header-text">
+          <h1 className="page-title">Welcome, {fullName}!</h1>
+          <p className="profile-subtitle">Manage your account details</p>
         </div>
+      </div>
 
-        <div className="form-group">
-          <label>First Name</label>
-          <input type="text" value={profile.firstName} readOnly />
-        </div>
-
-        <div className="form-group">
-          <label>Last Name</label>
-          <input type="text" value={profile.lastName} readOnly />
-        </div>
-
-        <div className="form-group">
-          <label>Username</label>
-          <input type="text" value={profile.username} readOnly />
-        </div>
-
-        <div className="form-group">
-          <div className="password-label-row">
-            <label>Password</label>
-            <span
-              className="reset-link"
-              onClick={() => setShowResetModal(true)}
-            >
-              Reset Password
-            </span>
+      <div className="profile-card">
+        <div className="profile-form">
+          <div className="form-group">
+            <label>Email</label>
+            <input type="text" value={profile.email} readOnly />
           </div>
-          <input type="password" value="••••••••" readOnly />
+
+          <div className="form-group">
+            <label>First Name</label>
+            <input type="text" value={profile.firstName} readOnly />
+          </div>
+
+          <div className="form-group">
+            <label>Last Name</label>
+            <input type="text" value={profile.lastName} readOnly />
+          </div>
+
+          <div className="form-group">
+            <label>Username</label>
+            <input type="text" value={profile.username} readOnly />
+          </div>
+
+          <div className="form-group">
+            <div className="password-label-row">
+              <label>Password</label>
+              <span
+                className="reset-link"
+                onClick={() => setShowResetModal(true)}
+              >
+                Reset Password
+              </span>
+            </div>
+            <input type="password" value="••••••••" readOnly />
+          </div>
         </div>
       </div>
 

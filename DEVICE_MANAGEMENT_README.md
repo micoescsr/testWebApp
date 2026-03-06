@@ -152,6 +152,12 @@ Terms & Conditions have been **fully removed** from the system (not just hidden 
 
 The `terms_conditions` DB table still exists but is no longer read from or written to.
 
+---
+
+## DB Schema Additions
+
+Two columns on the `networks` table:
+
 ```sql
 ALTER TABLE networks ADD COLUMN portal_initialized boolean NOT NULL DEFAULT false;
 ALTER TABLE networks ADD COLUMN ap_enabled boolean NOT NULL DEFAULT false;
