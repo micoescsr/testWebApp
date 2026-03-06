@@ -20,14 +20,13 @@ const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Portal patch constants ──────────────────────────────────────
-const VALID_UPDATE_TYPES = new Set(['announcement', 'terms', 'tips', 'risk', 'active', 'bulk']);
-const ALLOWED_PAYLOAD_KEYS = new Set(['announcement', 'terms', 'tips', 'risk', 'is_active']);
+const VALID_UPDATE_TYPES = new Set(['announcement', 'tips', 'risk', 'active', 'bulk']);
+const ALLOWED_PAYLOAD_KEYS = new Set(['announcement', 'tips', 'risk', 'is_active']);
 const VALID_RISK_BUCKETS = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 
 // Keys allowed per update_type (besides is_active which is always optional)
 const KEYS_BY_UPDATE_TYPE = {
 	announcement: new Set(['announcement', 'is_active']),
-	terms: new Set(['terms', 'is_active']),
 	tips: new Set(['tips', 'is_active']),
 	risk: new Set(['risk', 'is_active']),
 	active: new Set(['is_active']),
@@ -160,6 +159,26 @@ function classifyOrchestrateError(fastapiData) {
 			category: 'validation',
 			user_message: msg,
 			retryable: false,
+		};
+	}
+
+	// Internal exception on device
+	if (msg.includes('Exception:')) {
+		return {
+			error_code: 'DEVICE_EXCEPTION',
+			category: 'internal',
+			user_message: msg,
+			retryable: true,
+		};
+	}
+
+	// Uplink disconnected (AP ended up off)
+	if (msg.includes('Uplink disconnected')) {
+		return {
+			error_code: 'UPLINK_DISCONNECTED',
+			category: 'connection',
+			user_message: msg,
+			retryable: true,
 		};
 	}
 
@@ -431,7 +450,7 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 		if (!net.portal_initialized) {
 			console.log('Portal not initialized — seeding captive portal content...');
 
-			// Seed default content into DB tables (announcements, terms, tips)
+			// Seed default content into DB tables (announcements, tips)
 			await seedDefaultContent(network_id);
 
 			// Build payload from DB
@@ -730,27 +749,6 @@ function validatePatchPayload(payload) {
 		}
 		if (ann.is_active !== undefined && typeof ann.is_active !== 'boolean') {
 			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'announcement.is_active must be a boolean.' };
-		}
-	}
-
-	// terms shape
-	if (payload.terms) {
-		const t = payload.terms;
-		if (typeof t !== 'object' || Array.isArray(t)) {
-			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms must be an object.' };
-		}
-		const allowedTerms = new Set(['version', 'content', 'is_active']);
-		for (const k of Object.keys(t)) {
-			if (!allowedTerms.has(k)) return { valid: false, error: 'UNSAFE_PATCH_FIELD', message: `terms.${k} is not allowed.`, field: `terms.${k}` };
-		}
-		if (t.version !== undefined && (typeof t.version !== 'string' || t.version.length > 32)) {
-			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.version must be a string (max 32 chars).' };
-		}
-		if (t.content !== undefined && (typeof t.content !== 'string' || t.content.length > 10000)) {
-			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.content must be a string (max 10000 chars).' };
-		}
-		if (t.is_active !== undefined && typeof t.is_active !== 'boolean') {
-			return { valid: false, error: 'INVALID_PATCH_SHAPE', message: 'terms.is_active must be a boolean.' };
 		}
 	}
 

@@ -2,17 +2,13 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import "./DeviceManagement.css";
-import Tabs from "../../components/common/Tabs/Tabs";
 import { useDevice } from "../../hooks/useDevice";
 import { useProfile } from "../../hooks/useProfile";
 import { useNetworkContext } from "../../context/NetworkContext";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
-import { useSessionState } from "../../hooks/useSessionState";
 import {
   getAnnouncement,
   publishAnnouncement,
-  getTerms,
-  publishTerms,
 } from "../../api/deviceApi";
 
 const DeviceManagement = () => {
@@ -22,18 +18,12 @@ const DeviceManagement = () => {
   const networkId = ctxNetworkId || searchParams.get("network_id");
   const scanId = ctxScanId || searchParams.get("scan_id");
 
-  const [activeTab, setActiveTab] = useSessionState("wf:dmTab", "announcement");
   const [isEditing, setIsEditing] = useState(false);
   const [apPassword, setApPassword] = useState("");
 
   const [announcementContent, setAnnouncementContent] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
   const [announcementCreatedAt, setAnnouncementCreatedAt] = useState(null);
-
-  const [termsContent, setTermsContent] = useState("");
-  const [termsDraft, setTermsDraft] = useState("");
-  const [termsVersion, setTermsVersion] = useState("");
-  const [termsCreatedAt, setTermsCreatedAt] = useState(null);
 
   const [contentLoading, setContentLoading] = useState(false);
   const [contentError, setContentError] = useState(null);
@@ -58,16 +48,7 @@ const DeviceManagement = () => {
     handleUpdatePortal,
   } = useDevice(networkId, scanId);
 
-  const safeActiveTab = activeTab;
-
-  const canEdit =
-    safeActiveTab === "announcement" ||
-    (safeActiveTab === "terms" && role === "superadmin");
-
-  const sectionTitle =
-    safeActiveTab === "announcement"
-      ? "Captive Portal Announcement"
-      : "Terms and Conditions";
+  const canEdit = true;
 
   // Fetch announcement + terms when networkId is available
   useEffect(() => {
@@ -78,21 +59,12 @@ const DeviceManagement = () => {
         setContentLoading(true);
         setContentError(null);
 
-        const [annRes, termsRes] = await Promise.all([
-          getAnnouncement(networkId),
-          getTerms(networkId),
-        ]);
+        const annRes = await getAnnouncement(networkId);
 
         const ann = annRes?.data || {};
         setAnnouncementContent(ann.announcement_content || "");
         setAnnouncementDraft(ann.announcement_content || "");
         setAnnouncementCreatedAt(ann.created_at || null);
-
-        const tc = termsRes?.data || {};
-        setTermsContent(tc.content || "");
-        setTermsDraft(tc.content || "");
-        setTermsVersion(tc.version || "");
-        setTermsCreatedAt(tc.created_at || null);
       } catch (err) {
         console.error("fetchContent error:", err);
         setContentError("Failed to load content.");
@@ -112,25 +84,12 @@ const DeviceManagement = () => {
     return <p>No network selected. Run a scan first.</p>;
   }
 
-  // ─── Tabs ──────────────────────────────────────────────────────
-  const tabs = [
-    { label: "Announcement", value: "announcement" },
-    { label: "Terms and Conditions", value: "terms" },
-  ];
-
-  const currentContent =
-    safeActiveTab === "announcement" ? announcementContent : termsContent;
-  const currentDraft =
-    safeActiveTab === "announcement" ? announcementDraft : termsDraft;
-  const currentCreatedAt =
-    safeActiveTab === "announcement" ? announcementCreatedAt : termsCreatedAt;
+  const currentContent = announcementContent;
+  const currentDraft = announcementDraft;
+  const currentCreatedAt = announcementCreatedAt;
 
   const setCurrentDraft = (value) => {
-    if (safeActiveTab === "announcement") {
-      setAnnouncementDraft(value);
-    } else {
-      setTermsDraft(value);
-    }
+    setAnnouncementDraft(value);
   };
 
   const hasChanges = currentDraft !== currentContent;
@@ -153,24 +112,15 @@ const DeviceManagement = () => {
       setContentLoading(true);
       setContentError(null);
 
-      if (safeActiveTab === "announcement") {
-        const res = await publishAnnouncement(currentDraft, networkId);  // 👈 Pass networkId
-        const ann = res.data;
-        setAnnouncementContent(ann.announcement_content || "");
-        setAnnouncementDraft(ann.announcement_content || "");
-        setAnnouncementCreatedAt(ann.created_at);
-      } else {
-        const nextVersion =
-          termsVersion && termsVersion.startsWith("v")
-            ? `v${parseInt(termsVersion.slice(1) || "1", 10) + 1}`
-            : "v1";
+      const res = await publishAnnouncement(currentDraft, networkId);
+      const ann = res.data;
+      setAnnouncementContent(ann.announcement_content || "");
+      setAnnouncementDraft(ann.announcement_content || "");
+      setAnnouncementCreatedAt(ann.created_at);
 
-        const res = await publishTerms(currentDraft, nextVersion, networkId);  // 👈 Pass networkId
-        const tc = res.data;
-        setTermsContent(tc.content || "");
-        setTermsDraft(tc.content || "");
-        setTermsVersion(tc.version || "");
-        setTermsCreatedAt(tc.created_at);
+      // Show warning if Pi sync failed (non-blocking)
+      if (ann.pi_synced === false && ann.pi_error) {
+        setContentError(`Announcement saved but device sync failed: ${ann.pi_error}`);
       }
 
       setIsEditing(false);
@@ -192,21 +142,12 @@ const DeviceManagement = () => {
     <div className="device-page">
       <h1 className="page-title">Device - {networkConfig.ssid || "Unknown"}</h1>
 
-      <Tabs
-        tabs={tabs}
-        activeTab={safeActiveTab}
-        onTabChange={(value) => {
-          setActiveTab(value);
-          setIsEditing(false);
-        }}
-      />
-
       <div className="device-content">
         <div className="left-panel">
           {/* 👈 Existing announcement/terms editor */}
           <div className="editor-section">
             <div className="section-header">
-              <h2 className="section-title">{sectionTitle}</h2>
+              <h2 className="section-title">Captive Portal Announcement</h2>
               {canEdit && !isEditing && (
                 <button
                   className="edit-icon"
@@ -227,11 +168,7 @@ const DeviceManagement = () => {
               value={isEditing ? currentDraft : currentContent}
               onChange={(e) => setCurrentDraft(e.target.value)}
               readOnly={!isEditing || !canEdit}
-              placeholder={
-                safeActiveTab === "terms"
-                  ? "View terms and conditions (superadmin can edit)."
-                  : "Enter announcement text"
-              }
+              placeholder="Enter announcement text"
             />
 
             <div className="footer-row">
@@ -241,10 +178,6 @@ const DeviceManagement = () => {
                   <span>{formatDate(currentCreatedAt)}</span>
                 </div>
               </div>
-
-              {safeActiveTab === "terms" && termsVersion && (
-                <div className="tc-version">Version: {termsVersion}</div>
-              )}
 
               {canEdit && isEditing && hasChanges && (
                 <div className="editor-actions">

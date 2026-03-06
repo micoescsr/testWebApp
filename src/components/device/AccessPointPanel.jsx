@@ -84,6 +84,8 @@ const AccessPointPanel = ({
     SCAN_FAILED: "Scan failed or was cancelled.",
     SCAN_HAS_ERRORS: "Scan completed with errors.",
     SCAN_INVALID_DATA: "Scan contains no data.",
+    ENCRYPTION_MISMATCH: "Network security type has changed.",
+    NETWORK_DATA_OUTDATED: "Network details are outdated.",
   };
 
   return (

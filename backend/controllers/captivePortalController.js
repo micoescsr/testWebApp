@@ -11,7 +11,7 @@ const { piFetch } = require('../utils/piFetch');
 
 /**
  * Seed default captive portal content for a network if none exists.
- * Creates: announcement, terms, captive_portal row, tips.
+ * Creates: announcement, captive_portal row, tips.
  * Idempotent — returns existing captive_portal_id if row already exists.
  */
 async function seedDefaultContent(networkId) {
@@ -37,25 +37,11 @@ async function seedDefaultContent(networkId) {
 		.single();
 	if (annErr) throw annErr;
 
-	// 2. Insert default terms
-	const { data: tc, error: tcErr } = await supabaseClient
-		.from('terms_conditions')
-		.insert({
-			content: 'By connecting to this network, you agree to our terms of service and acceptable use policy.',
-			version: new Date().toISOString().slice(0, 10),
-			is_active: true,
-			network_id: networkId,
-		})
-		.select('tc_id')
-		.single();
-	if (tcErr) throw tcErr;
-
-	// 3. Insert captive_portal row (joins announcement + terms to network)
+	// 2. Insert captive_portal row (joins announcement to network)
 	const { data: portal, error: portalErr } = await supabaseClient
 		.from('captive_portal')
 		.insert({
 			announcement_id: ann.announcement_id,
-			tc_id: tc.tc_id,
 			is_active: true,
 			network_id: networkId,
 		})
@@ -63,7 +49,7 @@ async function seedDefaultContent(networkId) {
 		.single();
 	if (portalErr) throw portalErr;
 
-	// 4. Insert default tips
+	// 3. Insert default tips
 	const defaultTips = [
 		{ tip_text: 'Use a VPN when possible.', sort_order: 1 },
 		{ tip_text: 'Avoid banking on public Wi-Fi.', sort_order: 2 },
@@ -120,7 +106,7 @@ async function lookupRiskClassification(score) {
 /**
  * Build the full portal/patch JSON payload from DB content.
  *
- * Reads announcements, terms, tips from their respective tables,
+ * Reads announcements, tips from their respective tables,
  * fetches the latest risk_score from the scans table for the network,
  * then looks up the corresponding risk_classification.
  *
@@ -147,7 +133,7 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 	// 2. Load active portal row (for FK references)
 	const { data: portal } = await supabaseClient
 		.from('captive_portal')
-		.select('captive_portal_id, announcement_id, tc_id')
+		.select('captive_portal_id, announcement_id')
 		.eq('network_id', networkId)
 		.eq('is_active', true)
 		.maybeSingle();
@@ -163,23 +149,7 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 		if (ann) announcementText = ann.announcement_content;
 	}
 
-	// 4. Terms text + version
-	let termsText =
-		'By connecting to this network, you agree to our terms of service and acceptable use policy.';
-	let termsVersion = new Date().toISOString().slice(0, 10);
-	if (portal?.tc_id) {
-		const { data: tc } = await supabaseClient
-			.from('terms_conditions')
-			.select('content, version')
-			.eq('tc_id', portal.tc_id)
-			.single();
-		if (tc) {
-			termsText = tc.content;
-			termsVersion = tc.version;
-		}
-	}
-
-	// 5. Tips
+	// 4. Tips
 	let tipItems = [
 		'Use a VPN when possible.',
 		'Avoid banking on public Wi-Fi.',
@@ -197,10 +167,10 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 		}
 	}
 
-	// 6. Risk classification lookup
+	// 5. Risk classification lookup
 	const risk = await lookupRiskClassification(score);
 
-	// 7. Build the payload matching FastAPI /portal/patch schema
+	// 6. Build the payload matching FastAPI /portal/patch schema
 	return {
 		network_id: `${bssid} | ${ssid}`,
 		patch: {
@@ -208,11 +178,6 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 				announcements: {
 					updated_at: now,
 					announcement_text: announcementText,
-				},
-				terms: {
-					version: termsVersion,
-					updated_at: now,
-					text: termsText,
 				},
 				tips: {
 					updated_at: now,
@@ -332,116 +297,63 @@ async function publishAnnouncement(req, res) {
 			}).catch(() => {});
 		}
 
-		res.json(data);
+		// ── Push announcement to Pi via portal/patch ─────────────
+		let piSynced = false;
+		let piError = null;
+		try {
+			const { data: net } = await supabaseClient
+				.from('networks')
+				.select('bssid, ssid, ap_enabled')
+				.eq('network_id', network_id)
+				.single();
+
+			if (net) {
+				let patchPayload;
+				if (!net.ap_enabled) {
+					// AP disabled: send full payload so content is ready when AP is enabled
+					patchPayload = await buildPortalPayloadFromDB(network_id, net.bssid, net.ssid);
+				} else {
+					// AP enabled: send only announcement for real-time update
+					const now = Math.floor(Date.now() / 1000);
+					patchPayload = {
+						network_id: `${net.bssid} | ${net.ssid}`,
+						patch: {
+							portal_content: {
+								announcements: {
+									updated_at: now,
+									announcement_text: data.announcement_content,
+								},
+							},
+						},
+					};
+				}
+
+				const { ok: piOk, data: piData } = await piFetch('/portal/patch', {
+					method: 'POST',
+					jsonBody: patchPayload,
+				});
+				piSynced = piOk;
+				if (!piOk) {
+					piError = piData?.detail || 'portal/patch failed';
+				}
+			}
+		} catch (piErr) {
+			console.warn('Pi sync failed after announcement publish:', piErr.message);
+			piError = piErr.message;
+		}
+
+		res.json({ ...data, pi_synced: piSynced, pi_error: piError });
 	} catch (err) {
 		console.error('captivePortal publishAnnouncement error:', err);
 		res.status(500).json({ error: 'Failed to publish announcement' });
 	}
 }
 
-// ─── Terms & Conditions CRUD ─────────────────────────────────────
 
-async function getTerms(req, res) {
-	try {
-		const { network_id } = req.query;
-		if (!network_id) {
-			return res.status(400).json({ error: 'network_id query param required' });
-		}
 
-		const { data, error } = await supabaseClient
-			.from('terms_conditions')
-			.select('*')
-			.eq('network_id', network_id)
-			.eq('is_active', true)
-			.order('created_at', { ascending: false })
-			.limit(1)
-			.maybeSingle();
 
-		if (error) throw error;
 
-		res.json(data || { tc_id: null, content: '', version: '', created_at: null });
-	} catch (err) {
-		console.error('captivePortal getTerms error:', err);
-		res.status(500).json({ error: 'Failed to fetch terms' });
-	}
-}
 
-async function getTermsHistory(req, res) {
-	try {
-		const { network_id } = req.query;
-		if (!network_id) {
-			return res.status(400).json({ error: 'network_id query param required' });
-		}
-
-		const { data, error } = await supabaseClient
-			.from('terms_conditions')
-			.select('*')
-			.eq('network_id', network_id)
-			.order('created_at', { ascending: false });
-
-		if (error) throw error;
-
-		res.json(data);
-	} catch (err) {
-		console.error('captivePortal getTermsHistory error:', err);
-		res.status(500).json({ error: 'Failed to fetch terms history' });
-	}
-}
-
-async function publishTerms(req, res) {
-	try {
-		const { content, version, network_id } = req.body;
-		if (!network_id) {
-			return res.status(400).json({ error: 'network_id required in body' });
-		}
-
-		// Deactivate previous terms for this network
-		await supabaseClient
-			.from('terms_conditions')
-			.update({ is_active: false })
-			.eq('network_id', network_id);
-
-		// Insert new active terms
-		const { data, error } = await supabaseClient
-			.from('terms_conditions')
-			.insert({
-				content: content ?? '',
-				version: version ?? 'v1',
-				is_active: true,
-				network_id,
-			})
-			.select()
-			.single();
-
-		if (error) throw error;
-
-		// Update the captive_portal FK to point to the new terms
-		await supabaseClient
-			.from('captive_portal')
-			.update({ tc_id: data.tc_id })
-			.eq('network_id', network_id)
-			.eq('is_active', true);
-
-		// Audit: terms published
-		const actorId = req.user?.id;
-		if (actorId) {
-			logAuditEvent({
-				req,
-				actorId,
-				eventName: 'PORTAL.TERMS_PUBLISH',
-				eventStatus: 'SUCCESS',
-				entityType: 'PORTAL',
-				entityIdUuid: network_id,
-				meta: { network_id, tc_id: data.tc_id, version: data.version },
-			}).catch(() => {});
-		}
-
-		res.json(data);
-	} catch (err) {
-		console.error('captivePortal publishTerms error:', err);
-		res.status(500).json({ error: 'Failed to publish terms' });
-	}
-}
 
 // ─── Tips CRUD ───────────────────────────────────────────────────
 
@@ -648,9 +560,6 @@ module.exports = {
 	getAnnouncement,
 	getAnnouncementHistory,
 	publishAnnouncement,
-	getTerms,
-	getTermsHistory,
-	publishTerms,
 	getTips,
 	upsertTips,
 	getRiskClassifications,

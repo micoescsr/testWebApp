@@ -11,14 +11,6 @@ export const getAnnouncementHistory = (networkId) =>
 export const publishAnnouncement = (content, networkId) =>
   api.post("/captivePortal/announcement", { content, network_id: networkId });
 
-// ─── Terms & Conditions (per-network) ────────────────────────────
-export const getTerms = (networkId) =>
-  api.get(`/captivePortal/terms?network_id=${networkId}`);
-export const getTermsHistory = (networkId) =>
-  api.get(`/captivePortal/terms/history?network_id=${networkId}`);
-export const publishTerms = (content, version, networkId) =>
-  api.post("/captivePortal/terms", { content, version, network_id: networkId });
-
 // ─── Tips (per-network) ─────────────────────────────────────────
 export const getTips = (networkId) =>
   api.get(`/captivePortal/tips?network_id=${networkId}`);

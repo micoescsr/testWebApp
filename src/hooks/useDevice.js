@@ -138,7 +138,7 @@ export const useDevice = (networkId, scanId) => {
     } catch (err) {
       console.error("AP toggle failed:", err);
       const backendError = err?.response?.data?.error;
-      const backendMsg = err?.response?.data?.message;
+      const backendMsg = err?.response?.data?.message || err?.response?.data?.user_message;
 
       // Revert optimistic toggle on failure
       setApEnabled(!nextState);
@@ -180,10 +180,43 @@ export const useDevice = (networkId, scanId) => {
           setError(backendMsg || "Network configuration is incomplete. Re-scan the network.");
           break;
         case "AP_PASSWORD_REQUIRED":
-          setError(backendMsg || "An AP password is required for encrypted networks.");
+        case "PASSWORD_REQUIRED":
+          setError("Password is required for this network.");
           break;
         case "AP_PASSWORD_WEAK":
           setError(backendMsg || "AP password must be at least 8 characters.");
+          break;
+        case "INCORRECT_PASSWORD":
+          setError("Incorrect Wi-Fi password. Please check and try again.");
+          break;
+        case "SSID_NOT_FOUND":
+          setError("Network SSID could not be found. The network may be out of range.");
+          break;
+        case "ENCRYPTION_MISMATCH":
+          setScanError("ENCRYPTION_MISMATCH");
+          setError("Network security type has changed. Run a new scan.");
+          break;
+        case "NETWORK_DATA_OUTDATED":
+          setScanError("NETWORK_DATA_OUTDATED");
+          setError("Network details are outdated. Run a new scan.");
+          break;
+        case "PI_NETWORK_CONFLICT":
+          setError("Cannot connect — this network conflicts with the Pi's management network.");
+          break;
+        case "DEVICE_BUSY":
+          setError("Device is busy. Please wait and try again.");
+          break;
+        case "DEVICE_EXCEPTION":
+          setError(backendMsg || "An internal device error occurred. Please try again.");
+          break;
+        case "INVALID_PAYLOAD":
+          setError("Details are incomplete. Please check your configuration.");
+          break;
+        case "CONNECTION_FAILED":
+          setError("Couldn't connect to the uplink network. Please try again.");
+          break;
+        case "UPLINK_DISCONNECTED":
+          setError("Uplink disconnected. Access point is off.");
           break;
         case "REQUEST_IN_PROGRESS":
           setError("An AP configuration change is already in progress. Please wait.");
@@ -205,6 +238,9 @@ export const useDevice = (networkId, scanId) => {
         case "UPDATE_TYPE_MISMATCH":
         case "INVALID_PATCH_SHAPE":
           setError(backendMsg || "Invalid portal update request.");
+          break;
+        case "ORCHESTRATE_ERROR":
+          setError(backendMsg || "An unexpected device error occurred. Please try again.");
           break;
         default:
           setError(backendMsg || "Failed to toggle access point. Check device connection.");

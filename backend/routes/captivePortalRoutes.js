@@ -13,11 +13,6 @@ router.get('/announcement', authJWT, ctrl.getAnnouncement);
 router.get('/announcement/history', authJWT, ctrl.getAnnouncementHistory);
 router.post('/announcement', authJWT, ctrl.publishAnnouncement);
 
-// ─── Terms & Conditions ──────────────────────────────────────────
-router.get('/terms', authJWT, ctrl.getTerms);
-router.get('/terms/history', authJWT, ctrl.getTermsHistory);
-router.post('/terms', authJWT, ctrl.publishTerms);
-
 // ─── Tips ────────────────────────────────────────────────────────
 router.get('/tips', authJWT, ctrl.getTips);
 router.post('/tips', authJWT, ctrl.upsertTips);
