@@ -6,7 +6,6 @@
 # Checks:
 #   1. process.env.FASTAPI_BASE (without _URL suffix) -- wrong env var name
 #   2. Hardcoded Tailscale hostnames (tail*, mothership*) as URL fallbacks
-#   3. Leftover raw PORTAL_TOKEN reads that skip PORTAL_PATCH_TOKEN
 
 param(
     [switch]$CI  # In CI mode, exits with code 1 on failure instead of just warning
@@ -62,17 +61,6 @@ foreach ($file in $files) {
                 File    = $relPath
                 Line    = $lineNum
                 Rule    = "Hardcoded Tailscale/mothership URL"
-                Content = $line.Trim()
-            }
-        }
-
-        # ---- Rule 3: Raw PORTAL_TOKEN env read without PORTAL_PATCH_TOKEN ----
-        # Catches: process.env.PORTAL_TOKEN  (but NOT process.env.PORTAL_PATCH_TOKEN)
-        if ($line -match 'process\.env\.PORTAL_TOKEN\b' -and $line -notmatch 'PORTAL_PATCH_TOKEN') {
-            $violations += [PSCustomObject]@{
-                File    = $relPath
-                Line    = $lineNum
-                Rule    = "Legacy PORTAL_TOKEN without PORTAL_PATCH_TOKEN fallback"
                 Content = $line.Trim()
             }
         }

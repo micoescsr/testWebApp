@@ -74,11 +74,11 @@ Execution order diagram with dependency notes
 | 0-B  | Update local `.env`                       | Put new key in `backend/.env`                                     |
 | 0-C  | Scrub git history                         | `git filter-repo --path .env --path backend/.env --invert-paths`  |
 | 0-D  | Force push cleaned history                | `git push --force --all`                                          |
-| 0-E  | Generate and store Pi control secrets     | Generate long random `CONTROL_SIGNING_SECRET` and `PORTAL_PATCH_TOKEN`. Store **only** in Railway env vars + Pi env. **Never** expose in React env builds (`VITE_` prefix). Also ensure JWT secrets are stored in Railway env. Code reads `PORTAL_PATCH_TOKEN` first, falls back to legacy `PORTAL_TOKEN`. |
+| 0-E  | Generate and store Pi control secrets     | Generate long random `CONTROL_SIGNING_SECRET`. Store **only** in Railway env vars + Pi env. **Never** expose in React env builds (`VITE_` prefix). Also ensure JWT secrets are stored in Railway env. All Pi endpoints (including `/portal/patch`) use unified HMAC signing — no separate portal token needed. |
 
 **Why first:** If you push code changes while the old key is in git history, it's still compromised.
 
-> **Funnel note:** Funnel introduces new secrets (`CONTROL_SIGNING_SECRET`, `PORTAL_PATCH_TOKEN`) that must exist on both Railway and the Pi. Treat these as Phase 0 secrets — they must be generated and securely stored before any Pi connectivity work begins.
+> **Funnel note:** Funnel introduces `CONTROL_SIGNING_SECRET` which must exist on both Railway and the Pi. Treat this as a Phase 0 secret — it must be generated and securely stored before any Pi connectivity work begins.
 
 ---
 
@@ -192,10 +192,10 @@ module.exports = { loginLimiter, refreshLimiter, globalLimiter };
 > 2. The **Express backend** (Railway) is the **only** caller of that Pi URL. The browser / React frontend **never** calls the Pi directly.
 > 3. Commands from Express → Pi are **HMAC-signed** (`CONTROL_SIGNING_SECRET`) with a timestamp to prevent replay.
 > 4. Scan-complete webhooks from Pi → Express use a **Bearer token** (`SCAN_RUNNER_TOKEN`) validated server-side.
-> 5. Portal content updates use a separate **Bearer token** (`PORTAL_PATCH_TOKEN`, falling back to legacy `PORTAL_TOKEN`) for privilege separation.
+> 5. All Pi endpoints (including `/portal/patch`) use the same **HMAC signing** — no separate portal token needed.
 >
 > This means:
-> - Pi secrets (`CONTROL_SIGNING_SECRET`, `PORTAL_PATCH_TOKEN`, `SCAN_RUNNER_TOKEN`) exist **only** in Railway env vars and the Pi's `.env`. They are **never** exposed to the frontend (no `VITE_` prefix).
+> - Pi secrets (`CONTROL_SIGNING_SECRET`, `SCAN_RUNNER_TOKEN`) exist **only** in Railway env vars and the Pi's `.env`. They are **never** exposed to the frontend (no `VITE_` prefix).
 > - If the Funnel URL leaks, an attacker still cannot issue commands without the signing secret.
 > - If a token leaks, the `ALLOWED_DEVICE_IDS` allowlist (Phase 4.5) limits blast radius.
 

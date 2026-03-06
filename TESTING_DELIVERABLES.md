@@ -111,8 +111,8 @@
 
 | Check | Before | After |
 |-------|--------|-------|
-| `FASTAPI_BASE_URL` | 5 files used `process.env.FASTAPI_BASE` with hardcoded Tailscale URLs | All use `process.env.FASTAPI_BASE_URL` |
-| `scan-completed` auth | Not behind `authJWT` (correct) but `PORTAL_TOKEN` undefined | Token-guarded with `PORTAL_PATCH_TOKEN \|\| PORTAL_TOKEN` compat |
+| `FASTAPI_BASE_URL` | 5 files used `process.env.FASTAPI_BASE` with hardcoded Tailscale URLs | All use `process.env.FASTAPI_BASE_URL` via `piFetch` |
+| `scan-completed` auth | Not behind `authJWT` (correct) but unprotected | Token-guarded with `SCAN_RUNNER_TOKEN` |
 | Error responses | Some routes leaked `err.message` | Generic error messages, global error handler catches express.json parse errors |
 
 ### Phase 4 — Deployment Readiness
@@ -120,8 +120,8 @@
 | Check | Before | After |
 |-------|--------|-------|
 | CORS | Hardcoded `localhost:5173` | Env-based `ALLOWED_ORIGINS` with validation |
-| `PORTAL_PATCH_TOKEN` | Split naming (`PORTAL_TOKEN` vs `PORTAL_PATCH_TOKEN`) | Canonical `PORTAL_PATCH_TOKEN` with `PORTAL_TOKEN` fallback |
-| Regression guard | None | `npm run lint:security` scans 68 files for 3 forbidden patterns |
+| Pi auth | Split naming (`PORTAL_TOKEN` vs `PORTAL_PATCH_TOKEN`) | Unified HMAC signing via `CONTROL_SIGNING_SECRET` for all Pi endpoints |
+| Regression guard | None | `npm run lint:security` scans 68 files for 2 forbidden patterns |
 
 ### Phase 5 — Optional Polish
 

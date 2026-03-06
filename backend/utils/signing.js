@@ -25,7 +25,8 @@ function buildSignedHeaders({ method, pathWithQuery, bodyBytes, secret }) {
   if (!secret) throw new Error("CONTROL_SIGNING_SECRET missing");
 
   const ts = Math.floor(Date.now() / 1000).toString();
-  const nonce = crypto.randomUUID();
+  // 16 random bytes → 32-char hex string (matches Pi verifier expectation)
+  const nonce = crypto.randomBytes(16).toString("hex");
 
   const bodySha256 = crypto
     .createHash("sha256")

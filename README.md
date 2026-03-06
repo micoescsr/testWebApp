@@ -117,7 +117,7 @@ The project is undergoing a phased security hardening process documented in [`SE
 
 | Phase | Name                        | Status       | Key Items                                                      |
 |-------|-----------------------------|--------------|----------------------------------------------------------------|
-| 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `PORTAL_PATCH_TOKEN` + `CONTROL_SIGNING_SECRET` in env |
+| 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `CONTROL_SIGNING_SECRET` in env (unified HMAC auth for all Pi endpoints) |
 | 1     | P0 Infrastructure           | **Done**     | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies (`CROSS_ORIGIN_COOKIES`) |
 | 2     | Route Auth Lockdown         | **Done**     | `authJWT` on all 9 route groups, `requireSuperadmin` on audit  |
 | 3     | Bug Fixes & Info Disclosure | **Partial**  | Most leaks sealed; residual `err.message` in rasPi/auth/user/detect controllers |

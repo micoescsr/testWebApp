@@ -148,7 +148,7 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 9. If !portal_initialized:
    a. seedDefaultContent()
    b. buildPortalPayloadFromDB()
-   c. POST FastAPI /portal/patch (with x-portal-token header) → PORTAL_PATCH_FAILED
+   c. POST FastAPI /portal/patch (HMAC-signed via piFetch) → PORTAL_PATCH_FAILED
    d. Set portal_initialized=true, portal_last_patched_at, portal_last_patched_version
    e. Audit: AP_ENABLE_REQUEST (portal init)
 10. POST FastAPI /orchestrate/apply             → FASTAPI_APPLY_FAILED (HTTP error)
@@ -179,7 +179,7 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 - **`logFastApiCall()`** — Logs method, URL, payload, response status + body for debugging.
 - **`logAuditEvent()`** — Fire-and-forget. Maps `SUCCESS→OK`, `FAILED→FAIL`, `DENIED→DENY` for the DB enum.
 - **`risk_score_version` re-read** — After portal init patch, re-reads version from DB before stamping to avoid race conditions.
-- **`x-portal-token` header** — All `/portal/patch` calls include `x-portal-token` header from `PORTAL_TOKEN` env var for FastAPI authentication.
+- **HMAC signing** — All FastAPI calls (including `/portal/patch`) are authenticated via HMAC signing (`CONTROL_SIGNING_SECRET`) through `piFetch`. The legacy `x-portal-token` / `PORTAL_TOKEN` header has been removed — all endpoints use the same signing mechanism.
 
 ---
 
@@ -501,7 +501,7 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 
 2. **Orchestrate application-level errors** — FastAPI `/orchestrate/apply` returns HTTP 200 with `status: "ERROR"` on failures (wrong channel, wrong password, SSID not found, etc.). The backend now checks `fastapiData.status === 'ERROR'` via `classifyOrchestrateError()` and returns HTTP 422 with structured error details. Previously, these were treated as success — `ap_enabled` was set to `true` even though the AP was actually OFF.
 
-3. **Portal token auth** — All `/portal/patch` calls (portal init, client-driven update, auto-portal risk patch, portal sync) now include `x-portal-token` header read from the `PORTAL_TOKEN` env var. Fixes 401 unauthorized errors from FastAPI.
+3. **Unified HMAC auth** — All FastAPI calls (`/portal/patch`, `/orchestrate/apply`, etc.) authenticate via HMAC signing (`CONTROL_SIGNING_SECRET`) through `piFetch`. The legacy `x-portal-token` / `PORTAL_TOKEN` header has been fully removed.
 
 4. **Guard against false `ap_enabled`** — When `classifyOrchestrateError()` detects a failure, the enable path returns 422 immediately without setting `ap_enabled=true` or `portal_initialized=true` in the DB.
 
@@ -511,8 +511,8 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FASTAPI_BASE` | `http://mothership-1.tail781e52.ts.net:8000` | FastAPI base URL |
-| `PORTAL_TOKEN` | `''` | Auth token sent as `x-portal-token` header to FastAPI `/portal/patch` |
+| `PI_BASE_URL` | `http://127.0.0.1:8000` | Pi gateway URL (Tailscale Funnel in prod) |
+| `CONTROL_SIGNING_SECRET` | `''` | HMAC signing secret — authenticates ALL Express → Pi requests |
 | `SCAN_MAX_AGE_SECONDS` | `300` (5 min) | Maximum scan age for freshness check |
 | `SCAN_RUNNER_TOKEN` | `''` (disabled) | Shared secret for `/scan-completed` webhook |
 | `PORTAL_PATCH_COOLDOWN_MS` | `15000` (15s) | Min time between auto portal patches |
@@ -760,11 +760,11 @@ WHERE ap_apply_in_progress = true;
 
 | File | Changes |
 |------|---------|
-| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook, `classifyOrchestrateError()` for FastAPI error parsing, `x-portal-token` header on portal/patch calls |
-| `backend/utils/riskPipeline.js` | **New file** — bucket computation, version bumping, auto-portal patching, scan/threat hooks, `x-portal-token` header |
+| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook, `classifyOrchestrateError()` for FastAPI error parsing |
+| `backend/utils/riskPipeline.js` | **New file** — bucket computation, version bumping, auto-portal patching, scan/threat hooks |
 | `backend/utils/scanValidation.js` | Pure scan validation functions, network config validation, password validation, portal payload builder |
 | `backend/utils/auditLogger.js` | Fire-and-forget audit logging (unchanged, consumed by new code) |
-| `backend/controllers/captivePortalController.js` | Portal sync to FastAPI, `x-portal-token` header on portal/patch call |
+| `backend/controllers/captivePortalController.js` | Portal sync to FastAPI via HMAC-signed `piFetch` |
 | `backend/controllers/rasPiController.js` | Fixed `saveNetworkMetadataScan()` — network update now includes `ssid` and `channel` (previously missing, causing stale data) |
 | `backend/server.js` | Wired `onThreatEvent` into `persistThreatRows()` |
 
