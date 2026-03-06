@@ -394,6 +394,23 @@
   font-weight: 600;
 }
 
+.show-more-btn {
+  width: 100%;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-top: 1px solid #f3f4f6;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.show-more-btn:hover {
+  background: #f9fafb;
+}
+
 .network-form {
   display: flex;
   flex-direction: column;
