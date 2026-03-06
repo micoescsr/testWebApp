@@ -153,9 +153,15 @@
 }
 
 .top-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.top-row > span:not(:first-child) {
+  text-align: right;
 }
 
 .top-head {
@@ -163,6 +169,15 @@
   color: #6b7280;
   border-bottom: 1px solid #e5e7eb;
   margin-bottom: 4px;
+}
+
+.top-foot {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 4px;
+  padding-top: 6px;
+  font-weight: 600;
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .score-link {

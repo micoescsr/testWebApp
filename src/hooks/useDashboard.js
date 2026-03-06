@@ -1,119 +1,106 @@
-// hooks/useDashboard.js
-import { useState, useEffect } from "react";
-import { getDashboardSummary, getDashboardForNetwork } from "../api/dashboardApi";
-import { supabase } from "../lib/supabaseClient";
-import { getScansForNetwork } from "../api/scansApi";
-
-// raw is a timestamp with timezone from Supabase, already ISO-compatible
-const normalizeScanDate = (raw) => {
-  if (!raw) return null;
-  return new Date(raw);
-};
+﻿// hooks/useDashboard.js
+import { useState, useEffect, useCallback } from "react";
+import {
+  getDashboardSummary,
+  getDashboardForNetwork,
+  getNetworks,
+} from "../api/dashboardApi";
 
 export const useDashboard = () => {
+  // ΓöÇΓöÇ View mode: "Summary" or a network_id UUID ΓöÇΓöÇ
   const [viewMode, setViewMode] = useState("Summary");
   const [showLegend, setShowLegend] = useState(false);
   const isSummary = viewMode === "Summary";
   const toggleLegend = () => setShowLegend((prev) => !prev);
 
+  // ΓöÇΓöÇ Shared hover state for linked highlighting ΓöÇΓöÇ
   const [hoverContext, setHoverContext] = useState(null);
   const clearHoverContext = () => setHoverContext(null);
 
+  // ΓöÇΓöÇ Network list (for dropdown) ΓöÇΓöÇ
   const [networks, setNetworks] = useState([]);
+
+  // ΓöÇΓöÇ Date filter: selected scan ΓöÇΓöÇ
+  const [selectedScanId, setSelectedScanId] = useState(null);
+  const [scanList, setScanList] = useState([]);
+
+  // ΓöÇΓöÇ Data state (null = not yet loaded) ΓöÇΓöÇ
   const [summary, setSummary] = useState(null);
   const [networkData, setNetworkData] = useState(null);
-  const [loading, setLoading] = useState(true);
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const [scanOptions, setScanOptions] = useState([]);
-  const [selectedScanId, setSelectedScanId] = useState(null);
-
-useEffect(() => {
-  const summary = viewMode === "Summary";
-  if (!summary) {
-    const loadScans = async () => {
-      const scans = await getScansForNetwork(viewMode);
-
-      const seenDates = new Set();
-      const options = [];
-
-      for (const s of scans) {
-        const d = normalizeScanDate(s.created_at);
-        if (!d) continue;
-
-        // key per calendar day: "2026-02-25"
-        const key = d.toISOString().slice(0, 10);
-
-        if (seenDates.has(key)) continue;     // skip other scans on same day
-        seenDates.add(key);
-
-        options.push({
-          id: s.scan_id,                      // first scan for that day
-          label: d.toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          }),                                // "February 25, 2026"
-        });
-      }
-
-      setScanOptions(options);
-      if (options.length) setSelectedScanId(options[0].id);
-    };
-
-    loadScans();
-  } else {
-    setScanOptions([]);
-    setSelectedScanId(null);
-  }
-}, [viewMode]);
-
-
-
-  // Fetch network list for the dropdown on mount
+  // ΓöÇΓöÇ Fetch network list once on mount ΓöÇΓöÇ
   useEffect(() => {
+    let cancelled = false;
     const fetchNetworks = async () => {
-      const { data, error } = await supabase
-        .from("networks")
-        .select("network_id, ssid")
-        .order("ssid", { ascending: true });
-      if (!error && data) setNetworks(data);
+      try {
+        const res = await getNetworks();
+        if (!cancelled) setNetworks(res.data || []);
+      } catch (err) {
+        console.error("Failed to fetch networks:", err);
+      }
     };
     fetchNetworks();
+    return () => { cancelled = true; };
   }, []);
 
+  // ΓöÇΓöÇ Reset selectedScanId when network changes ΓöÇΓöÇ
+  const handleSetViewMode = useCallback((mode) => {
+    setViewMode(mode);
+    setSelectedScanId(null);
+    setScanList([]);
+    // Clear stale data so loading shows
+    if (mode === "Summary") {
+      setNetworkData(null);
+    } else {
+      setSummary(null);
+    }
+  }, []);
 
-  // Fetch dashboard data whenever viewMode changes
+  // ΓöÇΓöÇ Main data fetch: runs on viewMode or selectedScanId change ΓöÇΓöÇ
   useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-
         if (isSummary) {
-          const data = await getDashboardSummary();
-          setSummary(data);
+          const res = await getDashboardSummary();
+          if (!cancelled) setSummary(res.data);
         } else {
-          // viewMode is the network_id when not Summary
-          const data = await getDashboardForNetwork(viewMode);
-          setNetworkData(data);
+          const networkId = viewMode;
+          const res = await getDashboardForNetwork(
+            networkId,
+            selectedScanId
+          );
+          if (!cancelled) {
+            setNetworkData(res.data);
+            // scanList comes from the per-network response
+            if (res.data?.scanList) {
+              setScanList(res.data.scanList);
+            }
+          }
         }
       } catch (err) {
-        setError(err.message || "Failed to load dashboard data");
+        if (!cancelled) {
+          setError(err.response?.data?.error || err.message || "Failed to load dashboard data");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-
     fetchData();
-  }, [viewMode, isSummary]);
-
+    return () => { cancelled = true; };
+  }, [viewMode, isSummary, selectedScanId]);
 
   return {
     viewMode,
-    setViewMode,
+    setViewMode: handleSetViewMode,
     isSummary,
     showLegend,
     toggleLegend,
@@ -121,11 +108,12 @@ useEffect(() => {
     error,
     summary,
     networkData,
-    networks,       // for the dropdown
     hoverContext,
     setHoverContext,
     clearHoverContext,
-        scanOptions,
+    // New: for dropdowns
+    networks,
+    scanList,
     selectedScanId,
     setSelectedScanId,
   };

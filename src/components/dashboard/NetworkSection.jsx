@@ -1,4 +1,4 @@
-// components/dashboard/NetworkSection.jsx
+﻿// components/dashboard/NetworkSection.jsx
 import {
   RadialBarChart,
   RadialBar,
@@ -39,25 +39,34 @@ const NetworkSection = ({
   if (!data) return null;
 
   const {
-    // stat cards
+    riskScoreData = [],
+    severityData = [],
+    commonVulnsData = [],
+    kindSplitData = [],
+    clientsRiskTrendData = [],
     lastScan,
-    currentRiskScore,
-    prevScore,
-    prevScanDate,
-    encryption,
+    encryptionStatus,
     numClients,
     totalVulns,
     totalThreats,
-    // charts
-    riskScoreData,
-    severityData,
-    kindSplitData,
-    commonVulnsData,
-    clientsRiskTrendData,
   } = data;
 
-const netRisk = riskScoreData?.[0]?.value ?? 0;
-const netRiskLabel = getRiskLabel(netRisk);
+  const netRisk = riskScoreData?.[0]?.value ?? 0;
+  const netRiskLabel = getRiskLabel(netRisk);
+
+  // Format date for stat card
+  const formatDate = (iso) => {
+    if (!iso) return "ΓÇö";
+    try {
+      return new Date(iso).toLocaleDateString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+      });
+    } catch {
+      return "ΓÇö";
+    }
+  };
 
   const isCard = (key) =>
     hoverContext &&
@@ -76,24 +85,11 @@ const netRiskLabel = getRiskLabel(netRisk);
     hoverContext.key.severity === sev &&
     hoverContext.key.kind === kind;
 
-  const formatDate = (value) =>
-    value ? new Date(value).toLocaleString() : "N/A";
-
-  const formatShortDate = (value) =>
-    value ? new Date(value).toLocaleDateString() : "N/A";
-
-  const computeDaysAgo = (prev) => {
-    if (!prev) return "N/A";
-    const diffMs = Date.now() - new Date(prev).getTime();
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    return days <= 0 ? "today" : `${days}d ago`;
-  };
-
   return (
     <>
       {/* Per-network stat cards */}
       <div className="dash-stats-row-6">
-        {/* Last Scan ↔ Gauge */}
+        {/* Last Scan Γåö Gauge */}
         <div
           className={`stat-card ${
             isCard("net_last_scan") ? "hover-highlight" : ""
@@ -104,10 +100,10 @@ const netRiskLabel = getRiskLabel(netRisk);
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Last Scan</p>
-          <p className="stat-value">{formatShortDate(lastScan)}</p>
+          <p className="stat-value">{formatDate(lastScan)}</p>
         </div>
 
-        {/* Previous status ↔ Gauge/Trend */}
+        {/* Previous status Γåö Gauge/Trend */}
         <div
           className={`stat-card stat-highlight ${
             isCard("net_prev_status") ? "hover-highlight" : ""
@@ -119,15 +115,11 @@ const netRiskLabel = getRiskLabel(netRisk);
         >
           <div className="stat-indicator"></div>
           <p className="stat-label">Status as of previous scan</p>
-          <p className="stat-value">
-            {prevScore != null ? `${prevScore}%` : "N/A"}
-          </p>
-          <p className="stat-sublabel">
-            {computeDaysAgo(prevScanDate)}
-          </p>
+          <p className="stat-value">80%</p>
+          <p className="stat-sublabel">7d ago</p>
         </div>
 
-        {/* Encryption ↔ Threat/Vuln donut */}
+        {/* Encryption Γåö Threat/Vuln donut */}
         <div
           className={`stat-card ${
             isCard("net_encryption") ? "hover-highlight" : ""
@@ -138,12 +130,10 @@ const netRiskLabel = getRiskLabel(netRisk);
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Network Encryption</p>
-          <p className="stat-value">
-            {(encryption || "Unknown").toUpperCase()}
-          </p>
+          <p className="stat-value">{encryptionStatus || "ΓÇö"}</p>
         </div>
 
-        {/* Vulns ↔ Severity bar + issues list */}
+        {/* Vulns Γåö Severity bar + issues list */}
         <div
           className={`stat-card ${
             isCard("net_vulns") ? "hover-highlight" : ""
@@ -157,7 +147,7 @@ const netRiskLabel = getRiskLabel(netRisk);
           <p className="stat-value">{totalVulns ?? 0}</p>
         </div>
 
-        {/* Threats ↔ Threat/Vuln donut */}
+        {/* Threats Γåö Threat/Vuln donut */}
         <div
           className={`stat-card ${
             isCard("net_threats") ? "hover-highlight" : ""
@@ -171,7 +161,7 @@ const netRiskLabel = getRiskLabel(netRisk);
           <p className="stat-value">{totalThreats ?? 0}</p>
         </div>
 
-        {/* Clients ↔ Clients vs Risk line */}
+        {/* Clients Γåö Clients vs Risk line */}
         <div
           className={`stat-card ${
             isCard("net_clients") ? "hover-highlight" : ""
@@ -200,7 +190,7 @@ const netRiskLabel = getRiskLabel(netRisk);
             <h2>Network Risk Score</h2>
             <div className="panel-actions">
               <button className="toggle-btn" onClick={toggleLegend}>
-                {showLegend ? "←" : "→"}
+                {showLegend ? "ΓåÉ" : "ΓåÆ"}
               </button>
             </div>
           </div>
@@ -257,67 +247,69 @@ const netRiskLabel = getRiskLabel(netRisk);
             <h2>Threat vs Vulnerability</h2>
           </div>
           <div className="panel-body threat-row">
-            <div className="threat-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart onMouseLeave={clearHoverContext}>
-                  <Pie
-                    data={kindSplitData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    onMouseOver={(payload) =>
-                      payload?.name &&
-                      setHoverContext({
-                        dimension: "kind",
-                        key: payload.name,
-                      })
-                    }
-                  >
-                    {kindSplitData?.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={
-                          entry.name === "VULNERABILITY"
-                            ? COLORS[0]
-                            : COLORS[1]
+            {kindSplitData.length > 0 ? (
+              <>
+                <div className="threat-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart onMouseLeave={clearHoverContext}>
+                      <Pie
+                        data={kindSplitData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={3}
+                        onMouseOver={(data) =>
+                          setHoverContext({
+                            dimension: "kind",
+                            key: data.name,
+                          })
                         }
-                        opacity={
-                          hoverContext &&
-                          hoverContext.dimension === "kind" &&
-                          !isHoveredKind(entry.name)
-                            ? 0.4
-                            : 1
-                        }
-                      />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="threat-legend">
-              {kindSplitData?.map((k) => (
-                <div
-                  key={k.name}
-                  className={`threat-row-item ${
-                    isHoveredKind(k.name) ? "hover-highlight" : ""
-                  }`}
-                >
-                  <span
-                    className="legend-dot"
-                    style={{
-                      backgroundColor:
-                        k.name === "VULNERABILITY" ? COLORS[0] : COLORS[1],
-                    }}
-                  />
-                  <span className="legend-label">{k.name}</span>
-                  <span className="legend-value">{k.value}</span>
+                      >
+                        {kindSplitData.map((entry, index) => (
+                          <Cell
+                            key={entry.name}
+                            fill={entry.name === "VULNERABILITY" ? COLORS[0] : COLORS[1]}
+                            opacity={
+                              hoverContext &&
+                              hoverContext.dimension === "kind" &&
+                              !isHoveredKind(entry.name)
+                                ? 0.4
+                                : 1
+                            }
+                          />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
+                <div className="threat-legend">
+                  {kindSplitData.map((k, index) => (
+                    <div
+                      key={k.name}
+                      className={`threat-row-item ${
+                        isHoveredKind(k.name) ? "hover-highlight" : ""
+                      }`}
+                    >
+                      <span
+                        className="legend-dot"
+                        style={{
+                          backgroundColor: k.name === "VULNERABILITY" ? COLORS[0] : COLORS[1],
+                        }}
+                      />
+                      <span className="legend-label">{k.name}</span>
+                      <span className="legend-value">{k.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p style={{ color: "#6b7280", fontSize: 13, padding: "1rem" }}>
+                No findings data available
+              </p>
+            )}
           </div>
         </div>
 
@@ -350,7 +342,7 @@ const netRiskLabel = getRiskLabel(netRisk);
                   name="Vulnerabilities"
                   fill={COLORS[0]}
                 >
-                  {severityData?.map((entry) => (
+                  {severityData.map((entry) => (
                     <Cell
                       key={`vuln-${entry.severity}`}
                       fill={COLORS[0]}
@@ -362,8 +354,8 @@ const netRiskLabel = getRiskLabel(netRisk);
                               entry.severity,
                               "VULNERABILITY"
                             ) ||
-                            (hoverContext.dimension === "kind" &&
-                              hoverContext.key === "VULNERABILITY")
+                            hoverContext.dimension === "kind" &&
+                              hoverContext.key === "VULNERABILITY"
                             ? 1
                             : 0.4
                           : 1
@@ -385,12 +377,11 @@ const netRiskLabel = getRiskLabel(netRisk);
                   name="Threats"
                   fill={COLORS[1]}
                 >
-                  {severityData?.map((entry) => (
+                  {severityData.map((entry) => (
                     <Cell
                       key={`threat-${entry.severity}`}
                       fill={COLORS[1]}
-                      opacity=
-                      {
+                      opacity={
                         hoverContext &&
                         (hoverContext.dimension === "kind" ||
                           hoverContext.dimension === "severity_kind")
@@ -398,8 +389,8 @@ const netRiskLabel = getRiskLabel(netRisk);
                               entry.severity,
                               "THREAT"
                             ) ||
-                            (hoverContext.dimension === "kind" &&
-                              hoverContext.key === "THREAT")
+                            hoverContext.dimension === "kind" &&
+                              hoverContext.key === "THREAT"
                             ? 1
                             : 0.4
                           : 1
@@ -434,29 +425,35 @@ const netRiskLabel = getRiskLabel(netRisk);
             <h2>Clients vs Risk Over Scans</h2>
           </div>
           <div className="panel-body">
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={clientsRiskTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="scan" />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <Tooltip />
-                <Legend />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="clients"
-                  stroke="#2563eb"
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="risk"
-                  stroke="#f97316"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {clientsRiskTrendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={clientsRiskTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="scan" />
+                  <YAxis yAxisId="left" />
+                  <YAxis yAxisId="right" orientation="right" />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="clients"
+                    stroke="#2563eb"
+                    activeDot={{ r: 6 }}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="risk"
+                    stroke="#f97316"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p style={{ color: "#6b7280", fontSize: 13, padding: "1rem" }}>
+                No scan history available
+              </p>
+            )}
           </div>
         </div>
 
@@ -471,17 +468,23 @@ const netRiskLabel = getRiskLabel(netRisk);
           </div>
           <div className="panel-body">
             <div className="vuln-list-detailed">
-              {commonVulnsData?.map((v) => (
-                <div key={v.name} className="vuln-item-detailed">
-                  <div className="vuln-severity-badge">{v.severity}</div>
-                  <div className="vuln-details">
-                    <p className="vuln-name">{v.name}</p>
+              {commonVulnsData.length > 0 ? (
+                commonVulnsData.map((v) => (
+                  <div key={v.name} className="vuln-item-detailed">
+                    <div className="vuln-severity-badge">{v.severity}</div>
+                    <div className="vuln-details">
+                      <p className="vuln-name">{v.name}</p>
+                    </div>
+                    <div
+                      className={`vuln-indicator ${(v.severity || "").toLowerCase()}`}
+                    ></div>
                   </div>
-                  <div
-                    className={`vuln-indicator ${v.severity.toLowerCase()}`}
-                  ></div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p style={{ color: "#6b7280", fontSize: 13, padding: "1rem" }}>
+                  No issues found
+                </p>
+              )}
             </div>
           </div>
         </div>

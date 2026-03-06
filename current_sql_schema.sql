@@ -19,6 +19,23 @@ CREATE TABLE public.audit_logging (
   CONSTRAINT audit_logging_pkey PRIMARY KEY (audit_log_id),
   CONSTRAINT audit_logging_actor_profile_id_fkey FOREIGN KEY (actor_profile_id) REFERENCES public.profiles(id)
 );
+CREATE TABLE public.audit_logging_archive (
+  audit_log_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  actor_profile_id uuid NOT NULL,
+  request_id uuid,
+  actor_ip inet,
+  user_agent text,
+  event_name text NOT NULL,
+  event_status text NOT NULL,
+  entity_type text NOT NULL,
+  entity_id_uuid uuid,
+  entity_id_bigint bigint,
+  old_values jsonb,
+  new_values jsonb,
+  meta jsonb,
+  CONSTRAINT audit_logging_archive_pkey PRIMARY KEY (audit_log_id)
+);
 CREATE TABLE public.audit_logs (
   audit_log_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -70,6 +87,23 @@ CREATE TABLE public.dashboard (
   CONSTRAINT dashboard_pkey PRIMARY KEY (dashboard_id),
   CONSTRAINT dashboard_network_id_fkey FOREIGN KEY (network_id) REFERENCES public.networks(network_id)
 );
+CREATE TABLE public.detection_state (
+  device_id integer NOT NULL DEFAULT 1,
+  active_network_id uuid,
+  active_scan_id bigint,
+  status text NOT NULL DEFAULT 'STOPPED'::text CHECK (status = ANY (ARRAY['RUNNING'::text, 'STOPPED'::text, 'FAILED'::text])),
+  started_by_profile_id uuid,
+  started_at timestamp with time zone,
+  stopped_at timestamp with time zone,
+  last_heartbeat_at timestamp with time zone,
+  failure_reason text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT detection_state_pkey PRIMARY KEY (device_id),
+  CONSTRAINT detection_state_active_network_id_fkey FOREIGN KEY (active_network_id) REFERENCES public.networks(network_id),
+  CONSTRAINT detection_state_active_scan_id_fkey FOREIGN KEY (active_scan_id) REFERENCES public.scans(scan_id),
+  CONSTRAINT detection_state_started_by_profile_id_fkey FOREIGN KEY (started_by_profile_id) REFERENCES public.profiles(id)
+);
 CREATE TABLE public.network_memberships (
   membership_id uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -97,7 +131,7 @@ CREATE TABLE public.networks (
   portal_initialized boolean NOT NULL DEFAULT false,
   ap_enabled boolean NOT NULL DEFAULT false,
   risk_score integer NOT NULL DEFAULT 0,
-  risk_bucket text NOT NULL DEFAULT 'LOW',
+  risk_bucket text NOT NULL DEFAULT 'LOW'::text CHECK (risk_bucket = ANY (ARRAY['LOW'::text, 'MEDIUM'::text, 'HIGH'::text, 'CRITICAL'::text])),
   risk_score_version bigint NOT NULL DEFAULT 0,
   portal_last_patched_version bigint NOT NULL DEFAULT 0,
   portal_last_patched_at timestamp with time zone,
@@ -106,8 +140,7 @@ CREATE TABLE public.networks (
   last_threat_at timestamp with time zone,
   last_scan_id uuid,
   last_scan_finished_at timestamp with time zone,
-  CONSTRAINT networks_pkey PRIMARY KEY (network_id),
-  CONSTRAINT networks_risk_bucket_check CHECK (risk_bucket IN ('LOW','MEDIUM','HIGH','CRITICAL'))
+  CONSTRAINT networks_pkey PRIMARY KEY (network_id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
@@ -207,6 +240,7 @@ CREATE TABLE public.vulnerability_scans (
   error_code text,
   error_message text,
   error_detail jsonb,
+  scan_risk_score integer,
   CONSTRAINT vulnerability_scans_pkey PRIMARY KEY (scan_id),
   CONSTRAINT vulnerability_scans_network_id_fkey FOREIGN KEY (network_id) REFERENCES public.networks(network_id),
   CONSTRAINT vulnerability_scans_requested_by_profile_id_fkey FOREIGN KEY (requested_by_profile_id) REFERENCES public.profiles(id)
@@ -245,4 +279,14 @@ CREATE TABLE public.vulnerability_threat_recommendations (
   vt_detail_id uuid DEFAULT gen_random_uuid(),
   CONSTRAINT vulnerability_threat_recommendations_pkey PRIMARY KEY (vt_recommendation_id),
   CONSTRAINT vulnerability_threat_recommendations_vt_detail_id_fkey FOREIGN KEY (vt_detail_id) REFERENCES public.vulnerability_threat_details(vt_detail_id)
+);
+CREATE TABLE public.wifi_risk_scale (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  risk_label character varying NOT NULL,
+  min_percentage integer NOT NULL,
+  max_percentage integer NOT NULL,
+  ui_color character varying NOT NULL,
+  description text NOT NULL,
+  source_excerpts character varying,
+  CONSTRAINT wifi_risk_scale_pkey PRIMARY KEY (id)
 );

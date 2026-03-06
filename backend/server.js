@@ -24,6 +24,7 @@ const authRoutes = require('./routes/authRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const detectRoutes = require('./routes/detectRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
@@ -145,6 +146,9 @@ app.use("/api/rasPi", rasPiRoutes); //dpt ilagay dito ung raspi scan and detect 
 app.use('/api/device', deviceMgmtRoutes);
 app.use('/api/sam', samRoutes);
 app.use('/api/captivePortal', captivePortalRoutes);
+
+// 6) Dashboard (JWT-protected, aggregated data)
+app.use('/api/dashboard', dashboardRoutes);
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
