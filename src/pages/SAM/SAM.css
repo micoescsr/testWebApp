@@ -3,11 +3,14 @@
   grid-template-columns: 1fr 320px;
   gap: 24px;
   padding: 0;
-  align-items: start;
+  align-items: stretch;
+  min-height: calc(100vh - 140px);
 }
 
 .sam-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .sam-page {
@@ -16,7 +19,7 @@
 
 /* Fixed-height scrollable area for vulnerability/threat table content */
 .sam-card-inner {
-  max-height: 480px;
+  flex: 1;
   overflow-y: auto;
 }
 
@@ -39,6 +42,9 @@
   border: 1px solid #ddd;
   border-radius: 12px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .sam-card-header {
@@ -157,6 +163,10 @@
   font-size: 14px;
   color: #777;
   background: #f9f9f9;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sam-actions {
@@ -165,6 +175,7 @@
   padding: 16px 18px;
   background: #fff;
   border-top: 1px solid #e5e5e5;
+  margin-top: auto;
 }
 
 .export-btn,
@@ -196,10 +207,6 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  position: sticky;
-  top: 24px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
 }
 
 .sidebar-section {
@@ -549,20 +556,10 @@
 
 @media (max-width: 1200px) {
   .sam-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .sam-sidebar {
-    order: -1;
-  }
-}
-
-/* Tablet: stack main + sidebar, main first, sidebar below */
-@media (max-width: 1200px) {
-  .sam-layout {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    min-height: auto;
   }
 
   .sam-main {
@@ -592,6 +589,7 @@
     flex-direction: column;
     gap: 12px;
     padding: 0;
+    min-height: auto;
   }
 
   .sam-main {

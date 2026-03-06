@@ -29,9 +29,15 @@ Several text elements had garbled characters due to UTF-8 encoding corruption:
 
 **File:** `src/pages/SAM/SAM.css`
 
-- Added `align-items: start` to `.sam-layout` grid to keep sidebar aligned with the top of the main content area.
-- Added `.sam-card-inner` with `max-height: 480px` and `overflow-y: auto` to give the vulnerability/threat table a fixed scrollable height.
-- Made `.sam-sidebar` sticky (`position: sticky; top: 24px`) with a max viewport height and its own scroll, so the sidebar stays visible while scrolling the table.
+- Set `.sam-layout` grid to `align-items: stretch` so both columns (table + sidebar) stretch to the same height.
+- Added `min-height: calc(100vh - 140px)` to `.sam-layout` so the layout fills the viewport with no wasted empty space.
+- Made `.sam-main` a flex column (`display: flex; flex-direction: column`) so the card can grow to fill it.
+- Made `.sam-card` a flex column with `flex: 1` so the table container stretches to fill the remaining height.
+- Changed `.sam-card-inner` from a fixed `max-height: 480px` to `flex: 1` so the scrollable area fills whatever space the card has.
+- Made `.empty-state` flex-centered (`flex: 1; display: flex; align-items: center; justify-content: center`) so the "Nothing to analyze" message centers vertically.
+- Added `margin-top: auto` to `.sam-actions` so the Export/Clear buttons stay pinned at the bottom of the card.
+- Removed `position: sticky` and `max-height` from `.sam-sidebar` — the sidebar now stretches to match the table height naturally via `align-items: stretch`.
+- Consolidated duplicate `@media (max-width: 1200px)` blocks into one and added `min-height: auto` override for tablet/phone stacked layouts.
 
 ### 4. Accounts & Audit — Export CSV modal + tab retention
 
