@@ -33,7 +33,6 @@ const [tempPasswordInfo, setTempPasswordInfo] = useState(null);
 const [isProcessing, setIsProcessing] = useState(false);
 const [issueTempPassword, setIssueTempPassword] = useState(true);
 const [reactivateTargetStatus, setReactivateTargetStatus] = useState("active");
-const [reactivateIssueTempPw, setReactivateIssueTempPw] = useState(true);
 const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(false);
 
 
@@ -99,6 +98,8 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
   console.log("Confirmed:", modalMode, { pendingUser, selectedUser });
   setIsProcessing(true);
 
+  let actionSucceeded = false;
+
   try {
     if (modalMode === "edit" && pendingUser) {
       const payload = {
@@ -149,16 +150,20 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
         });
         setShowTempModal(true);
       }
+
+      actionSucceeded = true;
     }
 
     // Handle deactivation
-    if (modalMode === "deactivate" && selectedUser) {
+    if (modalMode === "deactivate" && selectedUser?.id) {
+      console.log("Deactivating user:", selectedUser.id);
       await deactivateUser(selectedUser.id, { anonymize: true });
       await fetchUsers();
+      actionSucceeded = true;
     }
 
-    // Handle reactivation
-    if (modalMode === "reactivate" && selectedUser) {
+    // Handle reactivation — temp password is always issued for security
+    if (modalMode === "reactivate" && selectedUser?.id) {
       const profilePayload = pendingUser ? {
         first_name: pendingUser.firstName,
         last_name: pendingUser.lastName,
@@ -169,12 +174,12 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
 
       const res = await reactivateUser(selectedUser.id, {
         targetStatus: reactivateTargetStatus,
-        issueTempPassword: reactivateIssueTempPw,
+        issueTempPassword: true, // Always issue temp password on reactivation
         profileUpdates: profilePayload,
       });
       await fetchUsers();
 
-      // If a temp password was issued, show the temp password modal
+      // Temp password is always issued on reactivation to active
       const tempPassword = res.data?.tempPassword;
       const tempExpiresAt = res.data?.tempExpiresAt;
       if (tempPassword) {
@@ -185,13 +190,18 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
         });
         setShowTempModal(true);
       }
+      actionSucceeded = true;
     }
   } catch (err) {
     console.error("Confirm action error:", err.response?.data || err);
-    // toast.error(err.response?.data?.error || "Failed to save user changes");
+    const errorMsg = err.response?.data?.error || err.message || "Failed to complete action";
+    alert(`Error: ${errorMsg}`);
   } finally {
     setIsProcessing(false);
   }
+
+  // Only close modals and clean up state if the action succeeded
+  if (!actionSucceeded) return;
 
   // After saving details for an inactive user (edit mode), reopen the UserForm
   // so the admin can proceed to click "Reactivate Account" as step 2
@@ -230,7 +240,6 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
 
   setIssueTempPassword(true); // reset for next action
   setReactivateTargetStatus("active"); // reset for next action
-  setReactivateIssueTempPw(true); // reset for next action
 };
 // EDITED 08:52 PM FEB 13 2026
 
@@ -251,8 +260,14 @@ const cancelUserForm = () => {
 };
 
 // Deactivate account handler — called from UserForm
-const handleDeactivate = (user) => {
-  setSelectedUser(user);
+const handleDeactivate = (userToDeactivate) => {
+  // Preserve the user reference with its id for the confirm modal
+  const safeUser = userToDeactivate?.id ? userToDeactivate : selectedUser;
+  if (!safeUser?.id) {
+    console.error("handleDeactivate: No valid user with id found");
+    return;
+  }
+  setSelectedUser(safeUser);
   setModalMode("deactivate");
   setReturnToUserModal(true);
   setShowUserModal(false);
@@ -266,7 +281,6 @@ const handleReactivate = (formData) => {
   setSelectedUser(selectedUser); // keep original user for reference
   setModalMode("reactivate");
   setReactivateTargetStatus("active"); // default to active
-  setReactivateIssueTempPw(true); // default to issuing temp password
   setReturnToUserModal(true);
   setShowUserModal(false);
   setShowConfirmModal(true);
@@ -489,28 +503,24 @@ const handleReactivate = (formData) => {
             </div>
 
             {reactivateTargetStatus === "active" && (
-              <label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginBottom: '8px' }}>
-                <input
-                  type="checkbox"
-                  checked={reactivateIssueTempPw}
-                  onChange={(e) => setReactivateIssueTempPw(e.target.checked)}
-                  style={{ marginTop: "3px" }}
-                />
-                <span style={{ fontSize: "0.85rem" }}>
-                  Issue a temporary password (forces password reset on first login).
-                  <br />
-                  <span style={{ color: "#666" }}>
-                    {reactivateIssueTempPw
-                      ? "A new temporary password will be generated. The user must use it to log in and will be prompted to change it."
-                      : "The user's existing password will remain valid. If they have forgotten it, they will not be able to log in."}
-                  </span>
-                </span>
-              </label>
+              <div style={{ padding: '8px 10px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #f59e0b', marginBottom: '8px' }}>
+                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>
+                  🔑 A temporary password will be issued
+                </p>
+                <p style={{ fontSize: '0.8rem', color: '#666', margin: 0 }}>
+                  For security, the old password cannot be recovered after deactivation. A new temporary
+                  password will be generated and must be given to the user. They will be required to change
+                  it on first login.
+                </p>
+              </div>
             )}
 
             <ul style={{ fontSize: '0.8rem', color: '#666', margin: '0', paddingLeft: '18px', lineHeight: '1.6' }}>
               <li>Account status will change from <strong>Inactive</strong> → <strong>{reactivateTargetStatus === 'active' ? 'Active' : 'On Hold'}</strong></li>
               <li>Profile details (name, email, username, role) will be updated</li>
+              {reactivateTargetStatus === 'active' && (
+                <li>A <strong>new temporary password</strong> will be generated (old password is unrecoverable)</li>
+              )}
               <li>Login will be {reactivateTargetStatus === 'active' ? 'immediately enabled' : 'still suspended until set to Active'}</li>
               <li>A <strong>USER_REACTIVATE</strong> audit event will be logged</li>
             </ul>

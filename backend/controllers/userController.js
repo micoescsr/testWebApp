@@ -348,6 +348,19 @@ async function deactivateUser(req, res) {
 
     const updated = await userRepository.updateProfile(id, updates);
 
+    // Scramble the Supabase Auth password so the old password is unrecoverable.
+    // This ensures that even if the account is later reactivated, a new temp
+    // password must be issued — the deactivated user's old credentials are dead.
+    try {
+      const scrambledPassword = crypto.randomBytes(64).toString("base64url");
+      await supabaseAdmin.auth.admin.updateUserById(id, {
+        password: scrambledPassword,
+      });
+    } catch (authErr) {
+      console.error("deactivateUser: failed to scramble auth password:", authErr);
+      // Non-fatal — the profile is already inactive so login is blocked by statusMiddleware
+    }
+
     // Audit log with full archived snapshot in old_values for compliance
     await logAuditEvent({
       req,
@@ -401,7 +414,10 @@ async function reactivateUser(req, res) {
     const id = req.params.id;
     const {
       targetStatus = "active",
-      issueTempPassword: shouldIssueTempPw = false,
+      // issueTempPassword flag is accepted but ignored for active status —
+      // temp password is always required when reactivating to active because
+      // the old password was scrambled on deactivation.
+      issueTempPassword: _issueTempPwHint = false,
       profileUpdates = {},
     } = req.body;
 
@@ -439,8 +455,9 @@ async function reactivateUser(req, res) {
     let tempPassword = null;
     let tempExpiresAt = null;
 
-    // If activating to active AND admin chose to issue a temp password
-    if (targetStatus === "active" && shouldIssueTempPw) {
+    // When reactivating to active, ALWAYS issue a temp password.
+    // The old password was scrambled on deactivation and is unrecoverable.
+    if (targetStatus === "active") {
       tempPassword = crypto.randomBytes(32).toString("base64url");
       tempExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       updates.must_change_password = true;

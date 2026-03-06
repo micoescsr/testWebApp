@@ -1,6 +1,6 @@
 # Accounts & Audit — End-to-End Flow
 
-> Last updated: March 5, 2026
+> Last updated: March 6, 2026
 
 ---
 
@@ -148,11 +148,11 @@
 | From → To     | How it happens                  | Password behavior                                  |
 |---------------|----------------------------------|----------------------------------------------------|
 | active → on_hold  | Superadmin edits status      | Password preserved                                 |
-| active → inactive | Superadmin clicks Deactivate | PII anonymized, `must_change_password` cleared     |
+| active → inactive | Superadmin clicks Deactivate | PII anonymized, auth password **scrambled** (unrecoverable), `must_change_password` cleared |
 | on_hold → active  | Superadmin edits status      | Admin chooses: keep existing PW *or* issue temp PW |
-| on_hold → inactive | Superadmin clicks Deactivate | PII anonymized                                    |
-| inactive → active | Superadmin edits status      | Admin chooses: keep existing PW *or* issue temp PW |
-| inactive → on_hold | Superadmin edits status     | Password preserved                                 |
+| on_hold → inactive | Superadmin clicks Deactivate | PII anonymized, auth password **scrambled** (unrecoverable) |
+| inactive → active | Superadmin clicks Reactivate | Temp password **always** issued (old password was scrambled on deactivation) |
+| inactive → on_hold | Superadmin clicks Reactivate | Password preserved (scrambled — admin must later activate to active to issue temp PW) |
 
 ---
 
@@ -271,11 +271,14 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
       - last_name = "User"
       - username = "deactivated_{id_prefix}"
       - email = null
-   c. Logs USER_DEACTIVATE audit event:
+   c. **Scrambles Supabase Auth password** — replaces the user's password with a
+      crypto-random value (64 bytes, base64url). This makes the old password
+      permanently unrecoverable, even if the account is later reactivated.
+   d. Logs USER_DEACTIVATE audit event:
       - old_values = full archived profile snapshot
       - new_values = the anonymized values
       - meta = { anonymized: true, archived: true, reason: "..." }
-   d. Returns { message, profile, archived: true }
+   e. Returns { message, profile, archived: true }
 5. User list refreshes — deactivated user shows anonymized info
 ```
 
@@ -283,7 +286,8 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
 
 - **Compliance**: The full profile data (name, email, username, role) is preserved in `audit_logging.old_values` as a JSONB snapshot
 - **Reversibility**: A superadmin can edit the account back to active/on_hold, but the PII will need to be manually re-entered
-- **Security**: Login is immediately blocked, PII is stripped from the active database, but audit trail is untouched
+- **Security**: Login is immediately blocked, PII is stripped from the active database, **auth password is scrambled** so the old password is permanently unrecoverable, and the audit trail is untouched
+- **Reactivation safety**: Because the password is scrambled on deactivation, reactivating to "active" status **always** generates a new temporary password — there is no option to "keep existing password"
 
 ---
 
@@ -429,6 +433,27 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 - New event name mappings: `USER_DEACTIVATE`, `LOGIN_TEMP_EXPIRED`, `USER_RESET_SLOT`
 - Inline change summaries (e.g., "role: admin → user, status: on_hold → active")
 
+### SEC-001 — Deactivation Password Scramble (March 6, 2026)
+- **Before**: Deactivating a user only set `status = inactive` and anonymized PII. The Supabase Auth password was left intact, meaning if the account was later reactivated the admin could choose to "keep existing password" — the old credentials survived deactivation.
+- **After**: On deactivation, the backend now **scrambles the Supabase Auth password** with a crypto-random 64-byte value (`crypto.randomBytes(64).toString("base64url")`). The old password is permanently destroyed and can never be used again, even if the account is reactivated.
+- **Files changed**: `backend/controllers/userController.js` → `deactivateUser()`
+
+### SEC-002 — Mandatory Temp Password on Reactivation (March 6, 2026)
+- **Before**: When reactivating a deactivated account to "active" status, the confirm modal showed a checkbox letting the admin choose whether to issue a temporary password. The admin could uncheck it to "keep existing password," but after deactivation the old password was scrambled (see SEC-001), so this option was misleading and would leave the user unable to log in.
+- **After**:
+  - **Frontend**: The temp password checkbox is removed from the reactivation confirm modal. An info box now explains: *"For security, the old password cannot be recovered after deactivation. A new temporary password will be generated and must be given to the user."*
+  - **Backend**: The `reactivateUser()` controller now **always** generates a temp password when `targetStatus === "active"`, regardless of the `issueTempPassword` flag sent by the frontend. This enforces the security policy at the API level.
+  - The `reactivateIssueTempPw` state variable was removed from the frontend (no longer needed).
+- **Files changed**: `backend/controllers/userController.js` → `reactivateUser()`, `src/pages/AccountsAudit/AccountsAudit.jsx`
+
+### BUG-001 — Deactivate Button Fix in Edit Modal (March 6, 2026)
+- **Before**: Clicking "Deactivate Account" in the Edit User modal's UserForm could silently fail. The `confirmAction` function would catch API errors but only log them to `console.error` — no user-visible feedback. Additionally, the cleanup code (closing modals, clearing state) ran unconditionally even when the API call failed, causing the modal to close without any indication of failure.
+- **After**:
+  - `handleDeactivate()` now validates that the user object has an `id` before proceeding, falling back to `selectedUser` if needed.
+  - `confirmAction()` uses an `actionSucceeded` flag — modals and state are only cleaned up on success. On failure, an `alert()` displays the error message so the admin knows something went wrong.
+  - Optional chaining (`selectedUser?.id`) used for null safety in the deactivate and reactivate branches.
+- **Files changed**: `src/pages/AccountsAudit/AccountsAudit.jsx`
+
 ---
 
 ## What's Still Missing / TODO
@@ -446,9 +471,9 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 
 | # | Item | Description |
 |---|------|-------------|
-| 5 | **Frontend error toasts** | `confirmAction` catches errors but only logs them to console. No user-visible toast/notification on failure. |
+| 5 | **Frontend error toasts** | ~~`confirmAction` catches errors but only logs them to console. No user-visible toast/notification on failure.~~ **PARTIAL** — `alert()` now shows error messages on failure. A proper toast library (e.g., react-hot-toast) would be better UX. |
 | 6 | **Reactivation PII restoration** | When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive. |
-| 7 | **Deactivate Supabase Auth session** | `deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session. If the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider calling `supabaseAdmin.auth.admin.signOut(id)` or updating the auth user to disabled. |
+| 7 | **Deactivate Supabase Auth session** | ~~`deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session.~~ **PARTIAL** — The auth password is now scrambled on deactivation, which prevents future logins. However, if the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider also calling `supabaseAdmin.auth.admin.signOut(id)`. |
 | 8 | **Audit log search** | The search input and status filter exist in the UI but need verification that they work with the new event types and columns. |
 | 9 | **Pagination UX** | Audit logs pagination exists but total count might not account for new event types in filtering. |
 | 10 | **Rate limiting on login** | ~~No rate limiting on `POST /api/auth/login`.~~ **DONE** — `loginLimiter` (10 req/15min) applied via `rateLimiter.js`. |
