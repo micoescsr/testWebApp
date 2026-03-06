@@ -11,10 +11,12 @@ import {
 import { logout as apiLogout } from "../api/authApi";
 import { setAccessToken } from "../api/axios";
 import { clearSessionState } from "../hooks/useSessionState";
+import LogoutConfirmModal from "../components/modals/LogoutConfirmModal/LogoutConfirmModal";
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const { profile } = useProfile();
   const { networkId, scanId } = useNetworkContext();
   const role = profile?.role;
@@ -66,6 +68,20 @@ const Sidebar = () => {
     setAccessToken(null); // clear in-memory Bearer token
     clearSessionState(); // wipe all wf:* sessionStorage keys
     navigate("/login");
+  };
+
+  // Detection is considered "ongoing" when the backend is actively
+  // scanning or monitoring — the user should be warned before logout.
+  const isDetectionOngoing =
+    detectionStatus === "DETECTING" || detectionStatus === "SCANNING";
+
+  const requestLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutModal(false);
+    handleLogout();
   };
 
   const menuItems = [
@@ -135,7 +151,7 @@ const Sidebar = () => {
         </nav>
 
         <div className="sidebar-footer">
-          <button className="logout-btn" onClick={handleLogout}>
+          <button className="logout-btn" onClick={requestLogout}>
             <span className="nav-icon">🚪</span>
             <span className="nav-label">Logout</span>
           </button>
@@ -178,13 +194,21 @@ const Sidebar = () => {
           })}
         </nav>
 
-        <button className="logout-btn mobile-logout" onClick={handleLogout}>
+        <button className="logout-btn mobile-logout" onClick={requestLogout}>
           <span className="nav-icon">🚪</span>
           <span className="nav-label">Logout</span>
         </button>
       </div>
 
       {isOpen && <div className="mobile-overlay" onClick={closeMenu} />}
+
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+        isDetectionRunning={isDetectionOngoing}
+        activeNetwork={activeNetwork}
+      />
     </>
   );
 };

@@ -10,7 +10,9 @@ function mapRowToProfile(row) {
     username: row.username,
     email: row.email,
     role: row.role,
-    status: row.status || "active",  // ← add this
+    status: row.status || "active",
+    must_change_password: row.must_change_password || false,
+    temp_expires_at: row.temp_expires_at || null,
   };
 }
 

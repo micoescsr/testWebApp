@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useState, useEffect } from "react";
 import { useThreatDetection } from "../hooks/useSAM";
+import { useSessionState } from "../hooks/useSessionState";
 
 const ThreatDetectionContext = createContext(null);
 
@@ -21,12 +22,32 @@ export const timeAgo = (ts) => {
 export const ThreatDetectionProvider = ({ children }) => {
   const detection = useThreatDetection();
   const [lastUpdated, setLastUpdated] = useState(Date.now());
-  const [activeNetworkOverride, setActiveNetworkOverride] = useState(null);
+  // Persist activeNetwork in sessionStorage so it survives page refreshes.
+  // Cleared on logout via clearSessionState() (wipes all wf:* keys).
+  const [activeNetworkOverride, setActiveNetworkOverride] = useSessionState(
+    "wf:activeNetwork",
+    null,
+  );
 
   // Bump lastUpdated whenever detection status or poll results change
   useEffect(() => {
     setLastUpdated(Date.now());
   }, [detection.detectionStatus, detection.detectionResults]);
+
+  // Sync activeNetwork from backend state whenever it changes.
+  // Backend is the authoritative source for which network is being monitored.
+  // Session storage acts as a fast cache for initial render before the
+  // bootstrap /detect/status call resolves.
+  useEffect(() => {
+    const ssid = detection.backendState?.ssid;
+    if (ssid && ssid !== activeNetworkOverride) {
+      setActiveNetworkOverride(ssid);
+    }
+  }, [detection.backendState?.ssid]);
+
+  // Resolved activeNetwork: backend truth first, session cache as fallback
+  const resolvedActiveNetwork =
+    detection.backendState?.ssid || activeNetworkOverride || null;
 
   const value = {
     detectionStatus: detection.detectionStatus,
@@ -39,8 +60,7 @@ export const ThreatDetectionProvider = ({ children }) => {
     refreshStatus: detection.refreshStatus,
     resetDetection: detection.resetDetection,
     lastUpdated,
-    activeNetwork:
-      activeNetworkOverride || detection.backendState?.ssid || null,
+    activeNetwork: resolvedActiveNetwork,
     setActiveNetwork: setActiveNetworkOverride,
   };
 

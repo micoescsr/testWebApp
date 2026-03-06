@@ -27,6 +27,7 @@ function buildSignedHeaders({ method, pathWithQuery, bodyBytes, secret }) {
   const ts = Math.floor(Date.now() / 1000).toString();
   // 16 random bytes → 32-char hex string (matches Pi verifier expectation)
   const nonce = crypto.randomBytes(16).toString("hex");
+  //const nonce = crypto.randomBytes(16).toString("hex"); // 32 hex chars
 
   const bodySha256 = crypto
     .createHash("sha256")

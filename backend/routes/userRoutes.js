@@ -51,6 +51,14 @@ router.post(
   userController.deactivateUser
 );
 
+// Reactivate a deactivated account (superadmin only)
+router.post(
+  "/profiles/:id/reactivate",
+  authMiddleware.authJWT,
+  validateUUID('id'),
+  userController.reactivateUser
+);
+
 /** OPTIONAL TRIGGER FOR EASY QUERYING
  CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
