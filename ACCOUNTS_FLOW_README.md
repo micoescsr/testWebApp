@@ -316,7 +316,8 @@ Login.jsx
 - **`persistSession: false` workaround**: The Supabase client is configured with `persistSession: false` and `autoRefreshToken: false` — it holds no session in memory after a page load. Calling `supabase.auth.updateUser()` directly would fail with *"Auth session missing!"*. The fix is to call `supabase.auth.setSession({ access_token, refresh_token: "not-used" })` first, injecting the JWT from the axios in-memory store (`getAccessToken()`). This primes the Supabase JS client for the duration of the update call without persisting anything.
 - If `getAccessToken()` returns `null` (e.g. the page was hard-refreshed and the in-memory token was lost), the user sees a *"Session expired. Please log in again."* error instead of a cryptic Supabase error.
 - After a successful password update, `POST /api/auth/clear-force-reset` clears `must_change_password` and `temp_expires_at` on the profile row, and logs a `USER_PASSWORD_CHANGED` audit event.
-- If the backend call to `clear-force-reset` fails (non-fatal), the user is still redirected to `/dashboard` — the flag will become stale but will not re-block login unless a new temp password is later issued.
+- If the backend call to `clear-force-reset` fails (non-fatal), the user is still redirected to `/dashboard` — the flag may remain `true` in the DB, but the **login redirect guard** in `Login.jsx` will not trigger again because it requires **both** `must_change_password: true` AND a non-expired `temp_expires_at` to redirect. A stale flag without a valid expiry is treated as inactive and skipped.
+- **Login redirect guard** (`Login.jsx`): the force-reset redirect is only triggered when `must_change_password === true` **AND** `temp_expires_at` is present **AND** `new Date(temp_expires_at) > new Date()`. This prevents established users from being incorrectly redirected if the flag was ever left stale in the database.
 - The page has a **confirm password** field to prevent typos (unlike `ResetPassword.jsx` which has no confirm field).
 
 ---
@@ -559,7 +560,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 ### AUTH-009 — Force Password Reset on First Login (March 8, 2026)
 - **Before**: The backend returned `mustChangePassword: true` (via `must_change_password` on the profile) when a superadmin issued a temp password, but the frontend ignored this flag entirely. Users with temp passwords could log in and navigate the full app indefinitely without ever changing their password — a security gap flagged as item #1 in the TODO list.
 - **After**:
-  - **Login.jsx** reads `profile.must_change_password` from the `GET /webapp/users/profiles/me` response (which is already fetched during login). If `true`, it redirects to `/force-reset-password` instead of `/dashboard`.
+  - **Login.jsx** reads `profile.must_change_password` from the `GET /webapp/users/profiles/me` response (which is already fetched during login). The redirect guard requires **all three** conditions: `must_change_password === true` **AND** `temp_expires_at` is present **AND** `new Date(temp_expires_at) > new Date()`. This prevents established users from being incorrectly sent to the force-reset page if the flag was ever left stale in the DB (e.g. if the `clear-force-reset` call failed silently on a previous login).
   - **`src/pages/Auth/ForceResetPassword.jsx`** — new dedicated page:
     - Fullscreen card layout (same style as `ForgotPassword` / `ResetPassword`, no sidebar)
     - Password field with `PasswordChecklist` for live strength feedback
