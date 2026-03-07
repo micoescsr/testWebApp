@@ -432,10 +432,10 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 - **Temp PW modal**: Cannot be dismissed by clicking outside — must click Close
 - **Inactive users — two-step reactivation flow**:
   1. Open Edit modal for an inactive user — a yellow banner explains Steps 1 and 2
-  2. Fields that held anonymized placeholder values (`deactivated_*`, `@deactivated.local`, `"Deactivated User"`) are **cleared to empty** on load — the admin must type in the real details
-  3. The **Reactivate Account** button stays **disabled and greyed out** until all four required fields (First Name, Last Name, Username, Email) are filled with non-anonymized values
+  2. Fields that held anonymized placeholder values (`deactivated_*`, `@deactivated.local`, `"Deactivated User"`) are **cleared to empty** on load and show a **red border + red `*` label** — the admin must type in the real details
+  3. The **Reactivate Account** button stays **disabled and greyed out** until all four required fields (First Name, Last Name, Username, Email) are filled with non-anonymized values; red borders and `*` markers clear as each field becomes valid
   4. Once valid, the button turns green and becomes clickable — clicking it opens the Reactivate confirm modal
-  5. `Save Details` (step 1) saves the profile edits while leaving status as `inactive`, then re-opens the form with a green confirmation banner so the admin can proceed to click Reactivate Account
+  5. `Save Details` (step 1) **also validates** all four required fields before submitting — if any are blank or still anonymized it shows an alert and blocks the save. Once saved, the form re-opens with a green confirmation banner so the admin can proceed to click Reactivate Account
 - **Legacy staff migration**: If a user has `role = 'staff'`, the form displays it as `user`
 
 ---
@@ -555,6 +555,15 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
   - The button has `disabled={!canReactivate}`: when disabled it renders grey (`#d1d5db` background, `#9ca3af` text, `cursor: not-allowed`), and when all fields are valid it turns green and becomes clickable.
   - A `title` tooltip appears on hover when disabled: *"Fill in all required fields with valid values first"*.
   - The button reacts in real time as the admin types — no extra save step is needed to enable it.
+  - Required fields show a red `*` in their label and a **red border** while empty or anonymized; the border clears as the admin types a valid value.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
+### BUG-002 — Save Details Allowed Blank Fields, Permanently Locking Reactivate Button (March 8, 2026)
+- **Before**: The **Save Details** button (step 1 of the two-step reactivation flow) called `handleSubmit()` with **no validation**. An admin could click it with Username and/or Email left blank — those empty strings would be saved to the database. The form would then reopen with the newly saved (blank) data, `canReactivate` would compute `false`, and the **Reactivate Account** button would remain permanently grayed out with no way to recover other than closing the modal and starting over.
+- **After**:
+  - `handleSubmit()` now checks `isInactive` and, if true, runs the same four-field validation as `handleReactivateClick()` before calling `onSubmit()`.
+  - If any of the four required fields (First Name, Last Name, Username, Email) are blank or contain anonymized placeholder values, an alert lists the offending fields and the save is **blocked** — nothing is sent to the backend.
+  - The red `*` label indicators and red field borders (added in UI-009) give the admin immediate visual feedback on which fields need filling before they even try to save.
 - **Files changed**: `src/components/accounts/UserForm.jsx`
 
 ### AUTH-009 — Force Password Reset on First Login (March 8, 2026)
@@ -592,7 +601,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 | # | Item | Description |
 |---|------|-------------|
 | 5 | **Frontend error toasts** | ~~`confirmAction` catches errors but only logs them to console. No user-visible toast/notification on failure.~~ **PARTIAL** — `alert()` now shows error messages on failure. A proper toast library (e.g., react-hot-toast) would be better UX. |
-| 6 | **Reactivation PII restoration** | ~~When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive.~~ **DONE** — The Edit modal for inactive users now clears anonymized fields on load and requires the admin to fill them before the Reactivate button enables. The Reactivate button stays disabled until all four required fields are non-empty and non-anonymized (UI-008, UI-009). Auto-restore from the audit archive is still not implemented (admin must re-type the data). |
+| 6 | **Reactivation PII restoration** | ~~When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive.~~ **DONE** — The Edit modal for inactive users now clears anonymized fields on load, shows red `*` + red border on required fields, validates all four fields before Save Details can proceed, and keeps Reactivate disabled until valid (UI-008, UI-009, BUG-002). Auto-restore from the audit archive is still not implemented (admin must re-type the data). |
 | 7 | **Deactivate Supabase Auth session** | ~~`deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session.~~ **PARTIAL** — The auth password is now scrambled on deactivation, which prevents future logins. However, if the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider also calling `supabaseAdmin.auth.admin.signOut(id)`. |
 | 8 | **Audit log search** | The search input and status filter exist in the UI but need verification that they work with the new event types and columns. |
 | 9 | **Pagination UX** | Audit logs pagination exists but total count might not account for new event types in filtering. |

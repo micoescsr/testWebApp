@@ -89,15 +89,37 @@ const UserForm = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Deactivation / reactivation is handled by parent via callbacks
+  const isInactive = (user?.status || "").toLowerCase() === "inactive";
+
   const handleSubmit = () => {
+    // For inactive users, validate required fields before saving —
+    // blank fields would get written to the DB and leave Reactivate permanently grayed out.
+    if (isInactive) {
+      const requiredFields = [
+        { key: "firstName", label: "First Name" },
+        { key: "lastName",  label: "Last Name" },
+        { key: "username",  label: "Username" },
+        { key: "email",     label: "Email" },
+      ];
+      const missing = requiredFields.filter(
+        (f) => !formData[f.key]?.trim() || isAnonymizedValue(formData[f.key])
+      );
+      if (missing.length > 0) {
+        alert(
+          `Please fill in the following fields before saving:\n• ${missing
+            .map((f) => f.label)
+            .join("\n• ")}`
+        );
+        return;
+      }
+    }
+
     onSubmit({
       ...formData,
       name: `${formData.firstName} ${formData.lastName}`.trim(),
     });
   };
-
-  // Deactivation / reactivation is handled by parent via callbacks
-  const isInactive = (user?.status || "").toLowerCase() === "inactive";
 
   // Gather form data for reactivation (passes edited fields to parent)
   const handleReactivateClick = () => {
@@ -201,38 +223,54 @@ const UserForm = ({
 
       <div className="form-row" style={{ display: 'flex', gap: '15px' }}>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>First Name</label>
+          <label>
+            First Name
+            {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+          </label>
           <input
             name="firstName"
             value={formData.firstName}
             onChange={handleChange}
+            style={isInactive && (!formData.firstName?.trim() || isAnonymizedValue(formData.firstName)) ? { borderColor: '#dc2626' } : {}}
           />
         </div>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>Last Name</label>
+          <label>
+            Last Name
+            {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+          </label>
           <input
             name="lastName"
             value={formData.lastName}
             onChange={handleChange}
+            style={isInactive && (!formData.lastName?.trim() || isAnonymizedValue(formData.lastName)) ? { borderColor: '#dc2626' } : {}}
           />
         </div>
       </div>
 
       <div className="form-group">
-        <label>Username</label>
+        <label>
+          Username
+          {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+        </label>
         <input
           name="username"
           value={formData.username}
           onChange={handleChange}
+          style={isInactive && (!formData.username?.trim() || isAnonymizedValue(formData.username)) ? { borderColor: '#dc2626' } : {}}
         />
       </div>
 
       <div className="form-group">
-        <label>Email</label>
+        <label>
+          Email
+          {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+        </label>
         <input
           name="email"
           value={formData.email}
           onChange={handleChange}
+          style={isInactive && (!formData.email?.trim() || isAnonymizedValue(formData.email)) ? { borderColor: '#dc2626' } : {}}
         />
       </div>
 
