@@ -68,7 +68,14 @@ const Login = () => {
         return;
       }
 
-      // 5) All good — full navigation so App bootstraps from cookie
+      // 5) Check if a forced password reset is required (temp password was issued)
+      // AUTH-009: must_change_password flag set by backend when a superadmin issues a temp password.
+      if (profile?.must_change_password) {
+        window.location.replace("/force-reset-password");
+        return;
+      }
+
+      // 6) All good — full navigation so App bootstraps from cookie
       window.location.replace("/dashboard");
     } catch (err) {
       console.error("Login failed:", err);

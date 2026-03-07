@@ -12,12 +12,13 @@
 4. [Account Lifecycle](#account-lifecycle)
 5. [Authentication Flow](#authentication-flow)
 6. [Temporary Password Flow](#temporary-password-flow)
-7. [Deactivation & Archival Flow](#deactivation--archival-flow)
-8. [Audit Logging](#audit-logging)
-9. [Frontend — Accounts & Audit Page](#frontend--accounts--audit-page)
-10. [API Reference](#api-reference)
-11. [What Was Improved](#what-was-improved)
-12. [What's Still Missing / TODO](#whats-still-missing--todo)
+7. [Force Password Reset Flow](#force-password-reset-flow)
+8. [Deactivation & Archival Flow](#deactivation--archival-flow)
+9. [Audit Logging](#audit-logging)
+10. [Frontend — Accounts & Audit Page](#frontend--accounts--audit-page)
+11. [API Reference](#api-reference)
+12. [What Was Improved](#what-was-improved)
+13. [What's Still Missing / TODO](#whats-still-missing--todo)
 
 ---
 
@@ -183,6 +184,15 @@ Frontend                    Backend                         Supabase
    │──────────────────────────►│  Sets HttpOnly sb_refresh     │
    │                           │  cookie (30d, lax, /api/auth) │
    │◄──────────────────────────│                               │
+   │                           │                               │
+   │  GET /webapp/users/profiles/me (Bearer)                   │
+   │──────────────────────────►│                               │
+   │◄── { profile }            │                               │
+   │                           │                               │
+   │  if profile.must_change_password === true                 │
+   │    redirect → /force-reset-password   (AUTH-009)         │
+   │  else                                                     │
+   │    redirect → /dashboard                                  │
 ```
 
 ### Login Blocked Scenarios
@@ -234,9 +244,12 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
    - Shows "Expires at: [datetime] (Xh Xm remaining)"
    - Outside click disabled (must click Close)
 6. User logs in with temp PW
-   a. Backend checks temp_expires_at — if expired → blocks with TEMP_PASSWORD_EXPIRED
-   b. If valid → returns { token, mustChangePassword: true, tempExpiresAt }
-   c. Frontend should redirect to password change page (⚠ NOT YET IMPLEMENTED)
+   a. Backend checks `temp_expires_at` — if expired → blocks with `TEMP_PASSWORD_EXPIRED`
+   b. If valid → `must_change_password` is still `true` on the profile row
+   c. Login.jsx reads `profile.must_change_password` from `GET /profiles/me` → redirects to `/force-reset-password` (**AUTH-009 — implemented**)
+   d. User sets a new password on `/force-reset-password`
+   e. `POST /api/auth/clear-force-reset` clears `must_change_password` + `temp_expires_at` on the profile
+   f. User is redirected to `/dashboard`
 ```
 
 ### Temp Password States (shown in UserForm)
@@ -247,6 +260,57 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
 | `temp_issued` | `must_change_password && temp_expires_at > now`    | Amber   | "Temp PW issued (expires in Xh Xm)"  |
 | `expired`     | `must_change_password && temp_expires_at <= now`   | Red     | "Temp PW expired"                     |
 | `temp_used`   | `must_change_password && !temp_expires_at`         | Blue    | "Password change required"            |
+
+---
+
+## Force Password Reset Flow
+
+> **AUTH-009** — Implemented March 8, 2026
+
+When a user logs in with a temporary password (`must_change_password = true` on their profile), they are **immediately redirected** to `/force-reset-password` before reaching the dashboard. This page is a standalone fullscreen screen (same visual style as the auth pages — no sidebar, no navigation).
+
+**Why redirect instead of a prompt/banner?**
+- A dismissible prompt can be ignored, leaving the user permanently on a temp password (security risk)
+- Redirect is non-bypassable — the user must complete the reset before accessing any protected page
+- Consistent with how most security-first apps handle forced resets (e.g., AWS console, Okta)
+
+```
+Login.jsx
+   │
+   │  profile.must_change_password === true?
+   │──────────────────────────────────────────► /force-reset-password
+   │                                              │
+   │  else                                        │  User enters new password
+   │                                              │  (PasswordChecklist validation)
+   │                                              │  + confirm password field
+   ▼                                              │
+/dashboard                                        │  supabase.auth.updateUser({ password })
+                                                  │  (uses current session JWT)
+                                                  │
+                                                  │  POST /api/auth/clear-force-reset
+                                                  │  (clears must_change_password + temp_expires_at)
+                                                  │
+                                                  ▼
+                                             /dashboard
+```
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `src/pages/Auth/ForceResetPassword.jsx` | New fullscreen page — password form with strength validation |
+| `src/pages/Login/Login.jsx` | Reads `profile.must_change_password` after `/profiles/me` → redirects |
+| `src/App.jsx` | Registers `/force-reset-password` as a protected (authenticated) route, no sidebar |
+| `backend/controllers/authController.js` | New `clearForceReset` handler |
+| `backend/routes/authRoutes.js` | Registers `POST /api/auth/clear-force-reset` (requires `authJWT`) |
+
+### Behavior Details
+
+- The `/force-reset-password` route requires an authenticated session (has access token). Unauthenticated visitors are redirected to `/login`.
+- The page uses the **same password strength rules** as `ResetPassword.jsx` — `validatePassword()` from `passwordValidation.js` + inline `PasswordChecklist`.
+- After a successful password update, `POST /api/auth/clear-force-reset` clears `must_change_password` and `temp_expires_at` on the profile row, and logs a `USER_PASSWORD_CHANGED` audit event.
+- If the backend call to `clear-force-reset` fails (non-fatal), the user is still redirected to `/dashboard` — the flag will become stale but will not re-block login unless a new temp password is later issued.
+- The page has a **confirm password** field to prevent typos (unlike `ResetPassword.jsx` which has no confirm field).
 
 ---
 
@@ -378,6 +442,7 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 | POST   | `/set-refresh`        | No            | Store refresh token in cookie |
 | POST   | `/refresh`            | No (cookie)   | Exchange cookie for new JWT   |
 | POST   | `/logout`             | No            | Clear refresh cookie          |
+| POST   | `/clear-force-reset`  | JWT           | Clear `must_change_password` after force reset (AUTH-009) |
 
 ### User Routes (`/api/webapp/users/`)
 
@@ -484,6 +549,22 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
   - The button reacts in real time as the admin types — no extra save step is needed to enable it.
 - **Files changed**: `src/components/accounts/UserForm.jsx`
 
+### AUTH-009 — Force Password Reset on First Login (March 8, 2026)
+- **Before**: The backend returned `mustChangePassword: true` (via `must_change_password` on the profile) when a superadmin issued a temp password, but the frontend ignored this flag entirely. Users with temp passwords could log in and navigate the full app indefinitely without ever changing their password — a security gap flagged as item #1 in the TODO list.
+- **After**:
+  - **Login.jsx** reads `profile.must_change_password` from the `GET /webapp/users/profiles/me` response (which is already fetched during login). If `true`, it redirects to `/force-reset-password` instead of `/dashboard`.
+  - **`src/pages/Auth/ForceResetPassword.jsx`** — new dedicated page:
+    - Fullscreen card layout (same style as `ForgotPassword` / `ResetPassword`, no sidebar)
+    - Password field with `PasswordChecklist` for live strength feedback
+    - Confirm password field to prevent typos
+    - Uses `supabase.auth.updateUser({ password })` with the current session JWT
+    - After success, calls `POST /api/auth/clear-force-reset` to clear `must_change_password + temp_expires_at` on the profile and logs a `USER_PASSWORD_CHANGED` audit event
+    - Redirects to `/dashboard` after 2 seconds
+  - **`App.jsx`** — registers `/force-reset-password` as a protected route (requires authenticated session, no sidebar/layout wrapper)
+  - **Backend `POST /api/auth/clear-force-reset`** — new endpoint protected by `authJWT`, updates the profile row and logs the audit event
+- **Design decision — redirect vs. prompt**: An inline prompt/banner on the dashboard could be dismissed or ignored. A redirect is non-bypassable and makes the security intent unambiguous.
+- **Files changed**: `src/pages/Auth/ForceResetPassword.jsx` *(new)*, `src/pages/Login/Login.jsx`, `src/App.jsx`, `backend/controllers/authController.js`, `backend/routes/authRoutes.js`
+
 ---
 
 ## What's Still Missing / TODO
@@ -492,7 +573,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 
 | # | Item | Description | Impact |
 |---|------|-------------|--------|
-| 1 | **Password change page/modal** | Backend returns `mustChangePassword: true` on login, but the frontend does NOT have a password change screen yet. Users with temp passwords can log in but are never prompted to set a new one. | Users stay on temp passwords forever — security risk |
+| 1 | ~~**Password change page/modal**~~ | ~~Backend returns `mustChangePassword: true` on login, but the frontend does NOT have a password change screen yet. Users with temp passwords can log in but are never prompted to set a new one.~~ **DONE** — AUTH-009: `/force-reset-password` page implemented. Login.jsx redirects users with `must_change_password = true`. | ~~Users stay on temp passwords forever — security risk~~ |
 | 2 | **DB migration: staff → user** | Frontend maps `staff` → `user` visually, but the database still has `role = 'staff'` on old accounts. Need to run: `UPDATE profiles SET role = 'user' WHERE role = 'staff';` | Backend role checks may not handle `staff` correctly |
 | 3 | **Create User flow** | The "Add a New User" (modal mode `add`) form opens but `confirmAction` has no create handler — the `createUser` controller is commented out. | Superadmins can't create users through the UI |
 | 4 | **Delete User flow** | The delete modal mode exists but `confirmAction` has no `delete` handler wired up. The backend endpoint exists. | Delete button opens confirm but nothing happens on confirm |
@@ -528,24 +609,31 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 ```
 Backend
 ├── controllers/
-│   ├── authController.js       ← Login, refresh, logout, temp PW expiry check
-│   └── userController.js       ← CRUD, activate-with-temp, deactivate
+│   ├── authController.js       ← Login, refresh, logout, temp PW expiry check, clear-force-reset (AUTH-009)
+│   └── userController.js       ← CRUD, activate-with-temp, deactivate, reactivate
 ├── middleware/
 │   ├── authMiddleware.js       ← JWKS JWT verification
 │   ├── roleMiddleware.js       ← requireSuperadmin (active + superadmin check)
 │   └── statusMiddleware.js     ← requireActiveProfile
 ├── repositories/
-│   ├── userRepository.js       ← Supabase queries for profiles
+│   ├── userRepository.js       ← Supabase queries for profiles (returns must_change_password)
 │   └── auditRepository.js      ← Supabase queries for audit_logging
 ├── routes/
+│   ├── authRoutes.js           ← /login, /set-refresh, /refresh, /logout, /clear-force-reset
 │   └── userRoutes.js           ← Express routes for /profiles/*
 └── utils/
     └── auditLogger.js          ← Fire-and-forget audit insert helper
 
 Frontend
 ├── pages/
+│   ├── Auth/
+│   │   ├── ForceResetPassword.jsx  ← AUTH-009: Force-reset page (no sidebar, fullscreen)
+│   │   ├── ForgotPassword.jsx      ← Email reset link request
+│   │   └── ResetPassword.jsx       ← Reset via email link (Supabase recovery session)
+│   ├── Login/
+│   │   └── Login.jsx               ← Checks must_change_password → redirects (AUTH-009)
 │   └── AccountsAudit/
-│       └── AccountsAudit.jsx   ← Main page, modals, state management
+│       └── AccountsAudit.jsx       ← Main page, modals, state management
 ├── components/
 │   ├── accounts/
 │   │   ├── UserForm.jsx        ← Add/Edit form, deactivate button, reset slot state
@@ -556,6 +644,6 @@ Frontend
 │   └── common/
 │       └── Modal/BaseModal.jsx ← Base modal component
 └── api/
-    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser
+    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser, reactivateUser
     └── authApi.js              ← login, refresh, logout
 ```
