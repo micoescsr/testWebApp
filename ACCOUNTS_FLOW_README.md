@@ -73,7 +73,7 @@
 | `first_name`           | text        | User's first name                                  |
 | `last_name`            | text        | User's last name                                   |
 | `username`             | text        | Unique username                                    |
-| `email`                | text        | Email address (nullable — cleared on deactivation) |
+| `email`                | text        | Email address (anonymized on deactivation — set to placeholder due to NOT NULL constraint) |
 | `role`                 | text        | `superadmin` · `admin` · `user`                    |
 | `status`               | text        | `active` · `on_hold` · `inactive`                  |
 | `must_change_password` | boolean     | True when a temp password has been issued          |
@@ -270,7 +270,7 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
       - first_name = "Deactivated"
       - last_name = "User"
       - username = "deactivated_{id_prefix}"
-      - email = null
+      - email = "deactivated_{id_prefix}@deactivated.local"
    c. **Scrambles Supabase Auth password** — replaces the user's password with a
       crypto-random value (64 bytes, base64url). This makes the old password
       permanently unrecoverable, even if the account is later reactivated.

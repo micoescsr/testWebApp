@@ -343,7 +343,7 @@ async function deactivateUser(req, res) {
       updates.first_name = "Deactivated";
       updates.last_name = "User";
       updates.username = `deactivated_${id.slice(0, 8)}`;
-      updates.email = null;
+      updates.email = `deactivated_${id.slice(0, 8)}@deactivated.local`;
     }
 
     const updated = await userRepository.updateProfile(id, updates);
@@ -351,10 +351,12 @@ async function deactivateUser(req, res) {
     // Scramble the Supabase Auth password so the old password is unrecoverable.
     // This ensures that even if the account is later reactivated, a new temp
     // password must be issued — the deactivated user's old credentials are dead.
+    // Also update the auth email to match the anonymized profile email.
     try {
       const scrambledPassword = crypto.randomBytes(64).toString("base64url");
       await supabaseAdmin.auth.admin.updateUserById(id, {
         password: scrambledPassword,
+        email: updates.email || `deactivated_${id.slice(0, 8)}@deactivated.local`,
       });
     } catch (authErr) {
       console.error("deactivateUser: failed to scramble auth password:", authErr);
