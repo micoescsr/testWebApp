@@ -536,6 +536,27 @@ button {
   gap: 10px;
 }
 
+/* --- Export Modal Date Fields --- */
+.export-date-fields {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.export-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  flex: 1;
+}
+
+.export-date-label .date-input {
+  width: 100%;
+}
+
 /* --- Responsive --- */
 
 /* Tablet and below */

@@ -67,7 +67,7 @@ const DashboardHeader = ({
           Model: <span>Raspberry Pi 5</span>
         </p>
         <p className="status-line">
-          Status: <span className="status-online">Online ΓùÅ</span>
+          Status: <span className="status-online">Online ✓</span>
         </p>
       </div>
     </div>

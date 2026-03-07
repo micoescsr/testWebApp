@@ -241,28 +241,43 @@ const AuditLogsTable = ({
   onExport,
 }) => {
   const [expandedId, setExpandedId] = useState(null);
-  const [showExportConfirm, setShowExportConfirm] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exportValidationError, setExportValidationError] = useState("");
 
   const toggleExpand = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
   const isSuperadmin = currentUser?.role === "superadmin";
-  const canExport = isSuperadmin && fromDate && toDate && !isExporting;
 
   const handleExportClick = useCallback(() => {
-    setShowExportConfirm(true);
+    setExportFrom("");
+    setExportTo("");
+    setExportValidationError("");
+    setShowExportModal(true);
   }, []);
 
   const confirmExport = useCallback(async () => {
-    setShowExportConfirm(false);
-    if (onExport) {
-      await onExport();
+    if (!exportFrom || !exportTo) {
+      setExportValidationError("Please select both a start and end date.");
+      return;
     }
-  }, [onExport]);
+    if (new Date(exportFrom) > new Date(exportTo)) {
+      setExportValidationError("Start date cannot be after end date.");
+      return;
+    }
+    setExportValidationError("");
+    setShowExportModal(false);
+    if (onExport) {
+      await onExport(exportFrom, exportTo);
+    }
+  }, [onExport, exportFrom, exportTo]);
 
   const cancelExport = useCallback(() => {
-    setShowExportConfirm(false);
+    setShowExportModal(false);
+    setExportValidationError("");
   }, []);
 
   if (!logs || logs.length === 0) {
@@ -273,15 +288,9 @@ const AuditLogsTable = ({
           <div className="export-bar">
             <button
               className="export-csv-btn"
-              disabled={!canExport}
+              disabled={isExporting}
               onClick={handleExportClick}
-              title={
-                !fromDate || !toDate
-                  ? "Select a date range to enable export"
-                  : isExporting
-                  ? "Export in progress…"
-                  : "Export filtered audit logs as CSV"
-              }
+              title={isExporting ? "Export in progress…" : "Export audit logs as CSV"}
             >
               {isExporting ? "Exporting…" : "Export CSV"}
             </button>
@@ -289,19 +298,43 @@ const AuditLogsTable = ({
           </div>
         )}
 
-        {/* Export confirmation dialog */}
-        {showExportConfirm && (
-          <div className="export-confirm-overlay">
-            <div className="export-confirm-dialog">
-              <p className="export-confirm-title">Confirm CSV Export</p>
+        {/* Export date range modal */}
+        {showExportModal && (
+          <div className="export-confirm-overlay" onClick={cancelExport}>
+            <div className="export-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+              <p className="export-confirm-title">Export Audit Logs</p>
               <p className="export-confirm-text">
-                Export audit logs from <strong>{fromDate}</strong> to <strong>{toDate}</strong> as CSV?
-                <br />
-                <span className="export-confirm-note">This action will be recorded in the audit log.</span>
+                Select a date range for the audit logs you want to export.
               </p>
+              <div className="export-date-fields">
+                <label className="export-date-label">
+                  From
+                  <input
+                    type="date"
+                    className="date-input"
+                    value={exportFrom}
+                    onChange={(e) => setExportFrom(e.target.value)}
+                  />
+                </label>
+                <label className="export-date-label">
+                  To
+                  <input
+                    type="date"
+                    className="date-input"
+                    value={exportTo}
+                    onChange={(e) => setExportTo(e.target.value)}
+                  />
+                </label>
+              </div>
+              {exportValidationError && (
+                <p className="export-error" style={{ marginTop: 8 }}>{exportValidationError}</p>
+              )}
+              <span className="export-confirm-note">This action will be recorded in the audit log.</span>
               <div className="export-confirm-actions">
                 <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
-                <button className="confirm-btn" onClick={confirmExport}>Export</button>
+                <button className="confirm-btn" onClick={confirmExport} disabled={isExporting}>
+                  {isExporting ? "Exporting…" : "Export"}
+                </button>
               </div>
             </div>
           </div>
@@ -339,15 +372,9 @@ const AuditLogsTable = ({
         <div className="export-bar">
           <button
             className="export-csv-btn"
-            disabled={!canExport}
+            disabled={isExporting}
             onClick={handleExportClick}
-            title={
-              !fromDate || !toDate
-                ? "Select a date range to enable export"
-                : isExporting
-                ? "Export in progress…"
-                : "Export filtered audit logs as CSV"
-            }
+            title={isExporting ? "Export in progress…" : "Export audit logs as CSV"}
           >
             {isExporting ? "Exporting…" : "Export CSV"}
           </button>
@@ -355,19 +382,43 @@ const AuditLogsTable = ({
         </div>
       )}
 
-      {/* Export confirmation dialog */}
-      {showExportConfirm && (
-        <div className="export-confirm-overlay">
-          <div className="export-confirm-dialog">
-            <p className="export-confirm-title">Confirm CSV Export</p>
+      {/* Export date range modal */}
+      {showExportModal && (
+        <div className="export-confirm-overlay" onClick={cancelExport}>
+          <div className="export-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <p className="export-confirm-title">Export Audit Logs</p>
             <p className="export-confirm-text">
-              Export audit logs from <strong>{fromDate}</strong> to <strong>{toDate}</strong> as CSV?
-              <br />
-              <span className="export-confirm-note">This action will be recorded in the audit log.</span>
+              Select a date range for the audit logs you want to export.
             </p>
+            <div className="export-date-fields">
+              <label className="export-date-label">
+                From
+                <input
+                  type="date"
+                  className="date-input"
+                  value={exportFrom}
+                  onChange={(e) => setExportFrom(e.target.value)}
+                />
+              </label>
+              <label className="export-date-label">
+                To
+                <input
+                  type="date"
+                  className="date-input"
+                  value={exportTo}
+                  onChange={(e) => setExportTo(e.target.value)}
+                />
+              </label>
+            </div>
+            {exportValidationError && (
+              <p className="export-error" style={{ marginTop: 8 }}>{exportValidationError}</p>
+            )}
+            <span className="export-confirm-note">This action will be recorded in the audit log.</span>
             <div className="export-confirm-actions">
               <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
-              <button className="confirm-btn" onClick={confirmExport}>Export</button>
+              <button className="confirm-btn" onClick={confirmExport} disabled={isExporting}>
+                {isExporting ? "Exporting…" : "Export"}
+              </button>
             </div>
           </div>
         </div>

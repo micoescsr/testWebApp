@@ -50,7 +50,7 @@ const SummarySection = ({
 
   // Format date for stat card
   const formatDate = (iso) => {
-    if (!iso) return "ΓÇö";
+    if (!iso) return "—";
     try {
       return new Date(iso).toLocaleDateString("en-US", {
         month: "2-digit",
@@ -58,7 +58,7 @@ const SummarySection = ({
         year: "numeric",
       });
     } catch {
-      return "ΓÇö";
+      return "—";
     }
   };
 
@@ -167,7 +167,7 @@ const SummarySection = ({
             <h2>Wi-Fi Security Risk Score</h2>
             <div className="panel-actions">
               <button className="toggle-btn" onClick={toggleLegend}>
-                {showLegend ? "ΓåÉ" : "ΓåÆ"}
+                {showLegend ? "▼" : "▶"}
               </button>
             </div>
           </div>

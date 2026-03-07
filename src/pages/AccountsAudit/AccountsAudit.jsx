@@ -12,10 +12,11 @@ import useAuditLogs from "../../hooks/useAuditLogs";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
 import { updateUser, activateUserWithTemp, deactivateUser, reactivateUser } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
+import { useSessionState } from "../../hooks/useSessionState";
 
 
 const AccountsAudit = () => {
-  const [activeTab, setActiveTab] = useState("accounts");
+  const [activeTab, setActiveTab] = useSessionState("wf:accountsAuditTab", "accounts");
   const [showUserModal, setShowUserModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [returnToUserModal, setReturnToUserModal] = useState(false);

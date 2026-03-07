@@ -14,9 +14,9 @@ import { useNavigate } from "react-router-dom";
  *  6. AP on + portal outdated → warning + Update Portal button
  *  7. AP on + stale scan      → info (non-blocking)
  */
-function computeBanner({ networkConfigMissing, apApplyInProgress, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate }) {
+function computeBanner({ networkConfigMissing, apApplyInProgress, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate, hasError }) {
   if (networkConfigMissing)             return "config_missing";
-  if (apApplyInProgress)                return "apply_in_progress";
+  if (apApplyInProgress && !hasError)   return "apply_in_progress";
   if (scanError && scanError !== "SCAN_REQUIRED") return "scan_error";
   if (!apEnabled && !hasScan)           return "scan_required";
   if (!apEnabled && hasScan && !scanFresh) return "scan_stale_blocking";
@@ -63,6 +63,7 @@ const AccessPointPanel = ({
     hasScan,
     scanFresh,
     portalOutOfDate,
+    hasError: !!error,
   });
 
   // Toggle is disabled while loading, during in-progress apply, or when enabling without a scan

@@ -56,7 +56,7 @@ const NetworkSection = ({
 
   // Format date for stat card
   const formatDate = (iso) => {
-    if (!iso) return "ΓÇö";
+    if (!iso) return "—";
     try {
       return new Date(iso).toLocaleDateString("en-US", {
         month: "2-digit",
@@ -64,7 +64,7 @@ const NetworkSection = ({
         year: "numeric",
       });
     } catch {
-      return "ΓÇö";
+      return "—";
     }
   };
 
@@ -130,7 +130,7 @@ const NetworkSection = ({
           onMouseLeave={clearHoverContext}
         >
           <p className="stat-label">Network Encryption</p>
-          <p className="stat-value">{encryptionStatus || "ΓÇö"}</p>
+          <p className="stat-value">{encryptionStatus || "—"}</p>
         </div>
 
         {/* Vulns Γåö Severity bar + issues list */}
@@ -190,7 +190,7 @@ const NetworkSection = ({
             <h2>Network Risk Score</h2>
             <div className="panel-actions">
               <button className="toggle-btn" onClick={toggleLegend}>
-                {showLegend ? "ΓåÉ" : "ΓåÆ"}
+                {showLegend ? "▼" : "▶"}
               </button>
             </div>
           </div>

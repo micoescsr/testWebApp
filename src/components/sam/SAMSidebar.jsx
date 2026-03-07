@@ -38,6 +38,8 @@ const SAMSidebar = ({
 
   // --- Network search filter ---
   const [networkSearch, setNetworkSearch] = useState("");
+  const [showAllNetworks, setShowAllNetworks] = useState(false);
+  const DEFAULT_VISIBLE = 5;
 
   const filteredNetworks = useMemo(() => {
     if (!availableNetworks) return [];
@@ -49,6 +51,11 @@ const SAMSidebar = ({
         (net.bssid && net.bssid.toLowerCase().includes(q))
     );
   }, [availableNetworks, networkSearch]);
+
+  const visibleNetworks = showAllNetworks || networkSearch
+    ? filteredNetworks
+    : filteredNetworks.slice(0, DEFAULT_VISIBLE);
+  const hasMore = !networkSearch && filteredNetworks.length > DEFAULT_VISIBLE;
 
   return (
     <div className="sam-sidebar">
@@ -155,8 +162,8 @@ const SAMSidebar = ({
               )}
             </div>
               <div className="network-list">
-          {filteredNetworks.length > 0 ? (
-            filteredNetworks.map((net, idx) => (
+          {visibleNetworks.length > 0 ? (
+            visibleNetworks.map((net, idx) => (
               <div
                 key={`${net.bssid || net.ssid}-${idx}`}
                 className={`network-item cursor-pointer p-3 border-b border-gray-200 hover:bg-gray-50 transition-colors ${
@@ -183,6 +190,17 @@ const SAMSidebar = ({
           <div className="network-item py-4 text-center text-gray-500">
             {networkSearch ? "No matching networks" : "No networks found. Please try again."}
           </div>
+        )}
+        {hasMore && (
+          <button
+            type="button"
+            className="show-more-btn"
+            onClick={() => setShowAllNetworks((prev) => !prev)}
+          >
+            {showAllNetworks
+              ? "Show Less"
+              : `Show More (${filteredNetworks.length - DEFAULT_VISIBLE} more)`}
+          </button>
         )}
       </div>
           </>

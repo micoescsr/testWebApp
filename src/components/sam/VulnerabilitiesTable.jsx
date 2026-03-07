@@ -281,24 +281,24 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
             onPrev={goPrev}
             onNext={goNext}
           />
+      </div>
 
-        <div className="sam-actions">
-          <ExportDropdown />
-          <button
-            className="clear-btn"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Are you sure you want to clear the list?\n\nDon't worry — all scanned results are still saved and can be viewed on the History page."
-                )
-              ) {
-                onClear?.();
-              }
-            }}
-          >
-            🗑 Clear List
-          </button>
-        </div>
+      <div className="sam-actions">
+        <ExportDropdown />
+        <button
+          className="clear-btn"
+          onClick={() => {
+            if (
+              window.confirm(
+                "Are you sure you want to clear the list?\n\nDon't worry — all scanned results are still saved and can be viewed on the History page."
+              )
+            ) {
+              onClear?.();
+            }
+          }}
+        >
+          🗑 Clear List
+        </button>
       </div>
     </div>
   );

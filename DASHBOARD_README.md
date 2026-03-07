@@ -2,7 +2,29 @@
 
 > **Branch:** `securityV2`  
 > **Date:** March 5, 2026  
+> **Last Updated:** March 7, 2026  
 > **Status:** Phase 1 complete (live data, no mocks)
+
+---
+
+## Recent Updates (March 7, 2026)
+
+### Fixed: Corrupted Unicode Characters (Mojibake)
+
+Several UI elements displayed garbled text due to UTF-8 encoding corruption:
+
+| Component | Before | After | Element |
+|-----------|--------|-------|---------|
+| `SummarySection.jsx` | `ΓÇö` | `—` (em dash) | Date fallback text |
+| `SummarySection.jsx` | `ΓåÉ` / `ΓåÆ` | `▼` / `▶` | Legend toggle button |
+| `NetworkSection.jsx` | `ΓÇö` | `—` (em dash) | Date + encryption fallback |
+| `NetworkSection.jsx` | `ΓåÉ` / `ΓåÆ` | `▼` / `▶` | Legend toggle button |
+| `DashboardHeader.jsx` | `ΓùÅ` | `✓` | Device online status icon |
+
+**Files changed:**
+- `src/components/dashboard/SummarySection.jsx`
+- `src/components/dashboard/NetworkSection.jsx`
+- `src/components/dashboard/DashboardHeader.jsx`
 
 ---
 
