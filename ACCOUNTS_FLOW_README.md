@@ -1,6 +1,6 @@
 # Accounts & Audit — End-to-End Flow
 
-> Last updated: March 6, 2026
+> Last updated: March 8, 2026
 
 ---
 
@@ -335,7 +335,7 @@ Rows are expandable — clicking shows IP, entity ID, and a full field-by-field 
 | `src/components/accounts/AuditLogsTable.jsx` | Audit logs table with expand/collapse + export modal |
 | `src/components/modals/AccountsAuditModal/AccountsAuditModal.jsx` | Modal wrapper |
 | `src/components/common/Modal/BaseModal.jsx` | Base modal (overlay close control) |
-| `src/api/userApi.js` | API calls: updateUser, activateUserWithTemp, deactivateUser |
+| `src/api/userApi.js` | API calls: updateUser, activateUserWithTemp, deactivateUser, reactivateUser |
 | `src/api/authApi.js` | API calls: login, refresh, logout |
 | `src/hooks/useSessionState.js` | Session-storage-backed useState for tab persistence |
 
@@ -345,19 +345,25 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 
 ### Modal Modes
 
-| Mode        | Trigger                    | Confirm button     | Action on confirm                   |
-|-------------|----------------------------|--------------------|--------------------------------------|
-| `add`       | "Add a New User" button    | "Confirm"          | Create user (not yet wired)          |
-| `edit`      | Click user row → Edit      | "Confirm"          | PUT /profiles/:id + optional temp PW |
-| `delete`    | Click Delete in form       | "Confirm" (red)    | DELETE /profiles/:id                 |
-| `deactivate`| Click "Deactivate Account" | "Deactivate" (red) | POST /profiles/:id/deactivate        |
+| Mode         | Trigger                         | Confirm button      | Action on confirm                                   |
+|--------------|---------------------------------|---------------------|------------------------------------------------------|
+| `add`        | "Add a New User" button         | "Confirm"           | Create user (not yet wired)                          |
+| `edit`       | Click user row → Edit           | "Confirm"           | PUT /profiles/:id + optional temp PW                 |
+| `delete`     | Click Delete in form            | "Confirm" (red)     | DELETE /profiles/:id                                 |
+| `deactivate` | Click "Deactivate Account"      | "Deactivate" (red)  | POST /profiles/:id/deactivate                        |
+| `reactivate` | Click "Reactivate Account" (after filling all required fields) | "Reactivate" (green) | POST /profiles/:id/reactivate — always issues temp PW when status is `active` |
 
 ### Key UX Behaviors
 
 - **Outside-click protection**: Modal overlay click is disabled during processing (`isProcessing` state)
 - **Activation checkbox**: When changing from non-active → active, a checkbox appears: "Issue a temporary password"
 - **Temp PW modal**: Cannot be dismissed by clicking outside — must click Close
-- **Inactive users**: Shown with a yellow banner, "Deactivate Account" button is hidden, status dropdown shows a note
+- **Inactive users — two-step reactivation flow**:
+  1. Open Edit modal for an inactive user — a yellow banner explains Steps 1 and 2
+  2. Fields that held anonymized placeholder values (`deactivated_*`, `@deactivated.local`, `"Deactivated User"`) are **cleared to empty** on load — the admin must type in the real details
+  3. The **Reactivate Account** button stays **disabled and greyed out** until all four required fields (First Name, Last Name, Username, Email) are filled with non-anonymized values
+  4. Once valid, the button turns green and becomes clickable — clicking it opens the Reactivate confirm modal
+  5. `Save Details` (step 1) saves the profile edits while leaving status as `inactive`, then re-opens the form with a green confirmation banner so the admin can proceed to click Reactivate Account
 - **Legacy staff migration**: If a user has `role = 'staff'`, the form displays it as `user`
 
 ---
@@ -382,7 +388,8 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 | PUT    | `/profiles/:id`               | JWT  | Superadmin | Update user profile                |
 | DELETE | `/profiles/:id`               | JWT  | Superadmin | Hard-delete user                   |
 | POST   | `/profiles/:id/activate-with-temp` | JWT | Superadmin | Activate + issue temp PW     |
-| POST   | `/profiles/:id/deactivate`    | JWT  | Superadmin | Deactivate + archive profile |
+| POST   | `/profiles/:id/deactivate`    | JWT  | Superadmin | Deactivate + archive profile       |
+| POST   | `/profiles/:id/reactivate`    | JWT  | Superadmin | Reactivate inactive account + always issues temp PW when status is `active` |
 
 ---
 
@@ -459,6 +466,24 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
   - Optional chaining (`selectedUser?.id`) used for null safety in the deactivate and reactivate branches.
 - **Files changed**: `src/pages/AccountsAudit/AccountsAudit.jsx`
 
+### UI-008 — Reactivation Form: Clear Anonymized Fields & Validate Before Proceeding (March 8, 2026)
+- **Before**: When an admin opened the Edit modal for a deactivated (inactive) user, the `UserForm` pre-populated its fields with the anonymized placeholder values that were set during deactivation (`Deactivated User`, `deactivated_<id>`, `deactivated_<id>@deactivated.local`). The admin could click **Reactivate Account** immediately without changing anything, and those junk values would be written back to the profile as the user's "real" details.
+- **After**:
+  - A new `isAnonymizedValue()` helper detects placeholder values: anything starting with `deactivated_`, equal to `"deactivated user"`, or ending in `@deactivated.local`.
+  - The `useEffect` that populates the form now **clears any anonymized fields to empty** for inactive users, forcing the admin to consciously enter the real data.
+  - The inactive banner text was updated to explain that fields were cleared and the admin must enter valid values before proceeding.
+  - `handleReactivateClick()` has a secondary validation guard — if any required field is still empty or anonymized when clicked, it shows an alert listing the offending fields and aborts.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
+### UI-009 — Reactivate Button Disabled Until Required Fields Are Valid (March 8, 2026)
+- **Before**: The **Reactivate Account** button was always enabled and green for inactive users, regardless of the form field state. Combined with the UI-008 bug, an admin could attempt to reactivate with blank or anonymized fields — the only guard was an alert dialog shown after clicking.
+- **After**:
+  - A `canReactivate` boolean is computed live from `formData` — it is `true` only when all four required fields (`firstName`, `lastName`, `username`, `email`) are non-empty and do not contain anonymized placeholder values.
+  - The button has `disabled={!canReactivate}`: when disabled it renders grey (`#d1d5db` background, `#9ca3af` text, `cursor: not-allowed`), and when all fields are valid it turns green and becomes clickable.
+  - A `title` tooltip appears on hover when disabled: *"Fill in all required fields with valid values first"*.
+  - The button reacts in real time as the admin types — no extra save step is needed to enable it.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
 ---
 
 ## What's Still Missing / TODO
@@ -477,7 +502,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 | # | Item | Description |
 |---|------|-------------|
 | 5 | **Frontend error toasts** | ~~`confirmAction` catches errors but only logs them to console. No user-visible toast/notification on failure.~~ **PARTIAL** — `alert()` now shows error messages on failure. A proper toast library (e.g., react-hot-toast) would be better UX. |
-| 6 | **Reactivation PII restoration** | When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive. |
+| 6 | **Reactivation PII restoration** | ~~When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive.~~ **DONE** — The Edit modal for inactive users now clears anonymized fields on load and requires the admin to fill them before the Reactivate button enables. The Reactivate button stays disabled until all four required fields are non-empty and non-anonymized (UI-008, UI-009). Auto-restore from the audit archive is still not implemented (admin must re-type the data). |
 | 7 | **Deactivate Supabase Auth session** | ~~`deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session.~~ **PARTIAL** — The auth password is now scrambled on deactivation, which prevents future logins. However, if the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider also calling `supabaseAdmin.auth.admin.signOut(id)`. |
 | 8 | **Audit log search** | The search input and status filter exist in the UI but need verification that they work with the new event types and columns. |
 | 9 | **Pagination UX** | Audit logs pagination exists but total count might not account for new event types in filtering. |
