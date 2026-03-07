@@ -276,10 +276,10 @@ const SummarySection = ({
           </div>
           <div className="panel-body top-networks">
             <div className="top-row top-head">
-              <span>SSID</span>
-              <span>RISK %</span>
-              <span>SEVERITIES</span>
-              <span>CLIENTS</span>
+              <span className="col-ssid">SSID</span>
+              <span className="col-risk">RISK %</span>
+              <span className="col-sev">SEVERITIES</span>
+              <span className="col-clients">CLIENTS</span>
             </div>
             {topRisks.length > 0 ? (
               <>
@@ -297,17 +297,17 @@ const SummarySection = ({
                     }
                     onMouseLeave={clearHoverContext}
                   >
-                    <span>{item.ssid}</span>
-                    <span className="score-link">{item.risk}</span>
-                    <span>{item.severityCount}</span>
-                    <span>{item.clients}</span>
+                    <span className="col-ssid">{item.ssid}</span>
+                    <span className="col-risk score-link">{item.risk}</span>
+                    <span className="col-sev">{item.severityCount}</span>
+                    <span className="col-clients">{item.clients}</span>
                   </div>
                 ))}
                 <div className="top-row top-foot">
-                  <span>All Networks</span>
-                  <span></span>
-                  <span>{totalFindings ?? 0}</span>
-                  <span>{totalClients ?? 0}</span>
+                  <span className="col-ssid">All Networks</span>
+                  <span className="col-risk"></span>
+                  <span className="col-sev">{totalFindings ?? 0}</span>
+                  <span className="col-clients">{totalClients ?? 0}</span>
                 </div>
               </>
             ) : (

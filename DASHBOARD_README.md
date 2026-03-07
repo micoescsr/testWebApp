@@ -294,12 +294,23 @@ node server.js
 
 **Symptom:** The header row (SSID, RISK %, SEVERITIES, CLIENTS) and data rows were misaligned because columns had no fixed widths.
 
-**Root Cause:** `.top-row` used `display: flex; justify-content: space-between` — each `<span>` took only its content width, so columns shifted depending on text length.
+**Root Cause:** `.top-row` used `display: flex` — each `<span>` took only its content width, so columns shifted depending on text length. The `col-ssid`, `col-risk`, `col-sev`, and `col-clients` classes were defined in `Dashboard.css` but never applied to the `<span>` elements in `SummarySection.jsx`.
 
-**Fix (Dashboard.css):**
+**Fix:**
+
+*`src/pages/Dashboard/Dashboard.css`:*
 - Changed `.top-row` from `display: flex` to `display: grid` with `grid-template-columns: 2fr 1fr 1fr 1fr`
-- Added `text-align: right` for all numeric columns (2nd, 3rd, 4th)
+- Removed `flex` properties from `.col-ssid`, `.col-risk`, `.col-sev`, `.col-clients` (no longer needed with grid)
 - Increased row padding from `4px 0` to `6px 0` for better readability
+- Added `.top-foot` class (border-top, padding-top, margin-top) for the "All Networks" footer row
+
+*`src/components/dashboard/SummarySection.jsx`:*
+- Added `className="col-ssid"` to the SSID `<span>` in the header, data rows, and footer row
+- Added `className="col-risk"` (+ `score-link` on data rows) to the RISK % column
+- Added `className="col-sev"` to the SEVERITIES column
+- Added `className="col-clients"` to the CLIENTS column
+
+**Result:** All four columns — header, data rows, and footer — are now perfectly aligned using CSS grid. Numeric columns (RISK %, SEVERITIES, CLIENTS) are right-aligned; SSID is left-aligned and takes twice the width.
 
 ### Fix 2: Total Clients Mismatch Clarification
 
@@ -314,8 +325,8 @@ node server.js
 **Files changed:**
 | File | Change |
 |------|--------|
-| `src/pages/Dashboard/Dashboard.css` | `.top-row`: flex → CSS grid; added `.top-foot` class; right-aligned numeric columns |
-| `src/components/dashboard/SummarySection.jsx` | Renamed stat card label; added "All Networks" total footer row to Top 5 table |
+| `src/pages/Dashboard/Dashboard.css` | `.top-row`: `display: flex` → `display: grid` (`grid-template-columns: 2fr 1fr 1fr 1fr`); padding `4px 0` → `6px 0`; removed `flex` from column classes; added `.top-foot` class |
+| `src/components/dashboard/SummarySection.jsx` | Added `col-ssid`, `col-risk`, `col-sev`, `col-clients` classes to all `<span>` elements in header, data rows, and footer; renamed stat card label; added "All Networks" total footer row |
 
 ---
 
