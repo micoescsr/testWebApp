@@ -284,8 +284,13 @@ Login.jsx
    │                                              │  (PasswordChecklist validation)
    │                                              │  + confirm password field
    ▼                                              │
-/dashboard                                        │  supabase.auth.updateUser({ password })
-                                                  │  (uses current session JWT)
+/dashboard                                        │  getAccessToken() from axios memory store
+                                                  │
+                                                  │  supabase.auth.setSession({ access_token })
+                                                  │  (primes Supabase JS — persistSession: false
+                                                  │   means it holds no session by default)
+                                                  │
+                                                  │  supabase.auth.updateUser({ password })
                                                   │
                                                   │  POST /api/auth/clear-force-reset
                                                   │  (clears must_change_password + temp_expires_at)
@@ -308,6 +313,8 @@ Login.jsx
 
 - The `/force-reset-password` route requires an authenticated session (has access token). Unauthenticated visitors are redirected to `/login`.
 - The page uses the **same password strength rules** as `ResetPassword.jsx` — `validatePassword()` from `passwordValidation.js` + inline `PasswordChecklist`.
+- **`persistSession: false` workaround**: The Supabase client is configured with `persistSession: false` and `autoRefreshToken: false` — it holds no session in memory after a page load. Calling `supabase.auth.updateUser()` directly would fail with *"Auth session missing!"*. The fix is to call `supabase.auth.setSession({ access_token, refresh_token: "not-used" })` first, injecting the JWT from the axios in-memory store (`getAccessToken()`). This primes the Supabase JS client for the duration of the update call without persisting anything.
+- If `getAccessToken()` returns `null` (e.g. the page was hard-refreshed and the in-memory token was lost), the user sees a *"Session expired. Please log in again."* error instead of a cryptic Supabase error.
 - After a successful password update, `POST /api/auth/clear-force-reset` clears `must_change_password` and `temp_expires_at` on the profile row, and logs a `USER_PASSWORD_CHANGED` audit event.
 - If the backend call to `clear-force-reset` fails (non-fatal), the user is still redirected to `/dashboard` — the flag will become stale but will not re-block login unless a new temp password is later issued.
 - The page has a **confirm password** field to prevent typos (unlike `ResetPassword.jsx` which has no confirm field).
@@ -557,8 +564,9 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
     - Fullscreen card layout (same style as `ForgotPassword` / `ResetPassword`, no sidebar)
     - Password field with `PasswordChecklist` for live strength feedback
     - Confirm password field to prevent typos
-    - Uses `supabase.auth.updateUser({ password })` with the current session JWT
-    - After success, calls `POST /api/auth/clear-force-reset` to clear `must_change_password + temp_expires_at` on the profile and logs a `USER_PASSWORD_CHANGED` audit event
+    - **`persistSession: false` fix**: The Supabase client holds no session by default. Before calling `supabase.auth.updateUser()`, the page calls `supabase.auth.setSession({ access_token: getAccessToken(), refresh_token: "not-used" })` to inject the in-memory JWT. Without this, Supabase throws *"Auth session missing!"*.
+    - If `getAccessToken()` is `null` (hard-refresh lost the token), the user sees *"Session expired. Please log in again."* rather than a cryptic error.
+    - After success, calls `POST /api/auth/clear-force-reset` to clear `must_change_password` + `temp_expires_at` on the profile and logs a `USER_PASSWORD_CHANGED` audit event
     - Redirects to `/dashboard` after 2 seconds
   - **`App.jsx`** — registers `/force-reset-password` as a protected route (requires authenticated session, no sidebar/layout wrapper)
   - **Backend `POST /api/auth/clear-force-reset`** — new endpoint protected by `authJWT`, updates the profile row and logs the audit event

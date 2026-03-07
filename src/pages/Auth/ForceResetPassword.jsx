@@ -4,11 +4,17 @@
 // mustChangePassword: true (i.e. a temporary password was issued by a superadmin).
 // The user cannot navigate away — attempting to visit /dashboard is harmless because
 // App.jsx checks mustChangePassword before rendering the main layout (see App.jsx).
+//
+// NOTE: The Supabase client is configured with persistSession: false, so
+// supabase.auth.updateUser() would fail with "Auth session missing" unless we
+// prime the session first. We inject the in-memory access token via
+// supabase.auth.setSession() before calling updateUser(). The refresh token
+// field is required by the API but won't be used (no auto-refresh is configured).
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
-import api from "../../api/axios";
+import api, { getAccessToken } from "../../api/axios";
 import { validatePassword } from "../../passwordValidation";
 import PasswordChecklist from "./PasswordChecklist";
 import "./Auth.css";
@@ -49,7 +55,34 @@ function ForceResetPassword() {
     setStatus({ submitting: true, message: "", error: "" });
 
     try {
-      // 3) Update Supabase Auth password (uses current session)
+      // 3) Prime the Supabase JS session from the in-memory access token.
+      //    persistSession: false means supabase.auth has no session by default —
+      //    setSession() injects the token so updateUser() can attach it to its request.
+      const accessToken = getAccessToken();
+      if (!accessToken) {
+        setStatus({
+          submitting: false,
+          message: "",
+          error: "Session expired. Please log in again.",
+        });
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: "not-used", // required field; auto-refresh is disabled
+      });
+
+      if (sessionError) {
+        setStatus({
+          submitting: false,
+          message: "",
+          error: sessionError.message || "Failed to establish session.",
+        });
+        return;
+      }
+
+      // 4) Update Supabase Auth password (now has an active session)
       const { error: updateError } = await supabase.auth.updateUser({ password });
 
       if (updateError) {
@@ -61,7 +94,7 @@ function ForceResetPassword() {
         return;
       }
 
-      // 4) Tell the backend to clear must_change_password + temp_expires_at
+      // 5) Tell the backend to clear must_change_password + temp_expires_at
       try {
         await api.post("auth/clear-force-reset");
       } catch {
@@ -70,7 +103,7 @@ function ForceResetPassword() {
         console.warn("Could not clear must_change_password flag on backend.");
       }
 
-      // 5) Success
+      // 6) Success
       setStatus({
         submitting: false,
         message: "Password updated successfully! Redirecting to your dashboard…",
