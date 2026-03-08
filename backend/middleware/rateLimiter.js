@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,   // 15 minutes
-  max: 10,                     // 10 login attempts per window per IP
+  max: 500,                     // 10 login attempts per window per IP
   standardHeaders: true,       // Return rate limit info in `RateLimit-*` headers
   legacyHeaders: false,        // Disable `X-RateLimit-*` headers
   message: { error: 'Too many login attempts, please try again later' },
@@ -15,7 +15,7 @@ const loginLimiter = rateLimit({
 
 const refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: 1000, //30 refresh attempts per window per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many refresh attempts' },
@@ -23,7 +23,7 @@ const refreshLimiter = rateLimit({
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 5000, // 100 requests per window per IP for all other routes
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests' },
