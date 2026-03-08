@@ -1,6 +1,5 @@
 // controllers/rasPiController.js
 const crypto = require("crypto");
-const rasPiService = require("../services/rasPiService");
 const { piFetch } = require("../utils/piFetch");
 const { supabaseClient } = require("../config/supabaseClient");
 const { logAuditEvent } = require("../utils/auditLogger");
@@ -346,8 +345,11 @@ async function saveNetworkMetadataScan(req, res) {
 
 async function getAccessPointDetails(req, res) {
   try {
-    const networks = await rasPiService.getAccessPointDetails();
-    res.status(200).json(networks);  // 200 for GET
+    const { data, error } = await supabaseClient
+      .from("networks")
+      .select("SSID, Status");
+    if (error) throw error;
+    res.status(200).json(data);
   } catch (err) {
     res.status(500).json({ error: "Failed to get access point details" });
   }
