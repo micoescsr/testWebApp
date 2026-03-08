@@ -104,9 +104,10 @@ async function getSummaryData() {
   const clientsP = supabaseClient.from("networks").select("num_clients");
 
   // --- Query #16: avg risk score from latest_scan_per_network ---
+  // Also fetch network_id so we can join for the Top 5 table (#18)
   const riskP = supabaseClient
     .from("latest_scan_per_network")
-    .select("risk_score");
+    .select("network_id, risk_score");
 
   // --- Queries #14, #17, #18: need findings ---
   const findingsP = supabaseClient
@@ -115,10 +116,10 @@ async function getSummaryData() {
       "vt_detail_id, vt_severity_rating, vt_kind, vt_cvss_base_score, network_id"
     );
 
-  // --- Networks for top-5 join ---
+  // --- Networks for top-5 join (ssid + clients only; risk score comes from latest_scan_per_network) ---
   const networksP = supabaseClient
     .from("networks")
-    .select("network_id, ssid, num_clients, risk_score");
+    .select("network_id, ssid, num_clients");
 
   // Execute all in parallel
   const [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR] =
@@ -171,6 +172,12 @@ async function getSummaryData() {
   const severityData = buildSeverityData(findingsR.data);
 
   // #18: top 5 networks by risk
+  // Build a risk score map from latest_scan_per_network (authoritative, from scans table)
+  const latestRiskMap = {};
+  (riskRows).forEach((r) => {
+    if (r.network_id) latestRiskMap[r.network_id] = r.risk_score || 0;
+  });
+
   const networkMap = {};
   (networksR.data || []).forEach((n) => {
     networkMap[n.network_id] = n;
@@ -186,7 +193,7 @@ async function getSummaryData() {
   const topRisks = Object.values(networkMap)
     .map((n) => ({
       ssid: n.ssid || "Unknown",
-      risk: n.risk_score || 0,
+      risk: latestRiskMap[n.network_id] ?? 0,
       severityCount: netSevCount[n.network_id] || 0,
       clients: n.num_clients || 0,
     }))

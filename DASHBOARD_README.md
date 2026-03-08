@@ -9,6 +9,56 @@
 
 ## Recent Updates (March 8, 2026)
 
+### Bug Fix: Top 5 High-Risk Networks Always Showing 0 Risk
+
+**Symptom:** The Top 5 High-Risk Networks table in the Summary view showed `0` in the RISK % column for all networks, even though those networks had non-zero scores in the `scans` table.
+
+**Root Cause (`getSummaryData` in `backend/services/dashboardService.js`):**
+
+The Top 5 table was built by joining against `networks.risk_score` (a column on the `networks` table itself). This column is stale — it is not updated when new scans complete. The authoritative, always-current risk score lives in the `latest_scan_per_network` view, which reads `risk_score` directly from the `scans` table. Meanwhile, `riskP` was already querying that view for the global average (query #16), but was only selecting `risk_score` without `network_id`, making it impossible to join per-network.
+
+```js
+// ❌ BUG: risk score pulled from stale networks.risk_score column
+const networksP = supabaseClient
+  .from("networks")
+  .select("network_id, ssid, num_clients, risk_score"); // ← stale
+
+const topRisks = Object.values(networkMap)
+  .map((n) => ({ risk: n.risk_score || 0, ... })) // ← always 0
+```
+
+**Fix (`backend/services/dashboardService.js` — `getSummaryData`):**
+
+`riskP` now also selects `network_id` so each row can be keyed by network. A `latestRiskMap` is built from those rows and used for the Top 5 instead of `networks.risk_score`. The stale `risk_score` column is removed from the `networksP` query.
+
+```js
+// ✅ FIX: include network_id so we can join per-network for the Top 5
+const riskP = supabaseClient
+  .from("latest_scan_per_network")
+  .select("network_id, risk_score");
+
+// ✅ FIX: networks query no longer needs the stale risk_score column
+const networksP = supabaseClient
+  .from("networks")
+  .select("network_id, ssid, num_clients");
+
+// ✅ FIX: build risk map from latest_scan_per_network (scans table)
+const latestRiskMap = {};
+riskRows.forEach((r) => {
+  if (r.network_id) latestRiskMap[r.network_id] = r.risk_score || 0;
+});
+
+const topRisks = Object.values(networkMap)
+  .map((n) => ({ risk: latestRiskMap[n.network_id] ?? 0, ... }))
+  .sort((a, b) => b.risk - a.risk)
+  .slice(0, 5);
+```
+
+**Files changed:**
+- `backend/services/dashboardService.js` — `getSummaryData` function
+
+---
+
 ### Bug Fix: Risk Score Always 0 When Selecting a Specific Date
 
 **Symptom:** In the per-network view, selecting any specific date from the DATE dropdown showed a Wi-Fi Security Risk Score of **0**, even though the `scans` table clearly held a non-zero `risk_score` for that scan. Switching back to "Latest" correctly displayed the real score.
@@ -213,7 +263,7 @@ FROM latest_scans ls;
 | Table | Used for |
 |-------|----------|
 | `scans` | Scan history (legacy PK: bigint), `scan_end` timestamps, `risk_score`, clients-vs-risk trend; **authoritative source for risk scores** |
-| `networks` | Dropdown list, encryption status counts, client counts, risk scores |
+| `networks` | Dropdown list, encryption status counts, client counts (`networks.risk_score` is **not used** — risk scores always come from `latest_scan_per_network`) |
 | `vulnerabilities_threat` | Finding rows (deduplicated via `latest_scan_findings` view) |
 | `vulnerability_threat_details` | Severity ratings, CVSS scores, kind classification (`THREAT` / `VULNERABILITY`) |
 | `vulnerability_scans` | Scan list for the DATE dropdown; ownership/status validation for date-filtered requests (UUID PK, `scan_risk_score` is unreliable — `scans.risk_score` is used instead) |
@@ -247,9 +297,9 @@ The per-network path has **two sub-paths** depending on whether a `scanId` is pr
 | 13 | Encrypted networks | `COUNT(*) FROM networks WHERE encryption_status != 'Open'` |
 | 14 | Total findings | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings` |
 | 15 | Total clients | `SUM(num_clients) FROM networks` |
-| 16 | Global avg risk score | `ROUND(AVG(risk_score)) FROM latest_scan_per_network` |
+| 16 | Global avg risk score | `AVG(risk_score)` from `latest_scan_per_network` (includes `network_id` for Top 5 join) |
 | 17 | Severity by kind (global) | `GROUP BY vt_severity_rating, vt_kind` on `latest_scan_findings` |
-| 18 | Top 5 high-risk networks | `latest_scan_per_network JOIN networks LEFT JOIN latest_scan_findings GROUP BY … ORDER BY risk_score DESC LIMIT 5` |
+| 18 | Top 5 high-risk networks | JS join: `latest_scan_per_network` risk map × `networks` (ssid, clients) × `latest_scan_findings` severity count → sorted by `risk_score DESC`, sliced to 5 |
 
 ---
 
