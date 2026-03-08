@@ -68,7 +68,23 @@ const Login = () => {
         return;
       }
 
-      // 5) All good — full navigation so App bootstraps from cookie
+      // 5) Check if a forced password reset is required (temp password was issued)
+      // AUTH-009: must_change_password flag set by backend when a superadmin issues a temp password.
+      // Guard: only redirect if the flag is set AND temp_expires_at exists AND hasn't expired.
+      // Without the expiry check, an established user whose clear-force-reset call ever failed
+      // silently would be permanently trapped on the force-reset page.
+      const mustReset = (() => {
+        if (!profile?.must_change_password) return false;
+        if (!profile?.temp_expires_at) return false; // flag set but no expiry — treat as stale
+        return new Date(profile.temp_expires_at) > new Date(); // only redirect if still within window
+      })();
+
+      if (mustReset) {
+        window.location.replace("/force-reset-password");
+        return;
+      }
+
+      // 6) All good — full navigation so App bootstraps from cookie
       window.location.replace("/dashboard");
     } catch (err) {
       console.error("Login failed:", err);

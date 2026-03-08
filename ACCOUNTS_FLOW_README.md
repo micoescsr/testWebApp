@@ -1,6 +1,6 @@
 # Accounts & Audit — End-to-End Flow
 
-> Last updated: March 6, 2026
+> Last updated: March 8, 2026
 
 ---
 
@@ -12,12 +12,13 @@
 4. [Account Lifecycle](#account-lifecycle)
 5. [Authentication Flow](#authentication-flow)
 6. [Temporary Password Flow](#temporary-password-flow)
-7. [Deactivation & Archival Flow](#deactivation--archival-flow)
-8. [Audit Logging](#audit-logging)
-9. [Frontend — Accounts & Audit Page](#frontend--accounts--audit-page)
-10. [API Reference](#api-reference)
-11. [What Was Improved](#what-was-improved)
-12. [What's Still Missing / TODO](#whats-still-missing--todo)
+7. [Force Password Reset Flow](#force-password-reset-flow)
+8. [Deactivation & Archival Flow](#deactivation--archival-flow)
+9. [Audit Logging](#audit-logging)
+10. [Frontend — Accounts & Audit Page](#frontend--accounts--audit-page)
+11. [API Reference](#api-reference)
+12. [What Was Improved](#what-was-improved)
+13. [What's Still Missing / TODO](#whats-still-missing--todo)
 
 ---
 
@@ -183,6 +184,15 @@ Frontend                    Backend                         Supabase
    │──────────────────────────►│  Sets HttpOnly sb_refresh     │
    │                           │  cookie (30d, lax, /api/auth) │
    │◄──────────────────────────│                               │
+   │                           │                               │
+   │  GET /webapp/users/profiles/me (Bearer)                   │
+   │──────────────────────────►│                               │
+   │◄── { profile }            │                               │
+   │                           │                               │
+   │  if profile.must_change_password === true                 │
+   │    redirect → /force-reset-password   (AUTH-009)         │
+   │  else                                                     │
+   │    redirect → /dashboard                                  │
 ```
 
 ### Login Blocked Scenarios
@@ -234,9 +244,12 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
    - Shows "Expires at: [datetime] (Xh Xm remaining)"
    - Outside click disabled (must click Close)
 6. User logs in with temp PW
-   a. Backend checks temp_expires_at — if expired → blocks with TEMP_PASSWORD_EXPIRED
-   b. If valid → returns { token, mustChangePassword: true, tempExpiresAt }
-   c. Frontend should redirect to password change page (⚠ NOT YET IMPLEMENTED)
+   a. Backend checks `temp_expires_at` — if expired → blocks with `TEMP_PASSWORD_EXPIRED`
+   b. If valid → `must_change_password` is still `true` on the profile row
+   c. Login.jsx reads `profile.must_change_password` from `GET /profiles/me` → redirects to `/force-reset-password` (**AUTH-009 — implemented**)
+   d. User sets a new password on `/force-reset-password`
+   e. `POST /api/auth/clear-force-reset` clears `must_change_password` + `temp_expires_at` on the profile
+   f. User is redirected to `/dashboard`
 ```
 
 ### Temp Password States (shown in UserForm)
@@ -247,6 +260,65 @@ When a superadmin activates a user from `on_hold` or `inactive` and chooses to i
 | `temp_issued` | `must_change_password && temp_expires_at > now`    | Amber   | "Temp PW issued (expires in Xh Xm)"  |
 | `expired`     | `must_change_password && temp_expires_at <= now`   | Red     | "Temp PW expired"                     |
 | `temp_used`   | `must_change_password && !temp_expires_at`         | Blue    | "Password change required"            |
+
+---
+
+## Force Password Reset Flow
+
+> **AUTH-009** — Implemented March 8, 2026
+
+When a user logs in with a temporary password (`must_change_password = true` on their profile), they are **immediately redirected** to `/force-reset-password` before reaching the dashboard. This page is a standalone fullscreen screen (same visual style as the auth pages — no sidebar, no navigation).
+
+**Why redirect instead of a prompt/banner?**
+- A dismissible prompt can be ignored, leaving the user permanently on a temp password (security risk)
+- Redirect is non-bypassable — the user must complete the reset before accessing any protected page
+- Consistent with how most security-first apps handle forced resets (e.g., AWS console, Okta)
+
+```
+Login.jsx
+   │
+   │  profile.must_change_password === true?
+   │──────────────────────────────────────────► /force-reset-password
+   │                                              │
+   │  else                                        │  User enters new password
+   │                                              │  (PasswordChecklist validation)
+   │                                              │  + confirm password field
+   ▼                                              │
+/dashboard                                        │  getAccessToken() from axios memory store
+                                                  │
+                                                  │  supabase.auth.setSession({ access_token })
+                                                  │  (primes Supabase JS — persistSession: false
+                                                  │   means it holds no session by default)
+                                                  │
+                                                  │  supabase.auth.updateUser({ password })
+                                                  │
+                                                  │  POST /api/auth/clear-force-reset
+                                                  │  (clears must_change_password + temp_expires_at)
+                                                  │
+                                                  ▼
+                                             /dashboard
+```
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `src/pages/Auth/ForceResetPassword.jsx` | New fullscreen page — password form with strength validation |
+| `src/pages/Login/Login.jsx` | Reads `profile.must_change_password` after `/profiles/me` → redirects |
+| `src/App.jsx` | Registers `/force-reset-password` as a protected (authenticated) route, no sidebar |
+| `backend/controllers/authController.js` | New `clearForceReset` handler |
+| `backend/routes/authRoutes.js` | Registers `POST /api/auth/clear-force-reset` (requires `authJWT`) |
+
+### Behavior Details
+
+- The `/force-reset-password` route requires an authenticated session (has access token). Unauthenticated visitors are redirected to `/login`.
+- The page uses the **same password strength rules** as `ResetPassword.jsx` — `validatePassword()` from `passwordValidation.js` + inline `PasswordChecklist`.
+- **`persistSession: false` workaround**: The Supabase client is configured with `persistSession: false` and `autoRefreshToken: false` — it holds no session in memory after a page load. Calling `supabase.auth.updateUser()` directly would fail with *"Auth session missing!"*. The fix is to call `supabase.auth.setSession({ access_token, refresh_token: "not-used" })` first, injecting the JWT from the axios in-memory store (`getAccessToken()`). This primes the Supabase JS client for the duration of the update call without persisting anything.
+- If `getAccessToken()` returns `null` (e.g. the page was hard-refreshed and the in-memory token was lost), the user sees a *"Session expired. Please log in again."* error instead of a cryptic Supabase error.
+- After a successful password update, `POST /api/auth/clear-force-reset` clears `must_change_password` and `temp_expires_at` on the profile row, and logs a `USER_PASSWORD_CHANGED` audit event.
+- If the backend call to `clear-force-reset` fails (non-fatal), the user is still redirected to `/dashboard` — the flag may remain `true` in the DB, but the **login redirect guard** in `Login.jsx` will not trigger again because it requires **both** `must_change_password: true` AND a non-expired `temp_expires_at` to redirect. A stale flag without a valid expiry is treated as inactive and skipped.
+- **Login redirect guard** (`Login.jsx`): the force-reset redirect is only triggered when `must_change_password === true` **AND** `temp_expires_at` is present **AND** `new Date(temp_expires_at) > new Date()`. This prevents established users from being incorrectly redirected if the flag was ever left stale in the database.
+- The page has a **confirm password** field to prevent typos (unlike `ResetPassword.jsx` which has no confirm field).
 
 ---
 
@@ -335,7 +407,7 @@ Rows are expandable — clicking shows IP, entity ID, and a full field-by-field 
 | `src/components/accounts/AuditLogsTable.jsx` | Audit logs table with expand/collapse + export modal |
 | `src/components/modals/AccountsAuditModal/AccountsAuditModal.jsx` | Modal wrapper |
 | `src/components/common/Modal/BaseModal.jsx` | Base modal (overlay close control) |
-| `src/api/userApi.js` | API calls: updateUser, activateUserWithTemp, deactivateUser |
+| `src/api/userApi.js` | API calls: updateUser, activateUserWithTemp, deactivateUser, reactivateUser |
 | `src/api/authApi.js` | API calls: login, refresh, logout |
 | `src/hooks/useSessionState.js` | Session-storage-backed useState for tab persistence |
 
@@ -345,19 +417,25 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 
 ### Modal Modes
 
-| Mode        | Trigger                    | Confirm button     | Action on confirm                   |
-|-------------|----------------------------|--------------------|--------------------------------------|
-| `add`       | "Add a New User" button    | "Confirm"          | Create user (not yet wired)          |
-| `edit`      | Click user row → Edit      | "Confirm"          | PUT /profiles/:id + optional temp PW |
-| `delete`    | Click Delete in form       | "Confirm" (red)    | DELETE /profiles/:id                 |
-| `deactivate`| Click "Deactivate Account" | "Deactivate" (red) | POST /profiles/:id/deactivate        |
+| Mode         | Trigger                         | Confirm button      | Action on confirm                                   |
+|--------------|---------------------------------|---------------------|------------------------------------------------------|
+| `add`        | "Add a New User" button         | "Confirm"           | Create user (not yet wired)                          |
+| `edit`       | Click user row → Edit           | "Confirm"           | PUT /profiles/:id + optional temp PW                 |
+| `delete`     | Click Delete in form            | "Confirm" (red)     | DELETE /profiles/:id                                 |
+| `deactivate` | Click "Deactivate Account"      | "Deactivate" (red)  | POST /profiles/:id/deactivate                        |
+| `reactivate` | Click "Reactivate Account" (after filling all required fields) | "Reactivate" (green) | POST /profiles/:id/reactivate — always issues temp PW when status is `active` |
 
 ### Key UX Behaviors
 
 - **Outside-click protection**: Modal overlay click is disabled during processing (`isProcessing` state)
 - **Activation checkbox**: When changing from non-active → active, a checkbox appears: "Issue a temporary password"
 - **Temp PW modal**: Cannot be dismissed by clicking outside — must click Close
-- **Inactive users**: Shown with a yellow banner, "Deactivate Account" button is hidden, status dropdown shows a note
+- **Inactive users — two-step reactivation flow**:
+  1. Open Edit modal for an inactive user — a yellow banner explains Steps 1 and 2
+  2. Fields that held anonymized placeholder values (`deactivated_*`, `@deactivated.local`, `"Deactivated User"`) are **cleared to empty** on load and show a **red border + red `*` label** — the admin must type in the real details
+  3. The **Reactivate Account** button stays **disabled and greyed out** until all four required fields (First Name, Last Name, Username, Email) are filled with non-anonymized values; red borders and `*` markers clear as each field becomes valid
+  4. Once valid, the button turns green and becomes clickable — clicking it opens the Reactivate confirm modal
+  5. `Save Details` (step 1) **also validates** all four required fields before submitting — if any are blank or still anonymized it shows an alert and blocks the save. Once saved, the form re-opens with a green confirmation banner so the admin can proceed to click Reactivate Account
 - **Legacy staff migration**: If a user has `role = 'staff'`, the form displays it as `user`
 
 ---
@@ -372,6 +450,7 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 | POST   | `/set-refresh`        | No            | Store refresh token in cookie |
 | POST   | `/refresh`            | No (cookie)   | Exchange cookie for new JWT   |
 | POST   | `/logout`             | No            | Clear refresh cookie          |
+| POST   | `/clear-force-reset`  | JWT           | Clear `must_change_password` after force reset (AUTH-009) |
 
 ### User Routes (`/api/webapp/users/`)
 
@@ -382,7 +461,8 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 | PUT    | `/profiles/:id`               | JWT  | Superadmin | Update user profile                |
 | DELETE | `/profiles/:id`               | JWT  | Superadmin | Hard-delete user                   |
 | POST   | `/profiles/:id/activate-with-temp` | JWT | Superadmin | Activate + issue temp PW     |
-| POST   | `/profiles/:id/deactivate`    | JWT  | Superadmin | Deactivate + archive profile |
+| POST   | `/profiles/:id/deactivate`    | JWT  | Superadmin | Deactivate + archive profile       |
+| POST   | `/profiles/:id/reactivate`    | JWT  | Superadmin | Reactivate inactive account + always issues temp PW when status is `active` |
 
 ---
 
@@ -459,6 +539,50 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
   - Optional chaining (`selectedUser?.id`) used for null safety in the deactivate and reactivate branches.
 - **Files changed**: `src/pages/AccountsAudit/AccountsAudit.jsx`
 
+### UI-008 — Reactivation Form: Clear Anonymized Fields & Validate Before Proceeding (March 8, 2026)
+- **Before**: When an admin opened the Edit modal for a deactivated (inactive) user, the `UserForm` pre-populated its fields with the anonymized placeholder values that were set during deactivation (`Deactivated User`, `deactivated_<id>`, `deactivated_<id>@deactivated.local`). The admin could click **Reactivate Account** immediately without changing anything, and those junk values would be written back to the profile as the user's "real" details.
+- **After**:
+  - A new `isAnonymizedValue()` helper detects placeholder values: anything starting with `deactivated_`, equal to `"deactivated user"`, or ending in `@deactivated.local`.
+  - The `useEffect` that populates the form now **clears any anonymized fields to empty** for inactive users, forcing the admin to consciously enter the real data.
+  - The inactive banner text was updated to explain that fields were cleared and the admin must enter valid values before proceeding.
+  - `handleReactivateClick()` has a secondary validation guard — if any required field is still empty or anonymized when clicked, it shows an alert listing the offending fields and aborts.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
+### UI-009 — Reactivate Button Disabled Until Required Fields Are Valid (March 8, 2026)
+- **Before**: The **Reactivate Account** button was always enabled and green for inactive users, regardless of the form field state. Combined with the UI-008 bug, an admin could attempt to reactivate with blank or anonymized fields — the only guard was an alert dialog shown after clicking.
+- **After**:
+  - A `canReactivate` boolean is computed live from `formData` — it is `true` only when all four required fields (`firstName`, `lastName`, `username`, `email`) are non-empty and do not contain anonymized placeholder values.
+  - The button has `disabled={!canReactivate}`: when disabled it renders grey (`#d1d5db` background, `#9ca3af` text, `cursor: not-allowed`), and when all fields are valid it turns green and becomes clickable.
+  - A `title` tooltip appears on hover when disabled: *"Fill in all required fields with valid values first"*.
+  - The button reacts in real time as the admin types — no extra save step is needed to enable it.
+  - Required fields show a red `*` in their label and a **red border** while empty or anonymized; the border clears as the admin types a valid value.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
+### BUG-002 — Save Details Allowed Blank Fields, Permanently Locking Reactivate Button (March 8, 2026)
+- **Before**: The **Save Details** button (step 1 of the two-step reactivation flow) called `handleSubmit()` with **no validation**. An admin could click it with Username and/or Email left blank — those empty strings would be saved to the database. The form would then reopen with the newly saved (blank) data, `canReactivate` would compute `false`, and the **Reactivate Account** button would remain permanently grayed out with no way to recover other than closing the modal and starting over.
+- **After**:
+  - `handleSubmit()` now checks `isInactive` and, if true, runs the same four-field validation as `handleReactivateClick()` before calling `onSubmit()`.
+  - If any of the four required fields (First Name, Last Name, Username, Email) are blank or contain anonymized placeholder values, an alert lists the offending fields and the save is **blocked** — nothing is sent to the backend.
+  - The red `*` label indicators and red field borders (added in UI-009) give the admin immediate visual feedback on which fields need filling before they even try to save.
+- **Files changed**: `src/components/accounts/UserForm.jsx`
+
+### AUTH-009 — Force Password Reset on First Login (March 8, 2026)
+- **Before**: The backend returned `mustChangePassword: true` (via `must_change_password` on the profile) when a superadmin issued a temp password, but the frontend ignored this flag entirely. Users with temp passwords could log in and navigate the full app indefinitely without ever changing their password — a security gap flagged as item #1 in the TODO list.
+- **After**:
+  - **Login.jsx** reads `profile.must_change_password` from the `GET /webapp/users/profiles/me` response (which is already fetched during login). The redirect guard requires **all three** conditions: `must_change_password === true` **AND** `temp_expires_at` is present **AND** `new Date(temp_expires_at) > new Date()`. This prevents established users from being incorrectly sent to the force-reset page if the flag was ever left stale in the DB (e.g. if the `clear-force-reset` call failed silently on a previous login).
+  - **`src/pages/Auth/ForceResetPassword.jsx`** — new dedicated page:
+    - Fullscreen card layout (same style as `ForgotPassword` / `ResetPassword`, no sidebar)
+    - Password field with `PasswordChecklist` for live strength feedback
+    - Confirm password field to prevent typos
+    - **`persistSession: false` fix**: The Supabase client holds no session by default. Before calling `supabase.auth.updateUser()`, the page calls `supabase.auth.setSession({ access_token: getAccessToken(), refresh_token: "not-used" })` to inject the in-memory JWT. Without this, Supabase throws *"Auth session missing!"*.
+    - If `getAccessToken()` is `null` (hard-refresh lost the token), the user sees *"Session expired. Please log in again."* rather than a cryptic error.
+    - After success, calls `POST /api/auth/clear-force-reset` to clear `must_change_password` + `temp_expires_at` on the profile and logs a `USER_PASSWORD_CHANGED` audit event
+    - Redirects to `/dashboard` after 2 seconds
+  - **`App.jsx`** — registers `/force-reset-password` as a protected route (requires authenticated session, no sidebar/layout wrapper)
+  - **Backend `POST /api/auth/clear-force-reset`** — new endpoint protected by `authJWT`, updates the profile row and logs the audit event
+- **Design decision — redirect vs. prompt**: An inline prompt/banner on the dashboard could be dismissed or ignored. A redirect is non-bypassable and makes the security intent unambiguous.
+- **Files changed**: `src/pages/Auth/ForceResetPassword.jsx` *(new)*, `src/pages/Login/Login.jsx`, `src/App.jsx`, `backend/controllers/authController.js`, `backend/routes/authRoutes.js`
+
 ---
 
 ## What's Still Missing / TODO
@@ -467,7 +591,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 
 | # | Item | Description | Impact |
 |---|------|-------------|--------|
-| 1 | **Password change page/modal** | Backend returns `mustChangePassword: true` on login, but the frontend does NOT have a password change screen yet. Users with temp passwords can log in but are never prompted to set a new one. | Users stay on temp passwords forever — security risk |
+| 1 | ~~**Password change page/modal**~~ | ~~Backend returns `mustChangePassword: true` on login, but the frontend does NOT have a password change screen yet. Users with temp passwords can log in but are never prompted to set a new one.~~ **DONE** — AUTH-009: `/force-reset-password` page implemented. Login.jsx redirects users with `must_change_password = true`. | ~~Users stay on temp passwords forever — security risk~~ |
 | 2 | **DB migration: staff → user** | Frontend maps `staff` → `user` visually, but the database still has `role = 'staff'` on old accounts. Need to run: `UPDATE profiles SET role = 'user' WHERE role = 'staff';` | Backend role checks may not handle `staff` correctly |
 | 3 | **Create User flow** | The "Add a New User" (modal mode `add`) form opens but `confirmAction` has no create handler — the `createUser` controller is commented out. | Superadmins can't create users through the UI |
 | 4 | **Delete User flow** | The delete modal mode exists but `confirmAction` has no `delete` handler wired up. The backend endpoint exists. | Delete button opens confirm but nothing happens on confirm |
@@ -477,7 +601,7 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 | # | Item | Description |
 |---|------|-------------|
 | 5 | **Frontend error toasts** | ~~`confirmAction` catches errors but only logs them to console. No user-visible toast/notification on failure.~~ **PARTIAL** — `alert()` now shows error messages on failure. A proper toast library (e.g., react-hot-toast) would be better UX. |
-| 6 | **Reactivation PII restoration** | When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive. |
+| 6 | **Reactivation PII restoration** | ~~When reactivating a deactivated account, the admin needs to manually re-enter the user's name/email/username since they were anonymized. No auto-restore from audit archive.~~ **DONE** — The Edit modal for inactive users now clears anonymized fields on load, shows red `*` + red border on required fields, validates all four fields before Save Details can proceed, and keeps Reactivate disabled until valid (UI-008, UI-009, BUG-002). Auto-restore from the audit archive is still not implemented (admin must re-type the data). |
 | 7 | **Deactivate Supabase Auth session** | ~~`deactivateUser` sets `status = inactive` in profiles but does NOT revoke the Supabase Auth session.~~ **PARTIAL** — The auth password is now scrambled on deactivation, which prevents future logins. However, if the user has a valid JWT, they could still hit APIs until the token expires (up to 1h). Consider also calling `supabaseAdmin.auth.admin.signOut(id)`. |
 | 8 | **Audit log search** | The search input and status filter exist in the UI but need verification that they work with the new event types and columns. |
 | 9 | **Pagination UX** | Audit logs pagination exists but total count might not account for new event types in filtering. |
@@ -503,24 +627,31 @@ These changes were implemented across tickets AUTH-007, AUTH-008, UI-001 through
 ```
 Backend
 ├── controllers/
-│   ├── authController.js       ← Login, refresh, logout, temp PW expiry check
-│   └── userController.js       ← CRUD, activate-with-temp, deactivate
+│   ├── authController.js       ← Login, refresh, logout, temp PW expiry check, clear-force-reset (AUTH-009)
+│   └── userController.js       ← CRUD, activate-with-temp, deactivate, reactivate
 ├── middleware/
 │   ├── authMiddleware.js       ← JWKS JWT verification
 │   ├── roleMiddleware.js       ← requireSuperadmin (active + superadmin check)
 │   └── statusMiddleware.js     ← requireActiveProfile
 ├── repositories/
-│   ├── userRepository.js       ← Supabase queries for profiles
+│   ├── userRepository.js       ← Supabase queries for profiles (returns must_change_password)
 │   └── auditRepository.js      ← Supabase queries for audit_logging
 ├── routes/
+│   ├── authRoutes.js           ← /login, /set-refresh, /refresh, /logout, /clear-force-reset
 │   └── userRoutes.js           ← Express routes for /profiles/*
 └── utils/
     └── auditLogger.js          ← Fire-and-forget audit insert helper
 
 Frontend
 ├── pages/
+│   ├── Auth/
+│   │   ├── ForceResetPassword.jsx  ← AUTH-009: Force-reset page (no sidebar, fullscreen)
+│   │   ├── ForgotPassword.jsx      ← Email reset link request
+│   │   └── ResetPassword.jsx       ← Reset via email link (Supabase recovery session)
+│   ├── Login/
+│   │   └── Login.jsx               ← Checks must_change_password → redirects (AUTH-009)
 │   └── AccountsAudit/
-│       └── AccountsAudit.jsx   ← Main page, modals, state management
+│       └── AccountsAudit.jsx       ← Main page, modals, state management
 ├── components/
 │   ├── accounts/
 │   │   ├── UserForm.jsx        ← Add/Edit form, deactivate button, reset slot state
@@ -531,6 +662,6 @@ Frontend
 │   └── common/
 │       └── Modal/BaseModal.jsx ← Base modal component
 └── api/
-    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser
+    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser, reactivateUser
     └── authApi.js              ← login, refresh, logout
 ```

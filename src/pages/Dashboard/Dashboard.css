@@ -724,9 +724,10 @@
 }
 
 .top-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
   align-items: center;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .top-head {
@@ -737,16 +738,22 @@
   margin-bottom: 4px;
 }
 
+.top-foot {
+  font-weight: 600;
+  color: #6b7280;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
 /* column widths */
 .col-ssid {
-  flex: 2;
   text-align: left;
 }
 
 .col-risk,
 .col-sev,
 .col-clients {
-  flex: 1;
   text-align: right;
 }
 

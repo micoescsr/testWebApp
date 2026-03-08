@@ -2,7 +2,7 @@
 
 > **Branch:** `securityV2`  
 > **Date:** March 5, 2026  
-> **Last Updated:** March 7, 2026  
+> **Last Updated:** March 8, 2026  
 > **Status:** Phase 1 complete (live data, no mocks)
 
 ---
@@ -130,20 +130,82 @@ All routes are mounted under `/api/dashboard` and require a valid JWT (`Authoriz
 
 ## Database Dependencies
 
-The backend service layer queries the following **Postgres views** (must exist in Supabase):
+The backend service layer queries the following **Postgres views** (defined in `docs/metrics_views.sql` — must exist in Supabase):
 
 | View | Purpose |
 |------|---------|
-| `latest_scan_per_network` | One row per network: the latest COMPLETED `vulnerability_scan` with its `risk_score` and `finished_at`. Used for summary risk gauge and per-network latest-scan info. |
-| `latest_scan_findings` | Findings (from `vulnerabilities_threat` + `vulnerability_threat_details`) joined through both scan tables. Used for severity charts, kind splits, and top-5 issues. |
+| `latest_scan_per_network` | One row per network: the **most recent legacy `scans` row** (by `scan_end`) with its `risk_score` and `finished_at`. Used for the summary risk gauge, per-network last-scan date, and per-network risk score. |
+| `latest_scan_findings` | Findings joined from `vulnerabilities_threat` (deduplicated to latest per `scan_id`/`vt_detail_id`) through the legacy `scans` table, enriched with `vulnerability_threat_details` metadata and `networks` info. Used for severity charts, kind-split donut, top-issues list, and encryption counts. |
+
+> **Important:** Both views are built on the **legacy `scans` table** (bigint PK, `scan_end` timestamp, `risk_score`) as the canonical source — **not** `vulnerability_scans`. The `scans` table is the authoritative scan record; `vulnerability_scans` is no longer used by these views.
+
+### Views — Definition Summary
+
+#### `latest_scan_per_network`
+```sql
+-- Uses DISTINCT ON (network_id) ordered by scans.scan_end DESC
+-- Columns: network_id, scan_id, finished_at (= scan_end), risk_score (COALESCE 0)
+CREATE OR REPLACE VIEW public.latest_scan_per_network AS
+WITH latest_scans AS (
+  SELECT DISTINCT ON (network_id)
+    scan_id, network_id,
+    scan_end AS finished_at, risk_score
+  FROM public.scans
+  WHERE scan_end IS NOT NULL
+  ORDER BY network_id, scan_end DESC
+)
+SELECT ls.network_id, ls.scan_id, ls.finished_at,
+       COALESCE(ls.risk_score, 0) AS risk_score
+FROM latest_scans ls;
+```
+
+#### `latest_scan_findings`
+```sql
+-- 1. latest_legacy_scan CTE: DISTINCT ON (network_id) from scans ordered by scan_end DESC
+-- 2. deduplicated CTE: DISTINCT ON (scan_id, vt_detail_id) from vulnerabilities_threat ordered by created_at DESC
+-- 3. Joins: latest_legacy_scan → deduplicated → vulnerability_threat_details → networks → scans (LEFT)
+-- Columns: network_id, risk_score, ssid, encryption_status, num_clients,
+--          vt_detail_id, vt_name, vt_kind, vt_severity_rating, vt_cvss_base_score, occurrence_count
+```
 
 ### Tables Queried Directly
 
-- `networks` — dropdown list, encryption counts, client counts, risk scores
-- `vulnerability_scans` — scan history, date dropdown, scan-scoped filtering
-- `scans` — legacy scan table (bridged via views for `vulnerabilities_threat` join)
-- `vulnerabilities_threat` — finding rows (scan-scoped path)
-- `vulnerability_threat_details` — severity ratings, CVSS scores, kind classification
+| Table | Used for |
+|-------|----------|
+| `scans` | Scan history (legacy PK: bigint), `scan_end` timestamps, `risk_score`, clients-vs-risk trend |
+| `networks` | Dropdown list, encryption status counts, client counts, risk scores |
+| `vulnerabilities_threat` | Finding rows (deduplicated via `latest_scan_findings` view) |
+| `vulnerability_threat_details` | Severity ratings, CVSS scores, kind classification (`THREAT` / `VULNERABILITY`) |
+
+> `vulnerability_scans` is **no longer queried** by the dashboard service layer. All scan-scoped lookups go through the `scans` table.
+
+### Per-Network Queries (parameterised by `network_id`)
+
+| # | Purpose | Query source |
+|---|---------|-------------|
+| 1 | Last scan date | `SELECT finished_at FROM latest_scan_per_network WHERE network_id = $1` |
+| 2 | Current risk score | `SELECT risk_score FROM latest_scan_per_network WHERE network_id = $1` |
+| 3 | Network encryption | `SELECT encryption_status FROM networks WHERE network_id = $1` |
+| 4 | Connected clients | `SELECT num_clients FROM networks WHERE network_id = $1` |
+| 5 | Total vulnerabilities | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings WHERE network_id = $1 AND vt_kind = 'VULNERABILITY'` |
+| 6 | Total threats | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings WHERE network_id = $1 AND vt_kind = 'THREAT'` |
+| 7 | Threat vs Vuln donut | `GROUP BY vt_kind` on `latest_scan_findings` |
+| 8 | Severity distribution | `GROUP BY vt_severity_rating, vt_kind` on `latest_scan_findings` |
+| 9 | Top high-risk issues | `ORDER BY vt_cvss_base_score DESC LIMIT 5` on `latest_scan_findings` |
+| 10 | Clients vs risk trend | `scans JOIN networks` ordered by `scan_end` (all completed scans for the network) |
+
+### Summary Queries (no network filter)
+
+| # | Purpose | Query source |
+|---|---------|-------------|
+| 11 | Global last scan | `SELECT MAX(scan_end) FROM scans` |
+| 12 | Open networks | `COUNT(*) FROM networks WHERE encryption_status = 'Open'` |
+| 13 | Encrypted networks | `COUNT(*) FROM networks WHERE encryption_status != 'Open'` |
+| 14 | Total findings | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings` |
+| 15 | Total clients | `SUM(num_clients) FROM networks` |
+| 16 | Global avg risk score | `ROUND(AVG(risk_score)) FROM latest_scan_per_network` |
+| 17 | Severity by kind (global) | `GROUP BY vt_severity_rating, vt_kind` on `latest_scan_findings` |
+| 18 | Top 5 high-risk networks | `latest_scan_per_network JOIN networks LEFT JOIN latest_scan_findings GROUP BY … ORDER BY risk_score DESC LIMIT 5` |
 
 ---
 
@@ -232,12 +294,23 @@ node server.js
 
 **Symptom:** The header row (SSID, RISK %, SEVERITIES, CLIENTS) and data rows were misaligned because columns had no fixed widths.
 
-**Root Cause:** `.top-row` used `display: flex; justify-content: space-between` — each `<span>` took only its content width, so columns shifted depending on text length.
+**Root Cause:** `.top-row` used `display: flex` — each `<span>` took only its content width, so columns shifted depending on text length. The `col-ssid`, `col-risk`, `col-sev`, and `col-clients` classes were defined in `Dashboard.css` but never applied to the `<span>` elements in `SummarySection.jsx`.
 
-**Fix (Dashboard.css):**
+**Fix:**
+
+*`src/pages/Dashboard/Dashboard.css`:*
 - Changed `.top-row` from `display: flex` to `display: grid` with `grid-template-columns: 2fr 1fr 1fr 1fr`
-- Added `text-align: right` for all numeric columns (2nd, 3rd, 4th)
+- Removed `flex` properties from `.col-ssid`, `.col-risk`, `.col-sev`, `.col-clients` (no longer needed with grid)
 - Increased row padding from `4px 0` to `6px 0` for better readability
+- Added `.top-foot` class (border-top, padding-top, margin-top) for the "All Networks" footer row
+
+*`src/components/dashboard/SummarySection.jsx`:*
+- Added `className="col-ssid"` to the SSID `<span>` in the header, data rows, and footer row
+- Added `className="col-risk"` (+ `score-link` on data rows) to the RISK % column
+- Added `className="col-sev"` to the SEVERITIES column
+- Added `className="col-clients"` to the CLIENTS column
+
+**Result:** All four columns — header, data rows, and footer — are now perfectly aligned using CSS grid. Numeric columns (RISK %, SEVERITIES, CLIENTS) are right-aligned; SSID is left-aligned and takes twice the width.
 
 ### Fix 2: Total Clients Mismatch Clarification
 
@@ -252,8 +325,8 @@ node server.js
 **Files changed:**
 | File | Change |
 |------|--------|
-| `src/pages/Dashboard/Dashboard.css` | `.top-row`: flex → CSS grid; added `.top-foot` class; right-aligned numeric columns |
-| `src/components/dashboard/SummarySection.jsx` | Renamed stat card label; added "All Networks" total footer row to Top 5 table |
+| `src/pages/Dashboard/Dashboard.css` | `.top-row`: `display: flex` → `display: grid` (`grid-template-columns: 2fr 1fr 1fr 1fr`); padding `4px 0` → `6px 0`; removed `flex` from column classes; added `.top-foot` class |
+| `src/components/dashboard/SummarySection.jsx` | Added `col-ssid`, `col-risk`, `col-sev`, `col-clients` classes to all `<span>` elements in header, data rows, and footer; renamed stat card label; added "All Networks" total footer row |
 
 ---
 

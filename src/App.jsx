@@ -15,6 +15,7 @@ import Profile from "./pages/Profile/Profile";
 import Login from "./pages/Login/Login";
 import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
+import ForceResetPassword from "./pages/Auth/ForceResetPassword";
 
 import TestAuth from "./pages/TestAuth/TestAuth";
 import api, { setAccessToken, getAccessToken } from "./api/axios";
@@ -65,6 +66,18 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+
+          {/* AUTH-009 — Force-reset: accessible only when authenticated, no sidebar */}
+          <Route
+            path="/force-reset-password"
+            element={
+              isAuthenticated ? (
+                <ForceResetPassword />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
 
           {/* Protected routes — redirect to /login if no access token */}
           <Route

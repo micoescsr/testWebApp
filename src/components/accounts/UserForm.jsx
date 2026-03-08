@@ -46,20 +46,38 @@ const UserForm = ({
     status: "active", // Default status
   });
 
+  // UI: Detect anonymized placeholder values set during deactivation
+  const isAnonymizedValue = (value = "") => {
+    const v = value.toLowerCase().trim();
+    return (
+      v.startsWith("deactivated_") ||
+      v === "deactivated user" ||
+      v.endsWith("@deactivated.local")
+    );
+  };
+
   useEffect(() => {
     if (user) {
-      const firstName = user.firstName || user.name?.split(" ")[0] || "";
-      const lastName =
+      const isInactiveUser = (user.status || "").toLowerCase() === "inactive";
+
+      const rawFirst = user.firstName || user.name?.split(" ")[0] || "";
+      const rawLast =
         user.lastName ||
         (user.name?.includes(" ")
           ? user.name.split(" ").slice(1).join(" ")
           : "");
 
+      // Clear anonymized placeholder values so the admin must enter real details
+      const firstName = isInactiveUser && isAnonymizedValue(rawFirst) ? "" : rawFirst;
+      const lastName  = isInactiveUser && isAnonymizedValue(rawLast)  ? "" : rawLast;
+      const username  = isInactiveUser && isAnonymizedValue(user.username) ? "" : (user.username || "");
+      const email     = isInactiveUser && isAnonymizedValue(user.email)    ? "" : (user.email || "");
+
       setFormData({
         firstName,
         lastName,
-        username: user.username || "",
-        email: user.email || "",
+        username,
+        email,
         role: user.role === "staff" ? "user" : (user.role || "user"), // Migrate legacy "staff" → "user"
         status: user.status || "active",
       });
@@ -71,18 +89,61 @@ const UserForm = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Deactivation / reactivation is handled by parent via callbacks
+  const isInactive = (user?.status || "").toLowerCase() === "inactive";
+
   const handleSubmit = () => {
+    // For inactive users, validate required fields before saving —
+    // blank fields would get written to the DB and leave Reactivate permanently grayed out.
+    if (isInactive) {
+      const requiredFields = [
+        { key: "firstName", label: "First Name" },
+        { key: "lastName",  label: "Last Name" },
+        { key: "username",  label: "Username" },
+        { key: "email",     label: "Email" },
+      ];
+      const missing = requiredFields.filter(
+        (f) => !formData[f.key]?.trim() || isAnonymizedValue(formData[f.key])
+      );
+      if (missing.length > 0) {
+        alert(
+          `Please fill in the following fields before saving:\n• ${missing
+            .map((f) => f.label)
+            .join("\n• ")}`
+        );
+        return;
+      }
+    }
+
     onSubmit({
       ...formData,
       name: `${formData.firstName} ${formData.lastName}`.trim(),
     });
   };
 
-  // Deactivation / reactivation is handled by parent via callbacks
-  const isInactive = (user?.status || "").toLowerCase() === "inactive";
-
   // Gather form data for reactivation (passes edited fields to parent)
   const handleReactivateClick = () => {
+    // Guard: all required fields must be filled with real (non-anonymized) values
+    const requiredFields = [
+      { key: "firstName", label: "First Name" },
+      { key: "lastName",  label: "Last Name" },
+      { key: "username",  label: "Username" },
+      { key: "email",     label: "Email" },
+    ];
+
+    const missing = requiredFields.filter(
+      (f) => !formData[f.key]?.trim() || isAnonymizedValue(formData[f.key])
+    );
+
+    if (missing.length > 0) {
+      alert(
+        `Please provide valid values for the following fields before reactivating:\n• ${missing
+          .map((f) => f.label)
+          .join("\n• ")}`
+      );
+      return;
+    }
+
     if (onReactivate) {
       onReactivate({
         ...formData,
@@ -115,12 +176,15 @@ const UserForm = ({
             <>
               <strong>This account is deactivated.</strong>
               <p style={{ margin: '4px 0 0' }}>
-                <strong>Step 1:</strong> Update the user details below (name, email, username, role), then click
+                The original profile data was anonymized for security. Fields have been cleared —
+                please enter the real name, email, username, and role for this user.
+              </p>
+              <p style={{ margin: '4px 0 0' }}>
+                <strong>Step 1:</strong> Fill in the fields below with valid details, then click
                 <em> Save Details</em> to save the profile changes.
               </p>
               <p style={{ margin: '4px 0 0' }}>
-                <strong>Step 2:</strong> Click <em>Reactivate Account</em> to restore login access and optionally
-                issue a temporary password.
+                <strong>Step 2:</strong> Click <em>Reactivate Account</em> to restore login access and issue a temporary password.
               </p>
             </>
           )}
@@ -159,38 +223,54 @@ const UserForm = ({
 
       <div className="form-row" style={{ display: 'flex', gap: '15px' }}>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>First Name</label>
+          <label>
+            First Name
+            {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+          </label>
           <input
             name="firstName"
             value={formData.firstName}
             onChange={handleChange}
+            style={isInactive && (!formData.firstName?.trim() || isAnonymizedValue(formData.firstName)) ? { borderColor: '#dc2626' } : {}}
           />
         </div>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>Last Name</label>
+          <label>
+            Last Name
+            {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+          </label>
           <input
             name="lastName"
             value={formData.lastName}
             onChange={handleChange}
+            style={isInactive && (!formData.lastName?.trim() || isAnonymizedValue(formData.lastName)) ? { borderColor: '#dc2626' } : {}}
           />
         </div>
       </div>
 
       <div className="form-group">
-        <label>Username</label>
+        <label>
+          Username
+          {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+        </label>
         <input
           name="username"
           value={formData.username}
           onChange={handleChange}
+          style={isInactive && (!formData.username?.trim() || isAnonymizedValue(formData.username)) ? { borderColor: '#dc2626' } : {}}
         />
       </div>
 
       <div className="form-group">
-        <label>Email</label>
+        <label>
+          Email
+          {isInactive && <span style={{ color: '#dc2626', marginLeft: '3px' }}>*</span>}
+        </label>
         <input
           name="email"
           value={formData.email}
           onChange={handleChange}
+          style={isInactive && (!formData.email?.trim() || isAnonymizedValue(formData.email)) ? { borderColor: '#dc2626' } : {}}
         />
       </div>
 
@@ -221,31 +301,39 @@ const UserForm = ({
           </div>
         )}
         {/* For inactive users, show Reactivate button */}
-        {currentUserRole === 'superadmin' && user && isInactive && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: 'auto' }}>
-            <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
-              Account deactivated
-            </span>
-            <button
-              type="button"
-              className="reactivate-btn"
-              style={{
-                fontSize: '0.8rem',
-                textAlign: 'left',
-                padding: '6px 12px',
-                background: '#059669',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
-              onClick={handleReactivateClick}
-            >
-              Reactivate Account
-            </button>
-          </div>
-        )}
+        {currentUserRole === 'superadmin' && user && isInactive && (() => {
+          const requiredFields = ["firstName", "lastName", "username", "email"];
+          const canReactivate = requiredFields.every(
+            (k) => formData[k]?.trim() && !isAnonymizedValue(formData[k])
+          );
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: 'auto' }}>
+              <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
+                Account deactivated
+              </span>
+              <button
+                type="button"
+                className="reactivate-btn"
+                disabled={!canReactivate}
+                title={!canReactivate ? "Fill in all required fields with valid values first" : ""}
+                style={{
+                  fontSize: '0.8rem',
+                  textAlign: 'left',
+                  padding: '6px 12px',
+                  background: canReactivate ? '#059669' : '#d1d5db',
+                  color: canReactivate ? '#fff' : '#9ca3af',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: canReactivate ? 'pointer' : 'not-allowed',
+                  fontWeight: 600,
+                }}
+                onClick={handleReactivateClick}
+              >
+                Reactivate Account
+              </button>
+            </div>
+          );
+        })()}
 
         <div style={{ display: "flex", gap: "10px" }}>
           <button className="cancel-btn" onClick={onCancel}>

@@ -268,3 +268,44 @@ exports.logout = async (req, res) => {
   return res.json({ ok: true });
 };
 
+// ── POST /api/auth/clear-force-reset ───────────────────
+// AUTH-009: Called by ForceResetPassword page after the user has successfully
+// updated their password. Clears must_change_password + temp_expires_at on the
+// profile so the flag does not persist on the next login.
+// Requires a valid JWT (Bearer from memory).
+exports.clearForceReset = async (req, res) => {
+  try {
+    const currentUser = req.user;
+    if (!currentUser?.id) {
+      return res.status(401).json({ error: "No authenticated user" });
+    }
+
+    const { error } = await supabaseClient
+      .from("profiles")
+      .update({
+        must_change_password: false,
+        temp_expires_at: null,
+      })
+      .eq("id", currentUser.id);
+
+    if (error) {
+      console.error("clear-force-reset profileError:", error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    await logAuditEvent({
+      req,
+      actorId: currentUser.id,
+      eventName: "USER_PASSWORD_CHANGED",
+      eventStatus: "SUCCESS",
+      entityType: "AUTH",
+      entityIdUuid: currentUser.id,
+    }).catch(() => {});
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("clear-force-reset error:", e);
+    return res.status(500).json({ error: e.message });
+  }
+};
+
