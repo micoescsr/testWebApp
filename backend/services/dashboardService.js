@@ -312,13 +312,15 @@ async function getNetworkDashboardByScan(networkId, scanId) {
     throw err;
   }
 
-  // Find the legacy scans row closest to this vulnerability_scan's finished_at
-  // so we can join vulnerabilities_threat
+  // Find the legacy scans row whose scan_end is closest to (and at or before)
+  // this vulnerability_scan's finished_at, so we can join vulnerabilities_threat
+  // and read the correct risk_score for the selected scan date.
   const { data: legacyScan, error: legErr } = await supabaseClient
     .from("scans")
-    .select("scan_id")
+    .select("scan_id, risk_score")
     .eq("network_id", networkId)
-    .order("created_at", { ascending: false })
+    .lte("scan_end", scanRow.finished_at)
+    .order("scan_end", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -390,10 +392,12 @@ async function getNetworkDashboardByScan(networkId, scanId) {
   // Scan list for dropdown
   const scanList = await getScansForNetwork(networkId);
 
-  // Shape the scan row like what shapeNetworkResponse expects
+  // Shape the scan row like what shapeNetworkResponse expects.
+  // Prefer the legacy scans.risk_score (always populated) over
+  // vulnerability_scans.scan_risk_score (often null).
   const latestScanData = {
     finished_at: scanRow.finished_at,
-    risk_score: scanRow.scan_risk_score ?? 0,
+    risk_score: legacyScan?.risk_score ?? scanRow.scan_risk_score ?? 0,
   };
 
   return shapeNetworkResponse(

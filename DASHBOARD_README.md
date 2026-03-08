@@ -1,9 +1,49 @@
 # Dashboard Module — Phase 1 Changes
 
-> **Branch:** `securityV2`  
+> **Branch:** `security`  
 > **Date:** March 5, 2026  
 > **Last Updated:** March 8, 2026  
 > **Status:** Phase 1 complete (live data, no mocks)
+
+---
+
+## Recent Updates (March 8, 2026)
+
+### Bug Fix: Risk Score Always 0 When Selecting a Specific Date
+
+**Symptom:** In the per-network view, selecting any specific date from the DATE dropdown showed a Wi-Fi Security Risk Score of **0**, even though the `scans` table clearly held a non-zero `risk_score` for that scan. Switching back to "Latest" correctly displayed the real score.
+
+**Root Cause — Two compounding problems in `getNetworkDashboardByScan` (`backend/services/dashboardService.js`):**
+
+1. **Wrong risk score source.** The code read the risk score from `vulnerability_scans.scan_risk_score`, which is `null` for virtually every row — nothing writes to that column. The authoritative risk score is stored in the **legacy `scans` table** as `risk_score`. The "Latest" path works because `getNetworkDashboardLatest` queries the `latest_scan_per_network` Postgres view, which is built on the `scans` table.
+
+2. **Wrong legacy scan lookup.** When resolving the matching `scans` row for a date-filtered request, the code used:
+   ```js
+   // ❌ BUG: always returns the most recent legacy scan, ignoring the selected date
+   .order("created_at", { ascending: false }).limit(1)
+   ```
+   This meant every date selection resolved to the same (newest) legacy scan, giving both the wrong risk score **and** potentially the wrong findings.
+
+**Fix (`backend/services/dashboardService.js` — `getNetworkDashboardByScan`):**
+
+*Legacy scan lookup* — now finds the `scans` row whose `scan_end` is at or before the selected scan's `finished_at`, giving the temporally correct row:
+```js
+// ✅ FIX: match by date proximity, not just "most recent"
+.select("scan_id, risk_score")
+.eq("network_id", networkId)
+.lte("scan_end", scanRow.finished_at)
+.order("scan_end", { ascending: false })
+.limit(1)
+```
+
+*Risk score* — now reads `scans.risk_score` (always populated) with `vulnerability_scans.scan_risk_score` as a fallback:
+```js
+// ✅ FIX: use the legacy scans.risk_score, not the (null) vulnerability_scans column
+risk_score: legacyScan?.risk_score ?? scanRow.scan_risk_score ?? 0,
+```
+
+**Files changed:**
+- `backend/services/dashboardService.js` — `getNetworkDashboardByScan` function
 
 ---
 
@@ -172,27 +212,31 @@ FROM latest_scans ls;
 
 | Table | Used for |
 |-------|----------|
-| `scans` | Scan history (legacy PK: bigint), `scan_end` timestamps, `risk_score`, clients-vs-risk trend |
+| `scans` | Scan history (legacy PK: bigint), `scan_end` timestamps, `risk_score`, clients-vs-risk trend; **authoritative source for risk scores** |
 | `networks` | Dropdown list, encryption status counts, client counts, risk scores |
 | `vulnerabilities_threat` | Finding rows (deduplicated via `latest_scan_findings` view) |
 | `vulnerability_threat_details` | Severity ratings, CVSS scores, kind classification (`THREAT` / `VULNERABILITY`) |
-
-> `vulnerability_scans` is **no longer queried** by the dashboard service layer. All scan-scoped lookups go through the `scans` table.
+| `vulnerability_scans` | Scan list for the DATE dropdown; ownership/status validation for date-filtered requests (UUID PK, `scan_risk_score` is unreliable — `scans.risk_score` is used instead) |
 
 ### Per-Network Queries (parameterised by `network_id`)
 
-| # | Purpose | Query source |
-|---|---------|-------------|
-| 1 | Last scan date | `SELECT finished_at FROM latest_scan_per_network WHERE network_id = $1` |
-| 2 | Current risk score | `SELECT risk_score FROM latest_scan_per_network WHERE network_id = $1` |
-| 3 | Network encryption | `SELECT encryption_status FROM networks WHERE network_id = $1` |
-| 4 | Connected clients | `SELECT num_clients FROM networks WHERE network_id = $1` |
-| 5 | Total vulnerabilities | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings WHERE network_id = $1 AND vt_kind = 'VULNERABILITY'` |
-| 6 | Total threats | `COUNT(DISTINCT vt_detail_id) FROM latest_scan_findings WHERE network_id = $1 AND vt_kind = 'THREAT'` |
-| 7 | Threat vs Vuln donut | `GROUP BY vt_kind` on `latest_scan_findings` |
-| 8 | Severity distribution | `GROUP BY vt_severity_rating, vt_kind` on `latest_scan_findings` |
-| 9 | Top high-risk issues | `ORDER BY vt_cvss_base_score DESC LIMIT 5` on `latest_scan_findings` |
-| 10 | Clients vs risk trend | `scans JOIN networks` ordered by `scan_end` (all completed scans for the network) |
+The per-network path has **two sub-paths** depending on whether a `scanId` is provided:
+
+- **Latest (no `scanId`):** uses `latest_scan_per_network` and `latest_scan_findings` views.
+- **Date-filtered (`?scanId=<uuid>`):** validates against `vulnerability_scans`, then resolves the matching `scans` row by date proximity (`scan_end ≤ finished_at`) to read the correct `risk_score` and findings.
+
+| # | Purpose | Query source (Latest) | Query source (Date-filtered) |
+|---|---------|----------------------|------------------------------|
+| 1 | Last scan date | `finished_at` from `latest_scan_per_network` | `finished_at` from `vulnerability_scans` row |
+| 2 | Risk score | `risk_score` from `latest_scan_per_network` | `risk_score` from matching `scans` row (`scan_end ≤ finished_at`) |
+| 3 | Network encryption | `encryption_status` from `networks` | `encryption_status` from `networks` |
+| 4 | Connected clients | `num_clients` from `networks` | `num_clients` from `networks` |
+| 5 | Total vulnerabilities | `COUNT(DISTINCT vt_detail_id)` from `latest_scan_findings WHERE vt_kind = 'VULNERABILITY'` | Count from `vulnerabilities_threat` for matched `scans` row |
+| 6 | Total threats | `COUNT(DISTINCT vt_detail_id)` from `latest_scan_findings WHERE vt_kind = 'THREAT'` | Count from `vulnerabilities_threat` for matched `scans` row |
+| 7 | Threat vs Vuln donut | `GROUP BY vt_kind` on `latest_scan_findings` | `GROUP BY vt_kind` on `vulnerabilities_threat` for matched `scans` row |
+| 8 | Severity distribution | `GROUP BY vt_severity_rating, vt_kind` on `latest_scan_findings` | Same, via `vulnerability_threat_details` join |
+| 9 | Top high-risk issues | `ORDER BY vt_cvss_base_score DESC LIMIT 5` on `latest_scan_findings` | `ORDER BY vt_cvss_base_score DESC LIMIT 5` from `vulnerability_threat_details` join |
+| 10 | Clients vs risk trend | `vulnerability_scans JOIN networks` ordered by `finished_at` (all completed scans) | Same (always all scans, not date-scoped) |
 
 ### Summary Queries (no network filter)
 
