@@ -158,17 +158,39 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 11. Update DB: ap_enabled=true, last_scan_id, last_scan_finished_at
 12. Audit: AP_STATUS_CHANGE (SUCCESS)
 13. finally: releaseApLock()
+
+Note: piFetch timeout for orchestrate/apply is 60 seconds (not the default 10s).
+If a timeout (502/503/504) occurs, the catch block reconciles by polling /device/status.
 ```
+
+### Timeout Reconciliation (Enable & Disable)
+
+The Pi's `orchestrate/apply` can take 30–60+ seconds. If the request times out the AP may have actually succeeded. The catch block handles this:
+
+```
+piFetch('/orchestrate/apply', { timeoutMs: 60_000 }) → 502/503/504
+    │
+    ▼
+piFetch('/device/status', { timeoutMs: 8_000 })
+    │
+    ├─ Pi reachable → read actual AP state → UPDATE networks.ap_enabled → return 200 { reconciled: true, ap_enabled }
+    │
+    └─ Pi unreachable → fall through to normal error response { timeout: true }
+```
+
+This prevents the DB and Pi from going out of sync after a timeout.
 
 ### Flow (Disable)
 
 ```
 1. Load + validateNetworkConfig()
 2. Set ap_apply_in_progress = true
-3. POST FastAPI /orchestrate/apply (disable payload)
+3. POST FastAPI /orchestrate/apply (disable payload) [timeoutMs: 60s]
 3b. classifyOrchestrateError(fastapiData)       → Structured 422 error if status:"ERROR"
 4. Update DB: ap_enabled=false
 5. finally: releaseApLock()
+
+Note: Same timeout reconciliation applies — on 502/503/504, polls /device/status.
 ```
 
 ### Key Design Decisions
@@ -176,6 +198,7 @@ Builds the JSON payload for FastAPI `/portal/patch` from DB data.
 - **`httpError(status, code, message, extra)`** — Typed error helper. Throw anywhere; catch block reads `.status`, `.code`, `.extra` to build response.
 - **`classifyOrchestrateError(fastapiData)`** — Parses FastAPI `orchestrate/apply` responses where HTTP is 200 but `status: "ERROR"`. Maps `user_message` patterns to structured error codes (see [Orchestrate Error Codes](#orchestrate-error-codes-fastapi-status-error)). Returns `null` if response is not an error.
 - **`releaseApLock()`** — Always runs in `finally` block. Logs but never throws.
+- **Timeout reconciliation** — On 502/503/504 from `piFetch`, the catch block polls `GET /device/status` (8s timeout) to check the Pi's actual AP state. If reachable, updates `ap_enabled` in DB to match and returns `200 { reconciled: true }` instead of an error. If unreachable, falls through to the normal error response with `timeout: true`.
 - **`logFastApiCall()`** — Logs method, URL, payload, response status + body for debugging.
 - **`logAuditEvent()`** — Fire-and-forget. Maps `SUCCESS→OK`, `FAILED→FAIL`, `DENIED→DENY` for the DB enum.
 - **`risk_score_version` re-read** — After portal init patch, re-reads version from DB before stamping to avoid race conditions.
@@ -383,7 +406,7 @@ After threat rows are inserted and `scans.risk_score` is updated:
 | Method | When Called | What It Does |
 |--------|------------|--------------|
 | `fetchAdminState()` | Mount, after mutations, every 12s | Calls `getNetworkState()`, updates all derived state |
-| `handleToggleAccessPoint(password)` | User clicks toggle | Calls `toggleAP()`, refreshes state on success, maps all error codes on failure |
+| `handleToggleAccessPoint(password)` | User clicks toggle | Calls `toggleAP()`, refreshes state on success, maps all error codes on failure. Handles `reconciled: true` responses. On 502/503/504 gateway timeouts, polls admin state at 5s and 15s to self-correct. |
 | `handleUpdatePortal()` | User clicks "Update Portal" | Calls `updatePortal(networkId, 'risk', { risk: { bucket } }, 'manual_update')`, refreshes state |
 
 #### Polling
@@ -559,6 +582,7 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 | `REQUEST_IN_PROGRESS` | 409 | `ap_apply_in_progress` lock held |
 | `FASTAPI_APPLY_FAILED` | 502 | FastAPI `/orchestrate/apply` HTTP error |
 | `PORTAL_PATCH_FAILED` | 502 | FastAPI `/portal/patch` failed (init) |
+| `AP_TOGGLE_FAILED` | 502–504 | Timeout/gateway error (check `timeout: true` flag) |
 
 ### Orchestrate Error Codes (FastAPI status: "ERROR")
 
@@ -574,6 +598,8 @@ These are returned as HTTP 422 when FastAPI returns `200 OK` but with `status: "
 | `PI_NETWORK_CONFLICT` | `rejected` | No | No | `matches the Pi's management network` |
 | `DEVICE_BUSY` | `busy` | Yes | No | `Busy:` / `wifi_ops_lock` |
 | `INVALID_PAYLOAD` | `validation` | No | No | `Invalid payload` |
+| `DEVICE_EXCEPTION` | `internal` | Yes | No | `Exception:` |
+| `UPLINK_DISCONNECTED` | `connection` | Yes | No | `Uplink disconnected` |
 | `CONNECTION_FAILED` | `connection` | Yes | No | `Couldn't connect` (generic — weak signal, timeout) |
 | `ORCHESTRATE_ERROR` | `unknown` | No | No | Catch-all for unrecognized error messages |
 
@@ -748,9 +774,14 @@ WHERE ap_apply_in_progress = true;
 | Encryption type mismatch | `ENCRYPTION_MISMATCH` | 422 | No (needs rescan) |
 | Pi management network | `PI_NETWORK_CONFLICT` | 422 | No |
 | Device busy / lock timeout | `DEVICE_BUSY` | 422 | Yes |
+| Internal Pi exception | `DEVICE_EXCEPTION` | 422 | Yes |
+| Uplink disconnected | `UPLINK_DISCONNECTED` | 422 | Yes |
 | Weak signal / can't connect | `CONNECTION_FAILED` | 422 | Yes |
+| Gateway timeout (Pi slow) | `AP_TOGGLE_FAILED` | 502–504 | Yes (auto-reconciles) |
 
 **Key behavior:** On any orchestrate error, `ap_enabled` is NOT set to `true` in the DB. The frontend receives the structured error and can prompt the user accordingly (e.g., "Network data is outdated, run a new scan" for `needs_rescan: true`).
+
+**Timeout behavior:** On gateway timeouts (502/503/504), the backend attempts to reconcile by polling `/device/status`. If the Pi confirms the AP is on/off, the DB is updated to match and the frontend receives `{ reconciled: true }`. If the Pi is also unreachable, the frontend polls admin state at 5s and 15s to self-correct once the backend finishes.
 
 ---
 
@@ -760,7 +791,7 @@ WHERE ap_apply_in_progress = true;
 
 | File | Changes |
 |------|---------|
-| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook, `classifyOrchestrateError()` for FastAPI error parsing |
+| `backend/routes/deviceMgmtRoutes.js` | Full AP lifecycle, admin state endpoint, portal partial update, scan webhook, `classifyOrchestrateError()` for FastAPI error parsing, timeout reconciliation via `/device/status` polling, 60s `piFetch` timeout for `orchestrate/apply` |
 | `backend/utils/riskPipeline.js` | **New file** — bucket computation, version bumping, auto-portal patching, scan/threat hooks |
 | `backend/utils/scanValidation.js` | Pure scan validation functions, network config validation, password validation, portal payload builder |
 | `backend/utils/auditLogger.js` | Fire-and-forget audit logging (unchanged, consumed by new code) |
@@ -772,9 +803,9 @@ WHERE ap_apply_in_progress = true;
 
 | File | Changes |
 |------|---------|
-| `src/hooks/useDevice.js` | Full rewrite — consumes `getNetworkState`, adds polling, portal update, admin state |
+| `src/hooks/useDevice.js` | Full rewrite — consumes `getNetworkState`, adds polling, portal update, admin state, timeout reconciliation (handles `reconciled: true` + 502/503/504 delayed polling) |
 | `src/components/device/AccessPointPanel.jsx` | Full rewrite — deterministic banners via `computeBanner()`, risk badge, Update Portal button |
-| `src/pages/DeviceManagement/DeviceManagement.jsx` | Wired new props: `adminState`, `handleUpdatePortal`, `refetchState` |
+| `src/pages/DeviceManagement/DeviceManagement.jsx` | Wired new props: `adminState`, `handleUpdatePortal`, `refetchState`. Retry button calls both `refetch()` + `refetchState()` |
 | `src/pages/DeviceManagement/DeviceManagement.css` | Added scoped styles for `.info-state`, `.warning-state`, `.risk-badge`, `.risk-*` |
 | `src/api/deviceApi.js` | Added `getNetworkState()`, `updatePortal()` |
 

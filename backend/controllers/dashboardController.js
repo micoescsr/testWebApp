@@ -11,10 +11,10 @@ exports.getSummary = async (req, res) => {
     const data = await dashboardService.getSummaryData();
     return res.json(data);
   } catch (err) {
-    console.error("[dashboard/summary]", err.message);
+    console.error("[dashboard/summary]", err);
     return res
-      .status(err.status || 500)
-      .json({ error: err.message || "Failed to load summary" });
+      .status(500)
+      .json({ error: "Failed to load summary" });
   }
 };
 
@@ -24,10 +24,10 @@ exports.getNetworks = async (req, res) => {
     const data = await dashboardService.getNetworksList();
     return res.json(data);
   } catch (err) {
-    console.error("[dashboard/networks]", err.message);
+    console.error("[dashboard/networks]", err);
     return res
-      .status(err.status || 500)
-      .json({ error: err.message || "Failed to load networks" });
+      .status(500)
+      .json({ error: "Failed to load networks" });
   }
 };
 
@@ -43,10 +43,10 @@ exports.getNetwork = async (req, res) => {
     );
     return res.json(data);
   } catch (err) {
-    console.error("[dashboard/network]", err.message);
+    console.error("[dashboard/network]", err);
     return res
-      .status(err.status || 500)
-      .json({ error: err.message || "Failed to load network dashboard" });
+      .status(500)
+      .json({ error: "Failed to load network dashboard" });
   }
 };
 
@@ -57,9 +57,9 @@ exports.getScans = async (req, res) => {
     const data = await dashboardService.getScansForNetwork(networkId);
     return res.json(data);
   } catch (err) {
-    console.error("[dashboard/scans]", err.message);
+    console.error("[dashboard/scans]", err);
     return res
-      .status(err.status || 500)
-      .json({ error: err.message || "Failed to load scans" });
+      .status(500)
+      .json({ error: "Failed to load scans" });
   }
 };

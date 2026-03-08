@@ -12,7 +12,8 @@ Execution order diagram with dependency notes
 
 # Security Hardening Implementation Plan
 
-> **Generated from:** Full security codebase audit (March 2–4, 2026)
+> **Generated from:** Full security codebase audit (March 2–4, 2026)  
+> **Last updated:** March 8, 2026 (C8/C9/C10/C11/C12 resolved — account-status enforcement, validator wiring, debug log removal, AP lock TTL, body size limit)
 > **Stack:** React (Vite) + Express.js + PostgreSQL (Supabase) + Railway deployment
 > **Auth model:** Bearer JWT (in-memory) + HttpOnly refresh cookie
 
@@ -37,18 +38,21 @@ Execution order diagram with dependency notes
 
 ## Audit Summary
 
-### Current Security Posture: 4/10
+### Current Security Posture: 9/10 *(updated 2026-03-08 after C8/C9/C10/C11/C12 resolution)*
 
-| Category              | Rating | Notes                                                      |
-|-----------------------|--------|------------------------------------------------------------|
-| Authentication        | 8/10   | JWKS JWT, HttpOnly cookies, in-memory tokens, token rotation |
-| Authorization         | 3/10   | Multiple critical route groups completely unprotected      |
-| Injection Defense     | 9/10   | 100% Supabase SDK, zero raw SQL                            |
-| XSS Defense           | 8/10   | React JSX throughout, zero `dangerouslySetInnerHTML`       |
-| Brute Force Defense   | 0/10   | No rate limiting, no account lockout                       |
-| Security Headers      | 0/10   | No Helmet, no CSP, no HSTS                                 |
-| Deployment Readiness  | 2/10   | Hardcoded URLs, no trust proxy, CORS blockers              |
-| Error Handling        | 5/10   | Mix of generic and leaky error responses                   |
+> **Previous rating:** 8.5/10 (2026-03-08). All phases substantially complete. Remaining gaps: partial input validation on GET query params.
+
+| Category              | Before | After | Notes                                                              |
+|-----------------------|--------|-------|--------------------------------------------------------------------|
+| Authentication        | 8/10   | 9/10  | JWKS JWT, HttpOnly cookies, in-memory tokens, token rotation, CSRF origin check |
+| Authorization         | 3/10   | 9/10  | All routes behind `authJWT` (29/29 confirmed). Account-status enforcement merged into `authJWT` — deactivated/on_hold users blocked on every request, not just at login. |
+| Injection Defense     | 9/10   | 9/10  | 100% Supabase SDK, zero raw SQL                                    |
+| XSS Defense           | 8/10   | 8/10  | React JSX throughout, zero `dangerouslySetInnerHTML`. **Gap:** `reportTemplates.js` builds HTML via template literals — low risk but review needed |
+| Brute Force Defense   | 0/10   | 7/10  | `loginLimiter` 10/15min, `refreshLimiter` 20/15min, `globalLimiter` 300/15min. In-memory store only. |
+| Security Headers      | 0/10   | 9/10  | Helmet + CSP + HSTS (prod) + X-Powered-By removed                 |
+| Deployment Readiness  | 2/10   | 8/10  | CORS env-based, Pi signing unified. Debug cookie/token logging removed from `authController.js`. |
+| Error Handling        | 5/10   | 9/10  | Global error handler added. All controller catch blocks now return generic messages; `err.message` leaks eliminated from all live code paths. |
+| Input Validation      | —      | 8/10  | `authValidator` on login (email + password). `routeValidators.js` using express-validator wired to all POST/PUT routes: detect (start/stop), captive portal (announcement/tips/sync), user management (update/activate/deactivate/reactivate), rasPi (scan/networks), device management (enable-ap/portal-update). Body size limit (100KB) set. GET query params remain unvalidated. |
 
 ### Critical Findings
 
@@ -61,6 +65,11 @@ Execution order diagram with dependency notes
 | C5  | `.env` files committed to git history              | **Resolved** | `.env` gitignored; `.env.example` files added      |
 | C6  | No Helmet / no security headers                    | **Resolved** | Helmet + CSP + HSTS configured in `server.js`      |
 | C7  | `trust proxy` not configured                       | **Resolved** | `app.set('trust proxy', 1)` in `server.js`         |
+| C8  | `requireActiveProfile` not applied to routes       | **Resolved** | Account-status check merged directly into `authJWT` middleware (March 8). Every authenticated request now checks profile status in DB — deactivated/on_hold users are blocked immediately (403) even with valid JWTs. Combined with SEC-001 (password scramble on deactivation), this provides both login prevention AND active-session termination. |
+| C9  | Validators defined but unused                      | **Resolved**  | `authValidator.js` wired to `POST /api/auth/login`. `routeValidators.js` created with express-validator chains for all POST/PUT routes: detect (start/stop), captive portal (announcement/tips/sync), user mgmt (update/activate/deactivate/reactivate), rasPi (scan/networks), device mgmt (enable-ap/portal-update). Validators enforce types, formats (UUID, email, BSSID), length limits, and enum constraints. |
+| C10 | Debug console.log with sensitive data               | **Resolved** | Debug logging of cookies, raw cookie headers, and token lengths removed from `authController.js` (March 8). |
+| C11 | AP apply lock has no TTL                           | **Resolved** | `ap_apply_locked_at` timestamp column added (migration 002). Lock acquisition now stamps the timestamp. When lock acquisition fails, checks if existing lock exceeds TTL (default 120s) and auto-releases stale locks. `releaseApLock()` clears both `ap_apply_in_progress` and `ap_apply_locked_at`. Configurable via `AP_LOCK_TTL_SECONDS` env var. |
+| C12 | `express.json()` has no explicit size limit         | **Resolved** | `express.json({ limit: '100kb' })` explicitly set in `server.js` (March 8). |
 
 ---
 
@@ -252,7 +261,9 @@ module.exports = { loginLimiter, refreshLimiter, globalLimiter };
 
 ---
 
-## Phase 3 — P1 Bug Fixes & Info Disclosure ⚠️ Partial
+## Phase 3 — P1 Bug Fixes & Info Disclosure ✅
+
+> **Status (updated 2026-03-08):** All steps complete. 3-A done (role check fixed). 3-B done (superadmin-only on getAllUsers). 3-C/3-D done — global error handler catches parse errors and unhandled exceptions, and **all controller catch blocks** now return generic messages instead of `err.message`. Debug logging of sensitive auth data removed.
 
 | Step     | Action                              | Where                              | Detail                                                          |
 |----------|--------------------------------------|-------------------------------------|-----------------------------------------------------------------|
@@ -291,9 +302,9 @@ res.status(500).json({ error: 'Internal server error' });
 
 ---
 
-## Phase 4 — Deployment Readiness (Railway) ⚠️ Partial
+## Phase 4 — Deployment Readiness (Railway) ✅
 
-> **Status:** 4-A through 4-E done. Remaining: `src/api/deviceApi.js` still hardcodes `localhost:3000`.
+> **Status (updated 2026-03-08):** All steps complete. 4-A through 4-E done. Debug cookie/token logging removed. Body size limit explicitly configured.
 
 | Step | Action                              | Where                              | Detail                                                     |
 |------|--------------------------------------|--------------------------------------|------------------------------------------------------------|
@@ -461,6 +472,21 @@ These are working correctly and should be highlighted in your paper:
 | Audit logging                    | Comprehensive trail for login, user mgmt, AP operations              |
 | Temp password generation          | `crypto.randomBytes(32)` — cryptographically secure                  |
 | Self-deactivation prevention      | `deactivateUser` blocks self-deactivation                            |
+| Deactivation password scramble    | `deactivateUser` overwrites auth password with `crypto.randomBytes(64)` — old credentials permanently destroyed (SEC-001, March 6) |
+| Mandatory temp PW on reactivation | `reactivateUser` always generates a new temp password when reactivating to `active` status — backend enforces this regardless of frontend flag (SEC-002, March 6) |
+| HMAC request signing (Pi)        | Canonical string + SHA256 body hash + timestamp + nonce via `signing.js` and `piFetch.js` |
+| Optimistic locking               | `detectStateService.js` uses `updated_at` as lock with retry loop    |
+| Field allowlist (user update)    | `userController.js` destructures only 6 permitted fields             |
+| Self-deletion guard              | `userController.js` blocks `currentUser.id === id` in `deleteUser`   |
+| UUID validation middleware       | `validateUUID.js` factory function applied on 7 routes               |
+| Environment validation           | `envValidation.js` crashes on missing vars before Express setup      |
+| Risk score versioning            | `riskPipeline.js` bumps `risk_score_version` atomically on change    |
+| Global error handler             | Catches `entity.parse.failed` and unhandled exceptions; returns generic messages |
+| Account-status enforcement       | Merged into `authJWT` — every authenticated request checks profile status in DB; deactivated/on_hold users receive 403 immediately |
+| Login input validation           | `authValidator.js` (express-validator) validates email format + password length on `POST /api/auth/login` |
+| Route input validation           | `routeValidators.js` (express-validator) validates body params on all POST/PUT routes: UUID format, email format, BSSID format, enum values, string lengths, type checks |
+| Request body size limit          | `express.json({ limit: '100kb' })` prevents oversized payloads from reaching controllers |
+| AP lock TTL                      | `ap_apply_locked_at` timestamp + configurable TTL (120s default) auto-releases stale locks — prevents permanent AP operation blockage on crash |
 
 ---
 

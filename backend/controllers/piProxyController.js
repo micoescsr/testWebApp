@@ -12,10 +12,10 @@ const { piFetch } = require("../utils/piFetch");
  */
 function sendPiResult(res, result) {
   if (!result.ok) {
+    console.error("[piProxy] Pi returned error:", result.status, result.data ?? result.rawText);
     return res.status(result.status).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: result.data ?? result.rawText,
     });
   }
   return res.status(result.status).json(result.data);
@@ -27,10 +27,11 @@ async function deviceStatus(req, res) {
     const result = await piFetch("/device/status");
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/deviceStatus]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach device status endpoint",
     });
   }
 }
@@ -41,10 +42,11 @@ async function networks(req, res) {
     const result = await piFetch("/networks");
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/networks]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach networks endpoint",
     });
   }
 }
@@ -55,10 +57,11 @@ async function scan(req, res) {
     const result = await piFetch("/scan", { method: "POST", jsonBody: req.body });
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/scan]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach scan endpoint",
     });
   }
 }
@@ -73,10 +76,11 @@ async function detectPoll(req, res) {
     });
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/detectPoll]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach detect poll endpoint",
     });
   }
 }
@@ -90,10 +94,11 @@ async function orchestrateApply(req, res) {
     });
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/orchestrateApply]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach orchestrate endpoint",
     });
   }
 }
@@ -107,10 +112,11 @@ async function portalPatch(req, res) {
     });
     return sendPiResult(res, result);
   } catch (e) {
+    console.error("[piProxy/portalPatch]", e);
     return res.status(502).json({
       status: "ERROR",
       error: "pi_call_failed",
-      detail: e.message,
+      detail: "Failed to reach portal patch endpoint",
     });
   }
 }

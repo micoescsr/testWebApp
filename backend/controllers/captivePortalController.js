@@ -339,7 +339,7 @@ async function publishAnnouncement(req, res) {
 			}
 		} catch (piErr) {
 			console.warn('Pi sync failed after announcement publish:', piErr.message);
-			piError = piErr.message;
+			piError = 'Pi sync failed';
 		}
 
 		res.json({ ...data, pi_synced: piSynced, pi_error: piError });

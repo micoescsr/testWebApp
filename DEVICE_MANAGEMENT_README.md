@@ -10,6 +10,7 @@ The Device Management page lets an authenticated user **enable/disable a captive
 - When AP is **disabled**: the full portal payload (announcement + tips + risk) is sent so the Pi has the latest content ready for when AP is enabled.
 - When AP is **enabled**: only the announcement portion is sent for real-time update.
 - AP enable/disable errors from the Pi are classified into normalized error codes for clear user prompts.
+- Gateway timeouts (502/503/504) trigger **automatic reconciliation** — the backend polls the Pi's actual state and the frontend self-corrects via delayed polling.
 
 ---
 
@@ -135,6 +136,59 @@ When the Pi responds to `orchestrate/apply` with `status: "ERROR"`, the backend 
 
 ---
 
+## Timeout Reconciliation
+
+The Pi's `orchestrate/apply` can take 30–60+ seconds. Railway's proxy timeout (~30s) or `piFetch`'s own timeout can cut the connection before the Pi responds — even when the AP operation **actually succeeds**.
+
+### Problem
+
+Without reconciliation:
+1. Backend catch block fires → returns 502/504 to frontend
+2. `ap_enabled` is **never set to `true`** in DB (Step 9 never runs)
+3. Frontend reverts toggle to OFF → shows "AP configuration failed"
+4. AP is actually ON on the Pi → user can't disable it because DB says OFF
+
+### Solution: Two-layer reconciliation
+
+**Layer 1 — Backend (immediate):**
+When `piFetch` to `orchestrate/apply` fails with 502/503/504, the backend's catch block polls `GET /device/status` on the Pi (8s timeout). If the Pi responds:
+- Updates `ap_enabled` in DB to match the Pi's actual state
+- Returns `200 { ok: true, reconciled: true, ap_enabled: <actual> }` instead of an error
+
+```
+piFetch('/orchestrate/apply') → timeout/502/503/504
+    │
+    ▼
+piFetch('/device/status', { timeoutMs: 8000 })
+    │
+    ├─ Pi reachable → read ap_enabled → UPDATE networks → return 200 { reconciled: true }
+    │
+    └─ Pi also unreachable → fall through to normal error response
+```
+
+**Layer 2 — Frontend (delayed polling):**
+If the error still reaches the frontend (Railway killed the connection before the backend could reconcile), `useDevice` shows "Checking device status…" and polls `GET /device/network/:id/state` at **5 seconds** and **15 seconds**:
+- If the AP reached the desired state → clears error, updates toggle
+- If not → shows "Device may still be processing — try again"
+
+```
+Axios catches 502/503/504
+    │
+    ├─ setError("Request timed out. Checking device status…")
+    │
+    ├─ setTimeout(5s) → poll admin state
+    │     ├─ AP matches desired state → clear error ✓
+    │     └─ not yet → setTimeout(+10s) → second poll
+    │           ├─ AP matches → clear error ✓
+    │           └─ still not → "try again in a moment"
+```
+
+### piFetch Timeout
+
+The `orchestrate/apply` calls use `timeoutMs: 60_000` (60 seconds) instead of the default 10 seconds, giving the Pi enough time to complete the operation before the timeout reconciliation path is needed.
+
+---
+
 ## Terms & Conditions — Removed
 
 Terms & Conditions have been **fully removed** from the system (not just hidden from the UI):
@@ -196,6 +250,8 @@ These make AP state and portal initialization persistent across page reloads and
   - If portal already initialized: calls `orchestrate/apply` directly
   - Persists `ap_enabled` and `portal_initialized` in `networks` table
   - On **disable**: no scan validation; calls `orchestrate/apply` with `ap_status: "disable"`
+  - `piFetch` timeout set to **60 seconds** for `orchestrate/apply` (both enable and disable)
+  - **Timeout reconciliation**: on 502/503/504, polls `/device/status` on Pi and returns `{ reconciled: true, ap_enabled }` if reachable
 
 ### Frontend
 
@@ -217,6 +273,7 @@ These make AP state and portal initialization persistent across page reloads and
 - Exposes `scanError` and `hasScanId` for UI scan-validation banners
 - Handles scan codes: `SCAN_REQUIRED`, `SCAN_TOO_OLD`, `SCAN_NETWORK_MISMATCH`
 - Handles AP enable error codes: `INCORRECT_PASSWORD`, `PASSWORD_REQUIRED`, `SSID_NOT_FOUND`, `ENCRYPTION_MISMATCH`, `NETWORK_DATA_OUTDATED`, `PI_NETWORK_CONFLICT`, `DEVICE_BUSY`, `DEVICE_EXCEPTION`, `INVALID_PAYLOAD`, `CONNECTION_FAILED`, `UPLINK_DISCONNECTED`, `ORCHESTRATE_ERROR`
+- **Timeout reconciliation**: handles `reconciled: true` backend responses; on 502/503/504 gateway errors, polls admin state at 5s and 15s to self-correct
 
 #### `src/components/device/AccessPointPanel.jsx`
 - New props: `scanError`, `hasScanId` (replaces `isEmpty`)
@@ -231,6 +288,7 @@ These make AP state and portal initialization persistent across page reloads and
 - Passes `scanError` + `hasScanId` to `AccessPointPanel`
 - Announcement-only editor (no tabs, no terms state)
 - Publishes via `publishAnnouncement()` and shows `pi_synced`/`pi_error` warning if sync fails
+- Retry button calls both `refetch()` (network config) and `refetchState()` (admin state from DB)
 
 #### `src/pages/SAM/SAM.jsx`
 - After scan save: calls `setNetworkScan(networkId, scanId)`
@@ -267,11 +325,14 @@ If portal_initialized = false:
   → UPDATE networks SET portal_initialized = true
     │
     ▼
-POST orchestrate/apply (FastAPI)
+POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
   Body: { ssid, bssid, channel, encryption_type, ap_password?, ap_status: "enable" }
     │
-    ▼
-UPDATE networks SET ap_enabled = true
+    ├─ Success → UPDATE networks SET ap_enabled = true
+    │
+    └─ Timeout (502/503/504) → reconcile via GET /device/status
+          ├─ Pi says AP ON  → UPDATE ap_enabled = true  → return { reconciled: true }
+          └─ Pi unreachable → return error → frontend polls at 5s / 15s
 ```
 
 ### Disable (no scan required)
@@ -287,11 +348,14 @@ Frontend sends POST /api/device/enable-ap
 Backend loads config from DB (needs SSID/BSSID for FastAPI)
     │
     ▼
-POST orchestrate/apply (FastAPI)
+POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
   Body: { ssid, bssid, channel, encryption_type, ap_status: "disable" }
     │
-    ▼
-UPDATE networks SET ap_enabled = false
+    ├─ Success → UPDATE networks SET ap_enabled = false
+    │
+    └─ Timeout (502/503/504) → reconcile via GET /device/status
+          ├─ Pi says AP OFF → UPDATE ap_enabled = false → return { reconciled: true }
+          └─ Pi unreachable → return error → frontend polls at 5s / 15s
 ```
 
 ---

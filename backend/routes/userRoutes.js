@@ -4,6 +4,7 @@ const router = express.Router();
 const userController = require("../controllers/userController");
 const authMiddleware = require("../middleware/authMiddleware");
 const { validateUUID } = require("../middleware/validateUUID");
+const { validate, userUpdate, userActivateWithTemp, userDeactivate, userReactivate } = require("../validators/routeValidators");
 
 // Current user profile
 router.get(
@@ -24,6 +25,7 @@ router.put(
   "/profiles/:id",
   authMiddleware.authJWT,
   validateUUID('id'),
+  userUpdate, validate,
   userController.updateUser
 );
 
@@ -40,6 +42,7 @@ router.post(
   "/profiles/:id/activate-with-temp",
   authMiddleware.authJWT,
   validateUUID('id'),
+  userActivateWithTemp, validate,
   userController.activateUserWithTemp
 );
 
@@ -48,6 +51,7 @@ router.post(
   "/profiles/:id/deactivate",
   authMiddleware.authJWT,
   validateUUID('id'),
+  userDeactivate, validate,
   userController.deactivateUser
 );
 
@@ -56,6 +60,7 @@ router.post(
   "/profiles/:id/reactivate",
   authMiddleware.authJWT,
   validateUUID('id'),
+  userReactivate, validate,
   userController.reactivateUser
 );
 

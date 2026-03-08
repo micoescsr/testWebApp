@@ -473,7 +473,7 @@ async function reactivateUser(req, res) {
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, authUpdate);
       if (authError) {
         console.error("reactivateUser authError:", authError);
-        return res.status(400).json({ error: authError.message });
+        return res.status(400).json({ error: "Failed to update auth credentials" });
       }
     } else if (updates.email) {
       // Even without temp PW, update the Supabase auth email if it changed
@@ -482,7 +482,7 @@ async function reactivateUser(req, res) {
       });
       if (authError) {
         console.error("reactivateUser auth email update error:", authError);
-        return res.status(400).json({ error: authError.message });
+        return res.status(400).json({ error: "Failed to update auth credentials" });
       }
     }
 

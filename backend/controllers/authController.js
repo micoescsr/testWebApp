@@ -183,7 +183,8 @@ exports.login = async (req, res) => {
 
     res.json({ token: json.access_token, user: json.user });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error("[auth/login] unexpected error:", e);
+    res.status(500).json({ error: "Login failed" });
   }
 };
 
@@ -197,11 +198,13 @@ exports.setRefresh = async (req, res) => {
       return res.status(400).json({ error: "Missing refresh_token" });
     }
     const opts = refreshCookieOpts();
-    console.log("[auth/set-refresh] setting cookie, token length:", refresh_token.length, "opts:", JSON.stringify(opts));
     res.cookie("sb_refresh", refresh_token, opts);
     return res.json({ ok: true });
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.message });
+    console.error("[auth/set-refresh] error:", e);
+    const status = e.status || 500;
+    const message = e.status ? e.message : "Failed to set refresh token";
+    return res.status(status).json({ error: message });
   }
 };
 
@@ -210,11 +213,6 @@ exports.setRefresh = async (req, res) => {
 exports.refresh = async (req, res) => {
   try {
     assertOrigin(req);
-
-    // ── DEBUG: remove after testing ─────────────────────
-    console.log("[auth/refresh] cookies:", JSON.stringify(req.cookies));
-    console.log("[auth/refresh] raw cookie header:", req.headers.cookie);
-    // ────────────────────────────────────────────────────
 
     const rt = req.cookies?.sb_refresh;
     if (!rt) return res.status(401).json({ error: "No refresh cookie" });
@@ -244,8 +242,9 @@ exports.refresh = async (req, res) => {
     });
   } catch (e) {
     // Clear bad cookie so user can re-login cleanly
+    console.error("[auth/refresh] error:", e);
     res.clearCookie("sb_refresh", { path: "/api/auth" });
-    return res.status(401).json({ error: e.message || "Refresh failed" });
+    return res.status(401).json({ error: "Refresh failed" });
   }
 };
 

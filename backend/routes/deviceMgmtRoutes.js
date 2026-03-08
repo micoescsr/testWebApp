@@ -14,10 +14,12 @@ const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 const { validateUUID } = require('../middleware/validateUUID');
 const { piFetch } = require('../utils/piFetch');
+const { validate, deviceEnableAp, devicePortalUpdate } = require('../validators/routeValidators');
 
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AP_LOCK_TTL_SECONDS = parseInt(process.env.AP_LOCK_TTL_SECONDS || '120', 10); // C11 fix: auto-expire stale locks
 
 // ─── Portal patch constants ──────────────────────────────────────
 const VALID_UPDATE_TYPES = new Set(['announcement', 'tips', 'risk', 'active', 'bulk']);
@@ -38,7 +40,7 @@ async function releaseApLock(networkId) {
 	try {
 		await supabaseClient
 			.from('networks')
-			.update({ ap_apply_in_progress: false })
+			.update({ ap_apply_in_progress: false, ap_apply_locked_at: null })
 			.eq('network_id', networkId);
 	} catch (e) {
 		console.error('[releaseApLock] Failed to release lock for', networkId, e.message);
@@ -248,7 +250,7 @@ router.get('/ap-state/:networkId', authJWT, validateUUID('networkId'), async (re
 // Body: { network_id, scan_id?, ap_status, ap_password? }
 //   scan_id required only for enable (not disable)
 //   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
-router.post('/enable-ap', authJWT, async (req, res) => {
+router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, scan_id, ap_status, ap_password } = req.body;
 	const actorId = req.user?.id || null;
@@ -262,11 +264,12 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 	}
 
 	try {
-		// ── Step 0: Atomic concurrency lock ──────────────────────
-		// Single UPDATE that checks + sets in one query to avoid races
+		// ── Step 0: Atomic concurrency lock with TTL ─────────────
+		// Single UPDATE that checks + sets in one query to avoid races.
+		// Also stamps ap_apply_locked_at so stale locks can be auto-expired.
 		const { data: lockRow, error: lockErr } = await supabaseClient
 			.from('networks')
-			.update({ ap_apply_in_progress: true })
+			.update({ ap_apply_in_progress: true, ap_apply_locked_at: new Date().toISOString() })
 			.eq('network_id', network_id)
 			.eq('ap_apply_in_progress', false)
 			.select('network_id')
@@ -278,17 +281,45 @@ router.post('/enable-ap', authJWT, async (req, res) => {
 			// Either network doesn't exist or lock is already held
 			const { data: exists } = await supabaseClient
 				.from('networks')
-				.select('network_id, ap_apply_in_progress')
+				.select('network_id, ap_apply_in_progress, ap_apply_locked_at')
 				.eq('network_id', network_id)
 				.maybeSingle();
 
 			if (!exists) {
 				return res.status(404).json({ error: 'NETWORK_NOT_FOUND', message: 'Network not found.' });
 			}
-			return res.status(409).json({ error: 'REQUEST_IN_PROGRESS', message: 'An AP configuration change is already in progress.' });
-		}
 
-		lockAcquired = true;
+			// C11 fix: Check if the existing lock is stale (exceeded TTL)
+			if (exists.ap_apply_in_progress && exists.ap_apply_locked_at) {
+				const lockedAt = new Date(exists.ap_apply_locked_at).getTime();
+				const staleCutoff = Date.now() - (AP_LOCK_TTL_SECONDS * 1000);
+				if (lockedAt < staleCutoff) {
+					console.warn(`[enable-ap] Stale AP lock detected for ${network_id} (locked at ${exists.ap_apply_locked_at}). Auto-releasing.`);
+					// Force-release stale lock and re-acquire atomically
+					const { data: reacquired, error: reacquireErr } = await supabaseClient
+						.from('networks')
+						.update({ ap_apply_in_progress: true, ap_apply_locked_at: new Date().toISOString() })
+						.eq('network_id', network_id)
+						.eq('ap_apply_in_progress', true)
+						.select('network_id')
+						.maybeSingle();
+
+					if (reacquireErr) throw reacquireErr;
+					if (reacquired) {
+						lockAcquired = true;
+						console.log(`[enable-ap] Stale lock recovered for ${network_id}`);
+					} else {
+						return res.status(409).json({ error: 'REQUEST_IN_PROGRESS', message: 'An AP configuration change is already in progress.' });
+					}
+				} else {
+					return res.status(409).json({ error: 'REQUEST_IN_PROGRESS', message: 'An AP configuration change is already in progress.' });
+				}
+			} else {
+				return res.status(409).json({ error: 'REQUEST_IN_PROGRESS', message: 'An AP configuration change is already in progress.' });
+			}
+		} else {
+			lockAcquired = true;
+		}
 
 		// ══════════════════════════════════════════════════════════
 		//  DISABLE PATH (no scan_id needed)
@@ -846,7 +877,7 @@ function validatePatchPayload(payload) {
 // ─── Client-Driven Captive Portal Partial Update ─────────────────
 // POST /api/device/portal/update
 // Body: { network_id, update_type, reason?, payload }
-router.post('/portal/update', authJWT, async (req, res) => {
+router.post('/portal/update', authJWT, devicePortalUpdate, validate, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, update_type, reason: rawReason, payload: patch } = req.body;
 	const actorId = req.user?.id || null;

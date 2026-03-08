@@ -63,9 +63,10 @@ app.get('/internal/pi-smoke', async (req, res) => {
     const { ok, status, data } = await piFetch('/device/status', { timeoutMs: 8000 });
     res.json({ pi_reachable: ok, pi_status: status, pi_data: data });
   } catch (err) {
+    console.error('[pi-smoke] error:', err);
     res.status(502).json({
       pi_reachable: false,
-      error: err.message || 'Pi unreachable',
+      error: 'Pi unreachable',
     });
   }
 });
@@ -122,7 +123,7 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(requestIdMiddleware);
 
 // ── Global rate limiter (Phase 1-F) ─────────────────────────────────
