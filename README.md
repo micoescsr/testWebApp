@@ -1,6 +1,33 @@
-# Why-PII? — Web-based Security Assessment Tool
+# Why-PII? — Wi-Fi Security Assessment Tool
 
-A Web-based Security Assessment Tool using Microcontroller applied to Unsecured Wi-Fi Access Point in Communal Public Places.
+**Why-PII?** is a full-stack web application that assesses the security of public Wi-Fi access points in communal spaces (cafés, libraries, co-working areas) using a Raspberry Pi microcontroller as a field probe.
+
+## Overview
+
+Public Wi-Fi networks in shared spaces often lack basic protections — no encryption, no client isolation, and no monitoring — leaving users vulnerable to packet sniffing, evil-twin attacks, and session hijacking. **Why-PII?** addresses this by combining a remotely controlled Raspberry Pi with a cloud-hosted dashboard that lets administrators:
+
+- **Scan** nearby wireless networks and catalogue their security posture (encryption type, signal strength, client count).
+- **Deploy a captive portal** on a controlled access point to demonstrate how credentials can be intercepted over unsecured connections.
+- **Detect threats in real time** — the Pi runs continuous monitoring and pushes alerts (rogue APs, deauth floods, ARP spoofing) to the dashboard.
+- **Score and track** each assessed network over time with a structured vulnerability history and exportable reports.
+- **Manage users and audit trails** — role-based access (admin / superadmin) with full audit logging of every action.
+
+The browser never communicates with the Pi directly; the Express backend acts as a secure relay, signing every command with HMAC and routing traffic through a Tailscale Funnel tunnel.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| **Network Scanning** | Discover and profile nearby Wi-Fi networks via the Raspberry Pi |
+| **Threat Detection** | Real-time monitoring with live dashboard indicators and alert badges |
+| **Security Scoring** | Quantitative risk scoring per network with historical trend charts |
+| **Captive Portal Demo** | Controlled AP + portal to illustrate credential interception risks |
+| **Device Management** | Remote Raspberry Pi administration (AP control, service status, logs) |
+| **User & Role Management** | Admin / superadmin roles, account CRUD, password policies |
+| **Audit Logging** | Immutable, append-only audit trail with archival support |
+| **Session Persistence** | JWT access tokens (in-memory) + HttpOnly refresh cookies for seamless sessions |
 
 ---
 
@@ -157,55 +184,6 @@ The project is undergoing a phased security hardening process documented in [`SE
 
 ---
 
-## UI Updates — Threat Detection Indicator (Global)
+## Recent UI Changes
 
-### What changed
-
-1. **Global detection state provider** (`src/context/ThreatDetectionContext.jsx`)
-   - A single `ThreatDetectionProvider` wraps all authenticated routes.
-   - There is exactly ONE polling loop for the entire app; no page starts its own.
-
-2. **Sidebar indicator** (`src/layouts/Sidebar.jsx`)
-   - A small dot indicator appears next to the "Security Assessment Management" nav item.
-   - **Green dot** — detection is actively monitoring a network.
-   - **Pulsing blue dot** — detection is starting / scanning.
-   - **Red dot** — detection has failed.
-   - **Hidden** — detection is idle / stopped.
-   - A threat count badge appears when there are active detected threats.
-   - Native `title` tooltip shows network name and last-update time.
-
-3. **SAM page compact status pill** (`src/pages/SAM/SAM.jsx`)
-   - The full-width green "DETECTING" banner has been removed.
-   - A compact status pill appears in the tab header row showing:
-     - State label (Monitoring / Starting / Paused / Failed)
-     - Network SSID (if available)
-     - Relative last-update time
-   - **Priority order:** Active detection (`DETECTING`) always wins. The pill shows "Monitoring: SSID" even if the selected network is flagged out-of-range, because detection runs on the Raspberry Pi independently of the browser's network list.
-   - "Paused — out of range" only appears when detection is idle/stopped and the selected network is out of range.
-
-4. **Dismissible out-of-range banner**
-   - The orange out-of-range warning banner now includes a dismiss (✕) button.
-   - Dismissal is stored in `sessionStorage` (`wf:dismissOutOfRange:<BSSID>`), persisting across in-session refreshes.
-   - Dismissing the banner does NOT hide the "Paused — out of range" status pill.
-
-### How to test manually
-
-1. Start the backend and frontend dev servers.
-2. Log in and navigate to any page — the sidebar should load without errors.
-3. When no detection is running, the SAM nav item should have no indicator.
-4. Run a scan from the SAM page. Observe:
-   - Sidebar shows a pulsing blue dot during scan start.
-   - Once detection begins, the dot turns green. Hover to see the tooltip.
-5. If detection fails, the dot turns red and the SAM page shows the FAILED banner + a red "Failed" pill.
-6. While detection is running, navigate away from SAM and back — the monitoring pill should persist.
-7. Select a previously-scanned network that is no longer in range:
-   - If detection is still running: pill shows "Monitoring: SSID" (green). Orange banner still appears.
-   - If detection is idle: pill shows "Paused — out of range" (orange).
-   - Dismissing the orange banner hides it; the status pill remains visible.
-   - Refreshing the page keeps the banner dismissed for that network.
-
-### Known limitations
-
-- `activeNetwork` in the sidebar tooltip and monitoring pill uses a fallback chain: backend `ssid` field → SAM-pushed `setActiveNetwork()` override → local `lastScannedNetwork`/`selectedNetwork`. The SSID is pushed into global context when a scan starts and when SAM restores a session.
-- Badge count uses `displayThreats.length`; it does not distinguish between active vs. cleared threat sessions.
-- The "Updated Xs ago" timestamp refreshes only when the context re-renders (every ~3 s during active detection).
+The threat detection system now features a **global detection state provider** with a single polling loop, **sidebar status indicators** (green = monitoring, blue = starting, red = failed), a **compact status pill** on the SAM page, and **dismissible out-of-range banners**. See [`CHANGES_README.md`](CHANGES_README.md) for full details.
