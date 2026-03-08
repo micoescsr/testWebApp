@@ -46,6 +46,7 @@ const DeviceManagement = () => {
     refetchState,
     handleToggleAccessPoint,
     handleUpdatePortal,
+    isReconcilingToggle,
   } = useDevice(networkId, scanId);
 
   const canEdit = true;
@@ -212,6 +213,7 @@ const DeviceManagement = () => {
           scanError={scanError}
           hasScanId={hasScanId}
           adminState={adminState}
+          isReconcilingToggle={isReconcilingToggle}
           onRetry={() => { refetch(); refetchState(); }}
           onToggle={handleToggleAccessPoint}
           onUpdatePortal={handleUpdatePortal}

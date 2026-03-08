@@ -400,18 +400,21 @@ After threat rows are inserted and `scans.risk_score` is updated:
 | `loading` | local | Mutation in progress |
 | `error` | local | User-facing error message |
 | `scanError` | local | Scan validation error code from backend |
+| `isReconcilingToggle` | local | Whether bounded timeout reconciliation is in progress |
 
 #### Methods
 
 | Method | When Called | What It Does |
 |--------|------------|--------------|
 | `fetchAdminState()` | Mount, after mutations, every 12s | Calls `getNetworkState()`, updates all derived state |
-| `handleToggleAccessPoint(password)` | User clicks toggle | Calls `toggleAP()`, refreshes state on success, maps all error codes on failure. Handles `reconciled: true` responses. On 502/503/504 gateway timeouts, polls admin state at 5s and 15s to self-correct. |
+| `handleToggleAccessPoint(password)` | User clicks toggle | Calls `toggleAP()`, refreshes state on success, maps all error codes on failure. Handles `reconciled: true` responses. On 502/503/504 gateway timeouts, enters bounded reconciliation mode using `ap_apply_in_progress` as the settlement gate (6 polls over 60s at 3s, 10s, 20s, 35s, 50s, 60s). |
 | `handleUpdatePortal()` | User clicks "Update Portal" | Calls `updatePortal(networkId, 'risk', { risk: { bucket } }, 'manual_update')`, refreshes state |
+| `waitForAdminStateSettlement(targetApEnabled)` | Internal, after 502/503/504 | Bounded deterministic reconciliation: polls admin state at 3s, 10s, 20s, 35s, 50s, 60s. Uses `ap_apply_in_progress === false` as settlement gate before interpreting `ap_enabled`. Cleanup-safe on unmount. |
 
 #### Polling
 
 - **12-second interval** when `apEnabled=true && networkId` is set
+- **Suspended** during timeout reconciliation (`isReconcilingToggle=true`) to prevent race conditions
 - Clears on unmount or when AP goes off
 - Keeps risk badge, `portal_out_of_date`, and scan freshness current without user interaction
 
@@ -429,6 +432,7 @@ After threat rows are inserted and `scans.risk_score` is updated:
   error,
   scanError,
   hasScanId,
+  isReconcilingToggle,  // true during bounded timeout reconciliation
   refetch,              // re-fetches network config
   refetchState,         // re-fetches admin state
   handleToggleAccessPoint,
@@ -447,12 +451,13 @@ The `computeBanner()` function enforces strict priority:
 | Priority | Banner Key | Condition | Type |
 |----------|-----------|-----------|------|
 | 1 | `config_missing` | `network_config_missing` | Blocking |
-| 2 | `apply_in_progress` | `ap_apply_in_progress` | Blocking + disable controls |
-| 3 | `scan_error` | `scanError` (from toggle attempt) | Blocking |
-| 4 | `scan_required` | AP off + no scan | Blocking |
-| 5 | `scan_stale_blocking` | AP off + has scan + not fresh | Blocking |
-| 6 | `portal_outdated` | AP on + `portal_out_of_date` | Warning + Update Portal button |
-| 7 | `scan_stale_info` | AP on + has scan + not fresh | Info (non-blocking) |
+| 2 | `apply_in_progress` | `ap_apply_in_progress` (not reconciling) | Blocking + disable controls |
+| 3 | `toggle_reconciling_timeout` | `isReconcilingToggle` | Info — "Checking actual access point state…" |
+| 4 | `scan_error` | `scanError` (from toggle attempt) | Blocking |
+| 5 | `scan_required` | AP off + no scan | Blocking |
+| 6 | `scan_stale_blocking` | AP off + has scan + not fresh | Blocking |
+| 7 | `portal_outdated` | AP on + `portal_out_of_date` | Warning + Update Portal button |
+| 8 | `scan_stale_info` | AP on + has scan + not fresh | Info (non-blocking) |
 
 The first matching condition wins. No two banners ever render simultaneously.
 
@@ -473,6 +478,7 @@ Shows current `risk_bucket` with color-coded badge (LOW=green, MEDIUM=amber, HIG
   scanError,       // scan error code
   hasScanId,       // boolean
   adminState,      // full admin state from /network/:id/state
+  isReconcilingToggle,  // boolean — true during timeout reconciliation
   onRetry,         // refetch handler
   onToggle,        // toggle handler (receives password)
   onUpdatePortal,  // portal update handler
@@ -508,15 +514,17 @@ All new classes are scoped under `.device-page` to prevent cross-page collisions
 
 ### Chunk 7 Fixes (5 checks)
 
-1. **Banner precedence** — Refactored to `computeBanner()` with strict priority chain. Only one banner renders at a time. `ap_apply_in_progress=true` will never also show "scan stale"
+1. **Banner precedence** — Refactored to `computeBanner()` with strict priority chain. Only one banner renders at a time. `ap_apply_in_progress=true` will never also show "scan stale". New `toggle_reconciling_timeout` banner at priority 3 for bounded timeout reconciliation.
 
 2. **Portal update reason** — `handleUpdatePortal` sends `reason: 'manual_update'` (user-triggered) instead of `'risk_score_changed'` (pipeline-triggered). Payload is risk-only: `{ risk: { bucket } }`
 
-3. **Polling** — 12-second interval when AP is enabled. Clears on unmount or disable. Keeps risk badge, portal freshness, and scan age current
+3. **Polling** — 12-second interval when AP is enabled. Clears on unmount or disable. **Suspended during timeout reconciliation** to prevent race conditions. Keeps risk badge, portal freshness, and scan age current
 
-4. **CSS scoping** — All new styles scoped under `.device-page` to prevent collisions
+4. **CSS scoping** — All new styles scoped under `.device-page` to prevent collisions. Reconciliation banner reuses existing `.info-state` class.
 
 5. **Webhook** — Verified: 401 on bad token, env var comparison, UUID before DB query, idempotent retries return `{ok:true, skipped:true}`
+
+6. **Bounded timeout reconciliation** — On 502/503/504, frontend enters `isReconcilingToggle` mode with 6 deterministic polls over 60s (3s, 10s, 20s, 35s, 50s, 60s). Uses `ap_apply_in_progress === false` as settlement gate before interpreting `ap_enabled`. Timers cleaned up on unmount via `mountedRef`. Toggle disabled during reconciliation. Classified backend errors (INCORRECT_PASSWORD, etc.) never enter reconciliation mode.
 
 ### Network Data + Orchestrate Error Fixes
 

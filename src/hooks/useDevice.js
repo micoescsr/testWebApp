@@ -24,6 +24,11 @@ export const useDevice = (networkId, scanId) => {
   const [error, setError] = useState(null);
   const [scanError, setScanError] = useState(null);
 
+  // Timeout reconciliation state
+  const [isReconcilingToggle, setIsReconcilingToggle] = useState(false);
+  const reconcilingTimersRef = useRef([]);
+  const mountedRef = useRef(true);
+
   // ─── Fetch network config from Supabase ──────────────────────
   const fetchNetworkConfig = useCallback(async () => {
     if (!networkId) return;
@@ -62,6 +67,15 @@ export const useDevice = (networkId, scanId) => {
     setScanError(null);
   }, [fetchNetworkConfig, fetchAdminState]);
 
+  // Cleanup reconciliation timers on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      reconcilingTimersRef.current.forEach(t => clearTimeout(t));
+      reconcilingTimersRef.current = [];
+    };
+  }, []);
+
   // ─── Low-frequency poll when AP is enabled ───────────────────
   // Keeps risk badge, portal_out_of_date, and scan freshness current
   // without requiring user interaction. Stops when AP is off or unmounted.
@@ -74,7 +88,8 @@ export const useDevice = (networkId, scanId) => {
       pollRef.current = null;
     }
 
-    if (apEnabled && networkId) {
+    // Suspend normal polling during timeout reconciliation
+    if (apEnabled && networkId && !isReconcilingToggle) {
       pollRef.current = setInterval(() => {
         fetchAdminState();
       }, STATE_POLL_INTERVAL);
@@ -86,7 +101,7 @@ export const useDevice = (networkId, scanId) => {
         pollRef.current = null;
       }
     };
-  }, [apEnabled, networkId, fetchAdminState]);
+  }, [apEnabled, networkId, fetchAdminState, isReconcilingToggle]);
 
   // ─── Portal update helper (for "Update Portal" button) ───────
   const handleUpdatePortal = async () => {
@@ -105,6 +120,80 @@ export const useDevice = (networkId, scanId) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ─── Bounded reconciliation after gateway timeout ─────────────
+  // Schedule: 3s, 10s, 20s, 35s, 50s, 60s — covers the 45s nginx
+  // timeout window plus backend-side reconciliation settling time.
+  // Uses ap_apply_in_progress as the settlement gate: only when the
+  // backend clears the lock can ap_enabled be trusted as final truth.
+  const RECONCILE_SCHEDULE_MS = [3_000, 10_000, 20_000, 35_000, 50_000, 60_000];
+
+  const waitForAdminStateSettlement = (targetApEnabled) => {
+    reconcilingTimersRef.current.forEach(t => clearTimeout(t));
+    reconcilingTimersRef.current = [];
+
+    setIsReconcilingToggle(true);
+    setError(null);
+    setScanError(null);
+
+    let settled = false;
+
+    const checkSettlement = async (isLastPoll) => {
+      if (!mountedRef.current || settled) return;
+
+      try {
+        const stateRes = await getNetworkState(networkId);
+        if (!mountedRef.current || settled) return;
+
+        const s = stateRes.data;
+        setAdminState(s);
+        setApEnabled(s.ap_enabled ?? false);
+        setPortalInitialized(s.portal_initialized ?? false);
+
+        if (!s.ap_apply_in_progress) {
+          // Backend has settled — ap_enabled is now trustworthy
+          settled = true;
+          reconcilingTimersRef.current.forEach(t => clearTimeout(t));
+          reconcilingTimersRef.current = [];
+
+          const actualEnabled = s.ap_enabled ?? false;
+          if (actualEnabled !== targetApEnabled) {
+            setError(
+              targetApEnabled
+                ? "The access point did not finish enabling. Please try again."
+                : "The access point did not finish disabling. Please try again."
+            );
+          }
+          setIsReconcilingToggle(false);
+          return;
+        }
+
+        // ap_apply_in_progress still true — backend not settled yet
+        if (isLastPoll) {
+          settled = true;
+          setError(
+            "The device may still be processing the request. Please wait a moment, then refresh or try again."
+          );
+          setIsReconcilingToggle(false);
+        }
+      } catch {
+        if (!mountedRef.current || settled) return;
+        if (isLastPoll) {
+          settled = true;
+          setError(
+            "The device may still be processing the request. Please wait a moment, then refresh or try again."
+          );
+          setIsReconcilingToggle(false);
+        }
+      }
+    };
+
+    RECONCILE_SCHEDULE_MS.forEach((delayMs, idx) => {
+      const isLast = idx === RECONCILE_SCHEDULE_MS.length - 1;
+      const timerId = setTimeout(() => checkSettlement(isLast), delayMs);
+      reconcilingTimersRef.current.push(timerId);
+    });
   };
 
   // ─── Toggle AP → sends only IDs + password to backend ────────
@@ -151,50 +240,17 @@ export const useDevice = (networkId, scanId) => {
       const backendError = err?.response?.data?.error;
       const backendMsg = err?.response?.data?.message || err?.response?.data?.user_message;
 
-      // Revert optimistic toggle on failure
-      setApEnabled(!nextState);
-
-      // Refresh admin state so ap_apply_in_progress clears
-      await fetchAdminState();
-
-      // Gateway timeout — the hosting proxy cut the request before the Pi responded
-      if (httpStatus === 504 || httpStatus === 502 || httpStatus === 503) {
-        // The backend may still be running (Railway killed the frontend connection
-        // before the backend finished). Poll admin state after delays to reconcile.
-        setError("Request timed out. Checking device status…");
-
-        const pollAndReconcile = async () => {
-          try {
-            const stateRes = await getNetworkState(networkId);
-            const s = stateRes.data;
-            setAdminState(s);
-            setApEnabled(s.ap_enabled ?? false);
-            setPortalInitialized(s.portal_initialized ?? false);
-
-            // If the AP ended up in the state the user wanted, clear the error
-            if ((s.ap_enabled ?? false) === nextState) {
-              setError(null);
-              return true; // reconciled
-            }
-          } catch { /* non-fatal */ }
-          return false;
-        };
-
-        // First poll after 5s (backend may still be running)
-        setTimeout(async () => {
-          const ok = await pollAndReconcile();
-          if (!ok) {
-            // Second poll after 15s total
-            setTimeout(async () => {
-              const ok2 = await pollAndReconcile();
-              if (!ok2) {
-                setError("Request timed out. The device may still be processing — try again in a moment.");
-              }
-            }, 10_000);
-          }
-        }, 5_000);
+      // Gateway/transport timeout — ambiguous outcome, enter bounded reconciliation.
+      // Do NOT revert optimistic toggle or claim hard failure; let the reconciliation
+      // polling determine backend truth via ap_apply_in_progress settlement gate.
+      if (httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+        waitForAdminStateSettlement(nextState);
         return;
       }
+
+      // Non-timeout failure: revert optimistic toggle and refresh state
+      setApEnabled(!nextState);
+      await fetchAdminState();
 
       // Map all backend error codes to scanError + user-friendly message
       switch (backendError) {
@@ -332,6 +388,7 @@ export const useDevice = (networkId, scanId) => {
     error,
     scanError,
     hasScanId: !!scanId,
+    isReconcilingToggle,
     refetch: fetchNetworkConfig,
     refetchState: fetchAdminState,
     handleToggleAccessPoint,

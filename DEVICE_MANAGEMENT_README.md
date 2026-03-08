@@ -138,17 +138,19 @@ When the Pi responds to `orchestrate/apply` with `status: "ERROR"`, the backend 
 
 ## Timeout Reconciliation
 
-The Pi's `orchestrate/apply` can take 30–60+ seconds. Railway's proxy timeout (~30s) or `piFetch`'s own timeout can cut the connection before the Pi responds — even when the AP operation **actually succeeds**.
+The Pi's `orchestrate/apply` can take 30–60+ seconds. The nginx proxy timeout for this endpoint is **45 seconds**, and `piFetch`'s own timeout is **60 seconds**. Either layer can cut the frontend connection before the Pi responds — even when the AP operation **actually succeeds**.
+
+A timeout is **ambiguous**: it does not prove success or failure.
 
 ### Problem
 
 Without reconciliation:
-1. Backend catch block fires → returns 502/504 to frontend
-2. `ap_enabled` is **never set to `true`** in DB (Step 9 never runs)
-3. Frontend reverts toggle to OFF → shows "AP configuration failed"
-4. AP is actually ON on the Pi → user can't disable it because DB says OFF
+1. Proxy kills the connection → frontend receives 502/504
+2. `ap_enabled` may or may not have been set in DB (backend may still be running)
+3. Frontend reverts toggle to OFF → shows hard failure message
+4. AP may actually be ON on the Pi → user can't disable it because DB says OFF
 
-### Solution: Two-layer reconciliation
+### Solution: Three-layer reconciliation
 
 **Layer 1 — Backend (immediate):**
 When `piFetch` to `orchestrate/apply` fails with 502/503/504, the backend's catch block polls `GET /device/status` on the Pi (8s timeout). If the Pi responds:
@@ -166,26 +168,55 @@ piFetch('/device/status', { timeoutMs: 8000 })
     └─ Pi also unreachable → fall through to normal error response
 ```
 
-**Layer 2 — Frontend (delayed polling):**
-If the error still reaches the frontend (Railway killed the connection before the backend could reconcile), `useDevice` shows "Checking device status…" and polls `GET /device/network/:id/state` at **5 seconds** and **15 seconds**:
-- If the AP reached the desired state → clears error, updates toggle
-- If not → shows "Device may still be processing — try again"
+**Layer 2 — Frontend `reconciled: true` handling:**
+If the backend successfully reconciles before the proxy kills the connection, the frontend receives `{ ok: true, reconciled: true, ap_enabled }`. This is trusted immediately — `fetchAdminState()` is called and UI syncs to backend truth.
+
+**Layer 3 — Frontend bounded reconciliation polling (settlement gate):**
+If the error reaches the frontend as 502/503/504 (proxy killed the connection before the backend could respond), the frontend enters **bounded reconciliation mode** using `ap_apply_in_progress` as the settlement gate.
+
+Key principle: while `ap_apply_in_progress === true`, the backend has not settled — `ap_enabled` cannot be trusted. Only when `ap_apply_in_progress === false` can the frontend interpret `ap_enabled` as final truth.
 
 ```
 Axios catches 502/503/504
     │
-    ├─ setError("Request timed out. Checking device status…")
+    ├─ setIsReconcilingToggle(true)
+    ├─ Show banner: "The device is taking longer than expected. Checking actual access point state…"
+    ├─ Suspend normal 12s polling (no race conditions)
     │
-    ├─ setTimeout(5s) → poll admin state
-    │     ├─ AP matches desired state → clear error ✓
-    │     └─ not yet → setTimeout(+10s) → second poll
-    │           ├─ AP matches → clear error ✓
-    │           └─ still not → "try again in a moment"
+    ├─ Bounded reconciliation polling schedule: 3s, 10s, 20s, 35s, 50s, 60s
+    │     │
+    │     ├─ Each poll: GET /device/network/:id/state
+    │     │     ├─ ap_apply_in_progress === false (settled)
+    │     │     │     ├─ ap_enabled matches target → clear error ✓
+    │     │     │     └─ ap_enabled doesn't match → "did not finish enabling/disabling"
+    │     │     └─ ap_apply_in_progress === true → keep waiting (not settled)
+    │     │
+    │     └─ Last poll + still not settled → soft unresolved message
+    │
+    └─ setIsReconcilingToggle(false) → resume normal polling
 ```
 
-### piFetch Timeout
+**Settlement rules:**
 
-The `orchestrate/apply` calls use `timeoutMs: 60_000` (60 seconds) instead of the default 10 seconds, giving the Pi enough time to complete the operation before the timeout reconciliation path is needed.
+| Attempted | Settled `ap_enabled` | Result |
+|---|---|---|
+| enable | `true` | Eventual success |
+| enable | `false` | Settled unsuccessful enable |
+| disable | `false` | Eventual success |
+| disable | `true` | Settled unsuccessful disable |
+
+**Unresolved:** If the bounded window expires and `ap_apply_in_progress` is still `true`, the frontend stops polling, preserves the latest backend-derived UI state, and shows: *"The device may still be processing the request. Please wait a moment, then refresh or try again."*
+
+### Why 60 seconds?
+
+- nginx proxy timeout: **45 seconds** — this is when the frontend receives 502/504
+- Backend `piFetch` timeout: **60 seconds** — backend may still be running for ~15s after the frontend gets the timeout
+- Backend's own `/device/status` reconciliation adds a few more seconds
+- The **60-second reconciliation window** (6 polls at 3s, 10s, 20s, 35s, 50s, 60s) covers the full backend processing pipeline with margin
+
+### Classified errors are never reconciled
+
+Application-level backend errors (INCORRECT_PASSWORD, SSID_NOT_FOUND, DEVICE_BUSY, etc.) are **not** ambiguous — they are real outcomes. These continue to show immediate specific feedback without entering reconciliation mode. Only 502/503/504 transport errors trigger the reconciliation path.
 
 ---
 
@@ -269,23 +300,25 @@ These make AP state and portal initialization persistent across page reloads and
 #### `src/hooks/useDevice.js`
 - Accepts `(networkId, scanId)`
 - Fetches AP state from DB on mount
-- Toggle flow with optimistic UI + revert on failure
-- Exposes `scanError` and `hasScanId` for UI scan-validation banners
+- Toggle flow with optimistic UI + revert on classified failure
+- Exposes `scanError`, `hasScanId`, and `isReconcilingToggle` for UI scan/timeout banners
 - Handles scan codes: `SCAN_REQUIRED`, `SCAN_TOO_OLD`, `SCAN_NETWORK_MISMATCH`
 - Handles AP enable error codes: `INCORRECT_PASSWORD`, `PASSWORD_REQUIRED`, `SSID_NOT_FOUND`, `ENCRYPTION_MISMATCH`, `NETWORK_DATA_OUTDATED`, `PI_NETWORK_CONFLICT`, `DEVICE_BUSY`, `DEVICE_EXCEPTION`, `INVALID_PAYLOAD`, `CONNECTION_FAILED`, `UPLINK_DISCONNECTED`, `ORCHESTRATE_ERROR`
-- **Timeout reconciliation**: handles `reconciled: true` backend responses; on 502/503/504 gateway errors, polls admin state at 5s and 15s to self-correct
+- **Timeout reconciliation**: handles `reconciled: true` backend responses; on 502/503/504 gateway errors, enters bounded reconciliation mode using `ap_apply_in_progress` as the settlement gate (6 polls over 60s at 3s, 10s, 20s, 35s, 50s, 60s). Normal 12s polling is suspended during reconciliation. Timers are cleaned up on unmount via `mountedRef` guard.
 
 #### `src/components/device/AccessPointPanel.jsx`
-- New props: `scanError`, `hasScanId` (replaces `isEmpty`)
+- Props: `scanError`, `hasScanId`, `isReconcilingToggle` (replaces `isEmpty`)
 - Scan-required banner with "Go to Scan" navigation
 - Scan-too-old and scan-mismatch warning banners
-- Toggle disabled when no scan available and AP is off
+- Timeout reconciliation banner: *"The device is taking longer than expected. Checking actual access point state…"*
+- Toggle disabled when loading, `ap_apply_in_progress`, `isReconcilingToggle`, or no scan available and AP is off
+- `computeBanner()` priority: config_missing → apply_in_progress → toggle_reconciling_timeout → scan_error → scan_required → scan_stale_blocking → portal_outdated → scan_stale_info
 - `scanErrorText` map includes `ENCRYPTION_MISMATCH` and `NETWORK_DATA_OUTDATED`
 
 #### `src/pages/DeviceManagement/DeviceManagement.jsx`
 - Reads `networkId` + `scanId` from context (priority) or URL params (fallback)
 - Passes `scanId` to `useDevice(networkId, scanId)`
-- Passes `scanError` + `hasScanId` to `AccessPointPanel`
+- Passes `scanError`, `hasScanId`, and `isReconcilingToggle` to `AccessPointPanel`
 - Announcement-only editor (no tabs, no terms state)
 - Publishes via `publishAnnouncement()` and shows `pi_synced`/`pi_error` warning if sync fails
 - Retry button calls both `refetch()` (network config) and `refetchState()` (admin state from DB)
@@ -332,7 +365,8 @@ POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
     │
     └─ Timeout (502/503/504) → reconcile via GET /device/status
           ├─ Pi says AP ON  → UPDATE ap_enabled = true  → return { reconciled: true }
-          └─ Pi unreachable → return error → frontend polls at 5s / 15s
+          └─ Pi unreachable → return error → frontend bounded reconciliation polling
+                (6 polls over 60s using ap_apply_in_progress as settlement gate)
 ```
 
 ### Disable (no scan required)
@@ -355,7 +389,8 @@ POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
     │
     └─ Timeout (502/503/504) → reconcile via GET /device/status
           ├─ Pi says AP OFF → UPDATE ap_enabled = false → return { reconciled: true }
-          └─ Pi unreachable → return error → frontend polls at 5s / 15s
+          └─ Pi unreachable → return error → frontend bounded reconciliation polling
+                (6 polls over 60s using ap_apply_in_progress as settlement gate)
 ```
 
 ---

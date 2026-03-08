@@ -6,18 +6,20 @@ import { useNavigate } from "react-router-dom";
  * Returns { type, cssClass } or null if no banner applies.
  *
  * Priority (top wins, stop at first match):
- *  1. network_config_missing  → blocking
- *  2. ap_apply_in_progress    → blocking + disable controls
- *  3. scanError (backend validation on toggle attempt)
- *  4. AP off + no scan        → blocking "Scan required"
- *  5. AP off + stale scan     → blocking "Scan is stale"
- *  6. AP on + portal outdated → warning + Update Portal button
- *  7. AP on + stale scan      → info (non-blocking)
+ *  1. network_config_missing       → blocking
+ *  2. ap_apply_in_progress (no reconciliation) → blocking + disable controls
+ *  3. toggle_reconciling_timeout   → info "checking device state…"
+ *  4. scanError (backend validation on toggle attempt)
+ *  5. AP off + no scan             → blocking "Scan required"
+ *  6. AP off + stale scan          → blocking "Scan is stale"
+ *  7. AP on + portal outdated      → warning + Update Portal button
+ *  8. AP on + stale scan           → info (non-blocking)
  */
-function computeBanner({ networkConfigMissing, apApplyInProgress, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate, hasError }) {
-  if (networkConfigMissing)             return "config_missing";
-  if (apApplyInProgress && !hasError)   return "apply_in_progress";
-  if (scanError && scanError !== "SCAN_REQUIRED") return "scan_error";
+function computeBanner({ networkConfigMissing, apApplyInProgress, isReconcilingToggle, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate, hasError }) {
+  if (networkConfigMissing)                                    return "config_missing";
+  if (apApplyInProgress && !isReconcilingToggle && !hasError)  return "apply_in_progress";
+  if (isReconcilingToggle)                                     return "toggle_reconciling_timeout";
+  if (scanError && scanError !== "SCAN_REQUIRED")              return "scan_error";
   if (!apEnabled && !hasScan)           return "scan_required";
   if (!apEnabled && hasScan && !scanFresh) return "scan_stale_blocking";
   if (apEnabled && portalOutOfDate)     return "portal_outdated";
@@ -34,10 +36,11 @@ const AccessPointPanel = ({
   error,
   scanError,
   hasScanId,
-  adminState,          // full admin state from /network/:id/state
+  adminState,
+  isReconcilingToggle,
   onRetry,
   onToggle,
-  onUpdatePortal,      // "Update Portal" button handler
+  onUpdatePortal,
 }) => {
   const navigate = useNavigate();
   const isEncrypted = networkConfig?.encryption_type !== "Open";
@@ -58,6 +61,7 @@ const AccessPointPanel = ({
   const banner = computeBanner({
     networkConfigMissing,
     apApplyInProgress,
+    isReconcilingToggle: isReconcilingToggle ?? false,
     scanError,
     apEnabled: accessPoint?.enabled ?? false,
     hasScan,
@@ -67,7 +71,7 @@ const AccessPointPanel = ({
   });
 
   // Toggle is disabled while loading, during in-progress apply, or when enabling without a scan
-  const toggleDisabled = loading || apApplyInProgress || (!accessPoint?.enabled && !hasScanId);
+  const toggleDisabled = loading || apApplyInProgress || isReconcilingToggle || (!accessPoint?.enabled && !hasScanId);
 
   const handleToggleClick = () => {
     if (!accessPoint?.enabled && isEncrypted && !apPassword) {
@@ -122,6 +126,13 @@ const AccessPointPanel = ({
           <div className="state-message info-state">
             <p>Applying AP configuration…</p>
             <small>Please wait while the change is being applied.</small>
+          </div>
+        )}
+
+        {banner === "toggle_reconciling_timeout" && (
+          <div className="state-message info-state">
+            <p>The device is taking longer than expected.</p>
+            <small>Checking actual access point state…</small>
           </div>
         )}
 
