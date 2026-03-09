@@ -212,7 +212,8 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
         newBucket,
         newScore,
         reason: "threat_detected",
-        scanId,
+        // Don't pass scanId — it's a bigint from scans table,
+        // but networks.last_scan_id is uuid (from vulnerability_scans)
       });
     } catch (pipeErr) {
       console.error("[riskPipeline] updateNetworkRisk error (non-fatal):", pipeErr.message);
