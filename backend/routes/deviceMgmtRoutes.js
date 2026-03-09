@@ -629,11 +629,46 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 
 		console.log('AP enabled successfully for network:', network_id);
 
+		// Step 10: Always push current portal content after AP enable
+		// The Pi needs fresh content every time AP comes up (announcements, tips, risk, color).
+		// Step 7 only seeds+patches on first init; subsequent enables need this.
+		let portalPatched = false;
+		try {
+			const patchPayload = await buildPortalPayloadFromDB(
+				network_id, net.bssid, net.ssid
+			);
+
+			logFastApiCall('portal/patch (POST-ENABLE)', '/portal/patch', patchPayload, null);
+
+			const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
+				method: 'POST',
+				jsonBody: patchPayload,
+			});
+
+			logFastApiCall('portal/patch RESPONSE (POST-ENABLE)', '/portal/patch', patchPayload, {
+				status: patchStatus,
+				body: patchData,
+			});
+
+			if (patchOk) {
+				portalPatched = true;
+				await supabaseClient
+					.from('networks')
+					.update({ portal_last_patched_at: new Date().toISOString() })
+					.eq('network_id', network_id);
+				console.log('Portal content pushed after AP enable for network:', network_id);
+			} else {
+				console.warn('[enable-ap] portal/patch after enable failed (non-fatal):', patchStatus, patchData);
+			}
+		} catch (patchErr) {
+			console.error('[enable-ap] portal/patch after enable error (non-fatal):', patchErr.message);
+		}
+
 		// Audit: enable success
 		await logAuditEvent({
 			req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus },
+			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus, portal_patched: portalPatched },
 		});
 
 		const responseBody = {
@@ -641,6 +676,7 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 			network_id,
 			ap_enabled: true,
 			portal_initialized: true,
+			portal_patched: portalPatched,
 			scan: {
 				scan_id: scan.scan_id,
 				finished_at: scan.finished_at,

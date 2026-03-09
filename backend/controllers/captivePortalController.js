@@ -171,7 +171,7 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 	const risk = await lookupRiskClassification(score);
 
 	// 6. Build the payload matching FastAPI /portal/patch schema
-	return {
+	const payload = {
 		network_id: `${bssid} | ${ssid}`,
 		patch: {
 			portal_content: {
@@ -193,6 +193,10 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 			},
 		},
 	};
+
+	console.log(`[portalPayload] network=${networkId} score=${score} risk_level=${risk.risk_level} color=${risk.ui_color} announcement="${announcementText.substring(0, 80)}${announcementText.length > 80 ? '…' : ''}" tips=${tipItems.length} items=[${tipItems.map(t => `"${t.substring(0, 40)}"` ).join(', ')}]`);
+
+	return payload;
 }
 
 // ═══════════════════════════════════════════════════════════════════
