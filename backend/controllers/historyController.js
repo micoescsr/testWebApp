@@ -39,7 +39,9 @@ async function resolveScopedScanIds(userId, role) {
   if (!vulnScans || vulnScans.length === 0) return [];
 
   // Unique network_ids this user has scanned
-  const networkIds = [...new Set(vulnScans.map((v) => v.network_id).filter(Boolean))];
+  const networkIds = [
+    ...new Set(vulnScans.map((v) => v.network_id).filter(Boolean)),
+  ];
 
   if (networkIds.length === 0) return [];
 
@@ -72,7 +74,8 @@ async function getVulnerabilityHistory(req, res) {
     // 2) Query scans with network join
     let scansQuery = supabaseClient
       .from("scans")
-      .select(`
+      .select(
+        `
         scan_id,
         created_at,
         scan_start,
@@ -85,7 +88,8 @@ async function getVulnerabilityHistory(req, res) {
           channel,
           num_clients
         )
-      `)
+      `,
+      )
       .order("created_at", { ascending: false });
 
     // Apply user-scoping for non-superadmin
@@ -102,7 +106,8 @@ async function getVulnerabilityHistory(req, res) {
     // 3) Get vulnerability findings for those scans
     const { data: findings, error: findingsError } = await supabaseClient
       .from("vulnerabilities_threat")
-      .select(`
+      .select(
+        `
         scan_id,
         vt_name,
         vt_kind,
@@ -115,9 +120,10 @@ async function getVulnerabilityHistory(req, res) {
           vt_severity_rating,
           vt_cvss_base_score
         )
-      `)
+      `,
+      )
       .in("scan_id", scanIds)
-      .eq("vt_kind", "vulnerability");
+      .in("vt_kind", ["vulnerability", "VULNERABILITY"]);
 
     if (findingsError) throw findingsError;
 
@@ -186,7 +192,8 @@ async function getThreatHistory(req, res) {
     // 2) Query scans
     let scansQuery = supabaseClient
       .from("scans")
-      .select(`
+      .select(
+        `
         scan_id,
         created_at,
         scan_start,
@@ -199,7 +206,8 @@ async function getThreatHistory(req, res) {
           channel,
           num_clients
         )
-      `)
+      `,
+      )
       .order("created_at", { ascending: false });
 
     if (allowedScanIds !== null) {
@@ -215,7 +223,8 @@ async function getThreatHistory(req, res) {
     // 3) Get threat findings for those scans
     const { data: findings, error: findingsError } = await supabaseClient
       .from("vulnerabilities_threat")
-      .select(`
+      .select(
+        `
         scan_id,
         vt_name,
         vt_kind,
@@ -226,9 +235,10 @@ async function getThreatHistory(req, res) {
           vt_severity_rating,
           vt_cvss_base_score
         )
-      `)
+      `,
+      )
       .in("scan_id", scanIds)
-      .eq("vt_kind", "threat");
+      .in("vt_kind", ["threat", "THREAT"]);
 
     if (findingsError) throw findingsError;
 

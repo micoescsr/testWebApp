@@ -13,7 +13,9 @@ const { piFetch } = require("../utils/piFetch");
 async function loadThreatDefinitions() {
   const { data, error } = await supabaseClient
     .from("vulnerability_threat_details")
-    .select("vt_code, vt_name, vt_cvss_base_score, vt_severity_rating, vt_kind");
+    .select(
+      "vt_code, vt_name, vt_cvss_base_score, vt_severity_rating, vt_kind",
+    );
 
   if (error) throw error;
   const map = new Map();
@@ -79,7 +81,9 @@ function mapPollResultsToThreatRows(results, defsByCode) {
 async function persistThreatRows(threatRows, scanId, activeNetworkId) {
   if (!Array.isArray(threatRows) || threatRows.length === 0) return;
   if (!scanId) {
-    console.warn("[persistThreatRows] No scanId provided, skipping threat persistence");
+    console.warn(
+      "[persistThreatRows] No scanId provided, skipping threat persistence",
+    );
     return;
   }
 
@@ -94,7 +98,11 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
       .maybeSingle();
 
     if (detailErr || !detail) {
-      console.error("[persistThreatRows] Missing vt_detail for code", t.id, detailErr);
+      console.error(
+        "[persistThreatRows] Missing vt_detail for code",
+        t.id,
+        detailErr,
+      );
       continue;
     }
 
@@ -152,7 +160,11 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
         console.error("[persistThreatRows] Update failed", updErr);
       }
     } else {
-      // Insert new row
+      // Insert new row — always record first_seen_at even for CLEARED,
+      // so the threat is visible in scan history.
+      const firstSeenFromSessions = t.sessions?.[0]?.firstSeen
+        ? new Date(t.sessions[0].firstSeen * 1000).toISOString()
+        : now;
       const insertPayload = {
         scan_id: scanId,
         vt_name: t.name,
@@ -161,8 +173,8 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
         vt_detail_id: detail.vt_detail_id,
         vt_kind: detail.vt_kind,
         severity_score: detail.vt_cvss_base_score,
-        occurrence_count: isDetected ? 1 : 0,
-        first_seen_at: isDetected ? now : null,
+        occurrence_count: 1,
+        first_seen_at: firstSeenFromSessions,
         last_seen_at: now,
       };
 
@@ -180,11 +192,14 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
   let effectiveScore = 0;
   const { data: rpcScore, error: rpcErr } = await supabaseClient.rpc(
     "compute_scan_risk",
-    { p_scan_id: scanId }
+    { p_scan_id: scanId },
   );
 
   if (rpcErr) {
-    console.warn("[persistThreatRows] compute_scan_risk RPC failed, falling back to JS scoring", rpcErr);
+    console.warn(
+      "[persistThreatRows] compute_scan_risk RPC failed, falling back to JS scoring",
+      rpcErr,
+    );
     const { computeRiskScore } = require("../utils/scoring");
     const findings = threatRows.map((t) => ({ score: t.score ?? 0 }));
     effectiveScore = computeRiskScore(findings);
@@ -193,13 +208,20 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
       .update({ risk_score: effectiveScore })
       .eq("scan_id", scanId);
     if (scoreErr) {
-      console.error("[persistThreatRows] Fallback risk_score update failed", scoreErr);
+      console.error(
+        "[persistThreatRows] Fallback risk_score update failed",
+        scoreErr,
+      );
     } else {
-      console.log(`[persistThreatRows] Fallback risk_score ${effectiveScore} written for scan ${scanId}`);
+      console.log(
+        `[persistThreatRows] Fallback risk_score ${effectiveScore} written for scan ${scanId}`,
+      );
     }
   } else {
     effectiveScore = rpcScore ?? 0;
-    console.log(`[persistThreatRows] compute_scan_risk returned ${effectiveScore} for scan ${scanId}`);
+    console.log(
+      `[persistThreatRows] compute_scan_risk returned ${effectiveScore} for scan ${scanId}`,
+    );
   }
 
   // Risk pipeline: update network risk with effective score + official bucket
@@ -216,7 +238,10 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
         // but networks.last_scan_id is uuid (from vulnerability_scans)
       });
     } catch (pipeErr) {
-      console.error("[riskPipeline] updateNetworkRisk error (non-fatal):", pipeErr.message);
+      console.error(
+        "[riskPipeline] updateNetworkRisk error (non-fatal):",
+        pipeErr.message,
+      );
     }
   }
 }
@@ -273,7 +298,8 @@ async function start(req, res) {
       String(scan_id).includes("-") // UUID guard
     ) {
       return res.status(400).json({
-        error: "scan_id must be a positive integer (bigint from public.scans), not a UUID.",
+        error:
+          "scan_id must be a positive integer (bigint from public.scans), not a UUID.",
         received: scan_id,
       });
     }
@@ -283,7 +309,12 @@ async function start(req, res) {
       return res.status(401).json({ error: "No authenticated user" });
     }
 
-    const row = await detectStateService.startOrSwitch(req, actorId, network_id, numericScanId);
+    const row = await detectStateService.startOrSwitch(
+      req,
+      actorId,
+      network_id,
+      numericScanId,
+    );
 
     // Audit is already written inside detectStateService.startOrSwitch()
     // (DETECTION.START or DETECTION.SWITCH_TARGET with entityType DETECTION_STATE)
@@ -349,25 +380,39 @@ async function stopDetection(req, res) {
     }
 
     // Delegate to service (SUCCESS audit is written there, not here)
-    const row = await detectStateService.stop(req, actorId, { reason_code, reason_note: reason_note || null });
+    const row = await detectStateService.stop(req, actorId, {
+      reason_code,
+      reason_note: reason_note || null,
+    });
 
     // Finalization: recompute risk one last time + stamp scan_end + update network risk (best-effort)
     if (row.active_scan_id) {
       try {
         let score = 0;
-        const { data: finalScore, error: rpcErr } = await supabaseClient.rpc("compute_scan_risk", { p_scan_id: row.active_scan_id });
+        const { data: finalScore, error: rpcErr } = await supabaseClient.rpc(
+          "compute_scan_risk",
+          { p_scan_id: row.active_scan_id },
+        );
         if (rpcErr) {
-          console.warn("[stopDetection] compute_scan_risk RPC failed, using fallback", rpcErr);
+          console.warn(
+            "[stopDetection] compute_scan_risk RPC failed, using fallback",
+            rpcErr,
+          );
           const { computeRiskScore } = require("../utils/scoring");
-          score = computeRiskScore([]);  // no threat rows available at stop time; score derived from DB state
+          score = computeRiskScore([]); // no threat rows available at stop time; score derived from DB state
         } else {
           score = finalScore ?? 0;
-          console.log(`[stopDetection] Final compute_scan_risk returned ${score} for scan ${row.active_scan_id}`);
+          console.log(
+            `[stopDetection] Final compute_scan_risk returned ${score} for scan ${row.active_scan_id}`,
+          );
         }
 
         // Update network risk with final score
         if (row.active_network_id) {
-          const { bucketize, updateNetworkRisk } = require("../utils/riskPipeline");
+          const {
+            bucketize,
+            updateNetworkRisk,
+          } = require("../utils/riskPipeline");
           await updateNetworkRisk(row.active_network_id, {
             newBucket: bucketize(score),
             newScore: score,
@@ -376,15 +421,27 @@ async function stopDetection(req, res) {
           });
         }
       } catch (err) {
-        console.error("[stopDetection] Final risk recompute failed (non-fatal):", err.message);
+        console.error(
+          "[stopDetection] Final risk recompute failed (non-fatal):",
+          err.message,
+        );
       }
 
       await supabaseClient
         .from("scans")
         .update({ scan_end: new Date().toISOString() })
         .eq("scan_id", row.active_scan_id)
-        .then(() => console.log(`[stopDetection] scan_end stamped for scan ${row.active_scan_id}`))
-        .catch((err) => console.error("[stopDetection] scan_end update failed (non-fatal):", err.message));
+        .then(() =>
+          console.log(
+            `[stopDetection] scan_end stamped for scan ${row.active_scan_id}`,
+          ),
+        )
+        .catch((err) =>
+          console.error(
+            "[stopDetection] scan_end update failed (non-fatal):",
+            err.message,
+          ),
+        );
     }
 
     return res.json(row);
@@ -451,16 +508,26 @@ async function poll(req, res) {
 
     if (piOk && data) {
       if (data.results && data.results.length > 0) {
-        console.log("THREAT DETECTED [Express]:", JSON.stringify(data.results, null, 2));
+        console.log(
+          "THREAT DETECTED [Express]:",
+          JSON.stringify(data.results, null, 2),
+        );
       } else {
         process.stdout.write(".");
       }
 
       const defsByCode = await loadThreatDefinitions();
-      const threatRows = mapPollResultsToThreatRows(data.results || [], defsByCode);
+      const threatRows = mapPollResultsToThreatRows(
+        data.results || [],
+        defsByCode,
+      );
 
       // Persist threat rows using detection_state's scan_id and network_id
-      await persistThreatRows(threatRows, stateRow.active_scan_id, stateRow.active_network_id);
+      await persistThreatRows(
+        threatRows,
+        stateRow.active_scan_id,
+        stateRow.active_network_id,
+      );
 
       // 3) Heartbeat on successful poll (redundant with server-side ping,
       //    but harmless — keeps heartbeat fresh from both sources)

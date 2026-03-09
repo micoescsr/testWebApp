@@ -9,11 +9,11 @@ import {
   getVulnerabilityDetail,
 } from "../api/samApi";
 
-  export const useNetworks = () => {
-    const [networks, setNetworks] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [cached, setCached] = useState(false) ;
+export const useNetworks = () => {
+  const [networks, setNetworks] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [cached, setCached] = useState(false);
 
   const fetchNetworks = async () => {
     try {
@@ -30,7 +30,9 @@ import {
       setNetworks(body.networks || []);
       setCached(body.cached ?? false);
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to load networks");
+      setError(
+        err.response?.data?.error || err.message || "Failed to load networks",
+      );
     } finally {
       setLoading(false);
     }
@@ -147,7 +149,7 @@ export const useVulnerabilities = (bssid) => {
       const clearedAfter = localStorage.getItem(clearedKey);
 
       const url = `/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
-        targetBssid
+        targetBssid,
       )}`;
 
       console.log("[loadVulnerabilities] fetching:", url);
@@ -156,7 +158,10 @@ export const useVulnerabilities = (bssid) => {
       console.log("[loadVulnerabilities] response status:", res.status);
 
       const body = res.data;
-      console.log("[loadVulnerabilities] response body:", JSON.stringify(body).slice(0, 500));
+      console.log(
+        "[loadVulnerabilities] response body:",
+        JSON.stringify(body).slice(0, 500),
+      );
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");
       }
@@ -188,14 +193,15 @@ export const useVulnerabilities = (bssid) => {
       if (clearedAfter) {
         const clearedMs = new Date(clearedAfter).getTime();
         mapped = mapped.filter((v) => {
-          const detectedMs = v.detectedTime ? new Date(v.detectedTime).getTime() : 0;
+          const detectedMs = v.detectedTime
+            ? new Date(v.detectedTime).getTime()
+            : 0;
           return detectedMs > clearedMs;
         });
       }
 
       setVulnerabilities(mapped);
       console.log("[loadVulnerabilities] mapped rows:", mapped.length, mapped);
-
     } catch (err) {
       console.error("fetchVulnerabilities error:", err);
       setVulnError(err.message || "Failed to load vulnerabilities");
@@ -204,7 +210,7 @@ export const useVulnerabilities = (bssid) => {
     }
   };
 
-   // 🔴 REMOVE this auto-load effect so nothing shows initially
+  // 🔴 REMOVE this auto-load effect so nothing shows initially
   // useEffect(() => {
   //   loadVulnerabilities();
   // }, []);
@@ -212,7 +218,7 @@ export const useVulnerabilities = (bssid) => {
   // reload whenever selected bssid changes
   useEffect(() => {
     loadVulnerabilities(bssid);
-  }, [bssid]);  // ⬅ important: tied to selected network
+  }, [bssid]); // ⬅ important: tied to selected network
 
   // ... keep fetchVulnDetail as you have it ...
   /* {
@@ -241,15 +247,22 @@ export const useVulnerabilities = (bssid) => {
               name: res.data.name ?? vulnRow?.name ?? "Unknown Vulnerability",
               cvss: res.data.cvss ?? vulnRow?.score ?? "N/A",
               cvssVector: res.data.cvssVector ?? "N/A",
-              description: res.data.description ?? defaultVulnDescription(vulnRow),
-              recommendations: res.data.recommendations ?? { nist: [], owasp: [] },
+              description:
+                res.data.description ?? defaultVulnDescription(vulnRow),
+              recommendations: res.data.recommendations ?? {
+                nist: [],
+                owasp: [],
+              },
               observedConfig: vulnRow?.observedConfig ?? "N/A",
               detectedTime: vulnRow?.detectedTime ?? null,
             });
             return; // success — done
           }
         } catch (apiErr) {
-          console.warn("API detail fetch failed, using local fallback:", apiErr);
+          console.warn(
+            "API detail fetch failed, using local fallback:",
+            apiErr,
+          );
         }
       }
 
@@ -274,7 +287,8 @@ export const useVulnerabilities = (bssid) => {
 
   /** Helper to generate a default description from the row data */
   function defaultVulnDescription(row) {
-    if (!row) return "Detailed information for this vulnerability is not yet available.";
+    if (!row)
+      return "Detailed information for this vulnerability is not yet available.";
     return `${row.name || "This vulnerability"} was detected during analysis. Observed configuration: ${row.observedConfig || "N/A"}. Review and apply the recommendations to mitigate risk.`;
   }
 
@@ -288,9 +302,7 @@ export const useVulnerabilities = (bssid) => {
     reloadVulnerabilities: loadVulnerabilities, // <-- new
     clearVulnerabilities, // <-- clear SAM view
   };
-  
 };
-
 
 /* =========================
    THREAT DETECTION HOOK (Persistent — backed by detection_state table)
@@ -338,7 +350,10 @@ export const useThreatDetection = () => {
           setFailureReason(null);
         }
       } catch (err) {
-        console.warn("[useThreatDetection] bootstrap /detect/status failed:", err.message);
+        console.warn(
+          "[useThreatDetection] bootstrap /detect/status failed:",
+          err.message,
+        );
         // Stay IDLE — will try again on next poll or scan
       }
     })();
@@ -374,9 +389,9 @@ export const useThreatDetection = () => {
         setDetectionResults(data);
         setLiveThreats(mapped);
 
-        if (mapped.length > 0) {
-          setDisplayThreats(mapped);
-        }
+        // Merge new poll results with existing display threats so sessions
+        // accumulate across polls instead of being replaced wholesale.
+        setDisplayThreats((prev) => mergeThreats(prev, mapped));
       }
     } catch (err) {
       console.error("Polling error:", err);
@@ -386,6 +401,66 @@ export const useThreatDetection = () => {
       }
     }
   };
+
+  /**
+   * Merge newly-polled threats into the existing display list.
+   * - New threat ids are appended
+   * - Existing threats get their sessions merged (de-duped by firstSeen)
+   *   and their status/score updated from the latest poll
+   */
+  function mergeThreats(prev, incoming) {
+    if (!incoming || incoming.length === 0) return prev;
+    if (!prev || prev.length === 0) return incoming;
+
+    const merged = new Map();
+    // Seed with existing threats
+    for (const t of prev) merged.set(t.id, { ...t });
+
+    for (const t of incoming) {
+      if (!merged.has(t.id)) {
+        merged.set(t.id, { ...t });
+      } else {
+        const existing = merged.get(t.id);
+        // Update live fields from latest poll
+        existing.status = t.status;
+        existing.score = t.score ?? existing.score;
+        existing.severity = t.severity ?? existing.severity;
+        existing.detectedTime = t.detectedTime ?? existing.detectedTime;
+        existing.activeCount = t.activeCount;
+        existing.activeSession = t.activeSession;
+        existing.raw = t.raw;
+
+        // Merge sessions: add any new sessions (by firstSeen) that don't exist yet
+        const existingFirstSeens = new Set(
+          (existing.sessions || []).map((s) => s.firstSeen),
+        );
+        for (const s of t.sessions || []) {
+          if (!existingFirstSeens.has(s.firstSeen)) {
+            existing.sessions.push(s);
+          } else {
+            // Update existing session (e.g., DETECTED → CLEARED, duration extended)
+            const idx = existing.sessions.findIndex(
+              (es) => es.firstSeen === s.firstSeen,
+            );
+            if (idx !== -1) {
+              existing.sessions[idx] = s;
+            }
+          }
+        }
+        // Re-sort sessions newest first
+        existing.sessions.sort((a, b) => {
+          const aKey = a.lastSeen || a.firstSeen;
+          const bKey = b.lastSeen || b.firstSeen;
+          return bKey - aKey;
+        });
+        // Recompute occurrences from accumulated sessions
+        existing.occurrences = existing.sessions.filter(
+          (s) => s.state === "CLEARED",
+        ).length;
+      }
+    }
+    return Array.from(merged.values());
+  }
 
   // Helper: transform server threatRows into parent/session model
   function toEpochSeconds(v) {
@@ -402,14 +477,27 @@ export const useThreatDetection = () => {
     const nowSec = Math.floor(Date.now() / 1000);
 
     return rows.map((t) => {
-      const rawSessions = Array.isArray(t.sessions) ? t.sessions : t.sessions || [];
+      const rawSessions = Array.isArray(t.sessions)
+        ? t.sessions
+        : t.sessions || [];
 
       const sessions = rawSessions
         .map((s) => {
-          const first = toEpochSeconds(s.firstSeen ?? s.first_seen ?? s.first_seen_epoch ?? s.firstSeenEpoch);
-          const last = toEpochSeconds(s.lastSeen ?? s.last_seen ?? s.last_seen_epoch ?? s.lastSeenEpoch);
+          const first = toEpochSeconds(
+            s.firstSeen ??
+              s.first_seen ??
+              s.first_seen_epoch ??
+              s.firstSeenEpoch,
+          );
+          const last = toEpochSeconds(
+            s.lastSeen ?? s.last_seen ?? s.last_seen_epoch ?? s.lastSeenEpoch,
+          );
           const state = s.state || s.status || (last ? "CLEARED" : "DETECTED");
-          const duration = first ? (last ? last - first : nowSec - first) : null;
+          const duration = first
+            ? last
+              ? last - first
+              : nowSec - first
+            : null;
           return {
             firstSeen: first,
             lastSeen: last,
@@ -425,11 +513,14 @@ export const useThreatDetection = () => {
           return bKey - aKey;
         });
 
-      const occurrencesCompleted = sessions.filter((s) => s.state === "CLEARED").length;
-      const activeSession = sessions.find((s) => s.state === "DETECTED") || null;
+      const occurrencesCompleted = sessions.filter(
+        (s) => s.state === "CLEARED",
+      ).length;
+      const activeSession =
+        sessions.find((s) => s.state === "DETECTED") || null;
       const lastSeen = activeSession
-        ? (activeSession.lastSeen || nowSec)
-        : (sessions[0]?.lastSeen || sessions[0]?.firstSeen || null);
+        ? activeSession.lastSeen || nowSec
+        : sessions[0]?.lastSeen || sessions[0]?.firstSeen || null;
 
       return {
         id: t.id || t.vt_id || t.code || t.name,
