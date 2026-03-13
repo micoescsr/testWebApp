@@ -204,8 +204,8 @@ function buildPortalPatchPayload(bssid, ssid, nowUnix) {
       security: {
         score: 0,
         risk_level: "LOW",
-        ui_color: "#22C55E",
-        description: "Low risk — minimal threats detected",
+        riskColor: "#22C55E",
+        riskDescription: "Low risk — minimal threats detected",
         updated_at: now,
       },
     },

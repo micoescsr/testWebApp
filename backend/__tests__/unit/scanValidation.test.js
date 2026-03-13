@@ -161,8 +161,8 @@ describe("buildPortalPatchPayload", () => {
     const sec = payload.patch.security;
     expect(sec.score).toBe(0);
     expect(sec.risk_level).toBe("LOW");
-    expect(sec.ui_color).toBe("#22C55E");
-    expect(sec.description).toBe("Low risk — minimal threats detected");
+    expect(sec.riskColor).toBe("#22C55E");
+    expect(sec.riskDescription).toBe("Low risk — minimal threats detected");
   });
 
   test("uses Date.now when nowUnix is omitted", () => {

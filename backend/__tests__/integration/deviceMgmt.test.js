@@ -56,8 +56,8 @@ jest.mock("../../controllers/captivePortalController", () => ({
       security: {
         score: 0,
         risk_level: "LOW",
-        ui_color: "#22C55E",
-        description: "Low risk — minimal threats detected",
+        riskColor: "#22C55E",
+        riskDescription: "Low risk — minimal threats detected",
         updated_at: 1740000000,
       },
     },
@@ -306,8 +306,8 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     // Verify portal/patch payload includes risk classification fields (real score)
     const portalPayload = JSON.parse(fetchCalls[0].opts.body);
-    expect(portalPayload.patch.security).toHaveProperty("ui_color");
-    expect(portalPayload.patch.security).toHaveProperty("description");
+    expect(portalPayload.patch.security).toHaveProperty("riskColor");
+    expect(portalPayload.patch.security).toHaveProperty("riskDescription");
     expect(portalPayload.patch.security.risk_level).not.toBe("NOT YET ASSESSED");
 
     // Verify orchestrate/apply payload uses DB config (not from request body)

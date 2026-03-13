@@ -76,11 +76,11 @@ async function seedDefaultContent(networkId) {
  * Returns the lowest tier whose `risk_percentage` ≥ the given score.
  *
  * @param {number} score – network security score between 0 and 100
- * @returns {{ risk_level, ui_color, description, risk_percentage }}
+ * @returns {{ risk_level, riskColor, riskDescription, risk_percentage }}
  */
 async function lookupRiskClassification(score) {
 	try {
-		const { data, error } = await supabaseClient
+		const { data: raw, error } = await supabaseClient
 			.from('risk_classification')
 			.select('risk_level, ui_color, description, risk_percentage')
 			.gte('risk_percentage', score)
@@ -90,17 +90,22 @@ async function lookupRiskClassification(score) {
 
 		if (error) throw error;
 
-		if (data) return data;
+		if (raw) return {
+			risk_level: raw.risk_level,
+			riskColor: raw.ui_color,
+			riskDescription: raw.description,
+			risk_percentage: raw.risk_percentage,
+		};
 	} catch (err) {
 		console.warn('[lookupRiskClassification] Falling back to default — table may not exist:', err.message);
 	}
 
 	// Fallback when table is missing or no matching row
 	const s = Number(score) || 0;
-	if (s <= 39) return { risk_level: 'LOW', ui_color: '#22c55e', description: 'Low risk', risk_percentage: 39 };
-	if (s <= 69) return { risk_level: 'MEDIUM', ui_color: '#f59e0b', description: 'Medium risk', risk_percentage: 69 };
-	if (s <= 89) return { risk_level: 'HIGH', ui_color: '#ef4444', description: 'High risk', risk_percentage: 89 };
-	return { risk_level: 'CRITICAL', ui_color: '#dc2626', description: 'Critical risk', risk_percentage: 100 };
+	if (s <= 39) return { risk_level: 'LOW', riskColor: '#22c55e', riskDescription: 'Low risk', risk_percentage: 39 };
+	if (s <= 69) return { risk_level: 'MEDIUM', riskColor: '#f59e0b', riskDescription: 'Medium risk', risk_percentage: 69 };
+	if (s <= 89) return { risk_level: 'HIGH', riskColor: '#ef4444', riskDescription: 'High risk', risk_percentage: 89 };
+	return { risk_level: 'CRITICAL', riskColor: '#dc2626', riskDescription: 'Critical risk', risk_percentage: 100 };
 }
 
 /**
@@ -187,14 +192,14 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 			security: {
 				score,
 				risk_level: risk.risk_level,
-				ui_color: risk.ui_color,
-				description: risk.description,
+				riskColor: risk.riskColor,
+				riskDescription: risk.riskDescription,
 				updated_at: now,
 			},
 		},
 	};
 
-	console.log(`[portalPayload] network=${networkId} score=${score} risk_level=${risk.risk_level} color=${risk.ui_color} announcement="${announcementText.substring(0, 80)}${announcementText.length > 80 ? '…' : ''}" tips=${tipItems.length} items=[${tipItems.map(t => `"${t.substring(0, 40)}"` ).join(', ')}]`);
+	console.log(`[portalPayload] network=${networkId} score=${score} risk_level=${risk.risk_level} color=${risk.riskColor} announcement="${announcementText.substring(0, 80)}${announcementText.length > 80 ? '…' : ''}" tips=${tipItems.length} items=[${tipItems.map(t => `"${t.substring(0, 40)}"` ).join(', ')}]`);
 
 	return payload;
 }
