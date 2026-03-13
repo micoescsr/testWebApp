@@ -1,4 +1,4 @@
-# Device Management – Access Point & Captive Portal
+﻿# Device Management – Access Point & Captive Portal
 
 ## Overview
 
@@ -9,15 +9,17 @@ The Device Management page lets an authenticated user **enable/disable a captive
 - Announcement updates always sync to the Raspberry Pi via `portal/patch`, regardless of AP state.
 - When AP is **disabled**: the full portal payload (announcement + tips + risk) is sent so the Pi has the latest content ready for when AP is enabled.
 - When AP is **enabled**: only the announcement portion is sent for real-time update.
+- After every successful AP enable, a **post-enable portal patch** (Step 10) is sent to the Pi with the latest portal content. This runs on every enable, not just the first.
 - AP enable/disable errors from the Pi are classified into normalized error codes for clear user prompts.
-- Gateway timeouts (502/503/504) trigger **automatic reconciliation** — the backend polls the Pi's actual state and the frontend self-corrects via delayed polling.
+- Gateway timeouts (502/503/504) trigger **automatic reconciliation** — the backend polls the Pi's actual state and the frontend self-corrects via bounded polling.
+- The AP apply lock includes a **TTL** — stale locks older than `AP_LOCK_TTL_SECONDS` (default 120 s) are auto-released so a crashed request can never permanently block AP operations.
 
 ---
 
 ## Architecture
 
 ```
-SAM (scan) ──► NetworkContext (in-memory: networkId + scanId)
+SAM (scan) ──► NetworkContext (sessionStorage: networkId + scanId)
                   │
                   ▼
               DeviceManagement page
@@ -40,15 +42,20 @@ SAM (scan) ──► NetworkContext (in-memory: networkId + scanId)
 
 **Problem:** The previous implementation stored `network_id` in `localStorage`, which is insecure (accessible to any JS on the origin, persists across sessions, visible in dev tools).
 
-**Solution:** Replaced with a **React Context** (`NetworkContext`) that holds both `networkId` and `scanId` **in memory only**.
+**Solution:** Replaced with a **React Context** (`NetworkContext`) that persists both `networkId` and `scanId` in **`sessionStorage`** (not `localStorage`), using a versioned envelope under the key `wf:networkScan`. State survives page refresh within the same tab. On tab close, sessionStorage clears automatically.
 
 | Layer | What happens |
 |---|---|
-| `NetworkContext.jsx` | Creates a React context with `{ networkId, scanId, setNetworkScan }` stored via `useState` (memory only) |
+| `NetworkContext.jsx` | Creates a React context backed by `useSessionState("wf:networkScan", ...)`. Exports `networkId`, `scanId`, `setNetworkId`, `setScanId`, `setNetworkScan`, `clearNetworkScan`. |
+| `useSessionState.js` | Drop-in replacement for `useState` that syncs to sessionStorage via a versioned envelope `{ v: 1, value: ... }`. Supports functional `setState(prev => next)`. |
 | `App.jsx` | Wraps the entire app in `<NetworkProvider>` |
 | `SAM.jsx` | After a successful scan + save, calls `setNetworkScan(networkId, scanId)` |
-| `Sidebar.jsx` | Dynamically appends `?network_id=<id>&scan_id=<id>` to the Device Management link |
-| `DeviceManagement.jsx` | Reads from context first, falls back to URL search params (for direct links / page refresh) |
+| `Sidebar.jsx` | Dynamically appends `?network_id=<id>&scan_id=<id>` to the Device Management link when context values are present |
+| `DeviceManagement.jsx` | Reads from context first (`useNetworkContext()`), falls back to URL search params (for direct links / page refresh) |
+
+**Logout behavior:** `clearSessionState()` wipes all `wf:*` keys from sessionStorage to prevent data leaking into the next session.
+
+**Network change behavior:** Calling `setNetworkId(newId)` automatically resets `scanId` to `null` when the network changes, preventing stale scan mismatch.
 
 ---
 
@@ -59,8 +66,12 @@ The backend validates scans before enabling the AP:
 | Check | When | Backend Error Code | UI Behaviour |
 |---|---|---|---|
 | `scan_id` is present | Enable only | `SCAN_REQUIRED` | Toggle disabled + "Scan required" banner with link to SAM |
-| Scan is not older than `SCAN_MAX_AGE_SECONDS` (default 300s, env-configurable) | Enable only | `SCAN_TOO_OLD` | Warning banner + "Scan Again" button |
-| Scan's `network_id` matches the requested `network_id` | Enable only | `SCAN_NETWORK_MISMATCH` | Warning banner + "Scan Again" button |
+| Scan belongs to the requested network | Enable only | `SCAN_NETWORK_MISMATCH` | Warning banner + "Scan Again" button |
+| Scan status is FAILED / CANCELLED / TIMEOUT | Enable only | `SCAN_FAILED` | Warning banner + "Scan Again" button |
+| Scan status is not COMPLETED or no `finished_at` | Enable only | `SCAN_NOT_FINISHED` | Warning banner |
+| Scan has a non-null `error_code` | Enable only | `SCAN_HAS_ERRORS` | Warning banner + "Scan Again" button |
+| Scan has no `scan_data` (empty object) | Enable only | `SCAN_INVALID_DATA` | Warning banner + "Scan Again" button |
+| Scan is older than `SCAN_MAX_AGE_SECONDS` (default 300 s) | Enable only | `SCAN_TOO_OLD` | Warning banner + "Scan Again" button |
 | None of the above | Disable | — | No scan_id required; toggle works immediately |
 
 ---
@@ -78,6 +89,7 @@ User edits announcement → clicks Publish
 POST /api/captivePortal/announcement  { content, network_id }
     │
     ├─ DB: deactivate old → insert new active announcement
+    ├─ DB: update captive_portal.announcement_id FK
     │
     ├─ Build FULL portal payload from DB (announcements + tips + risk)
     │
@@ -136,26 +148,42 @@ When the Pi responds to `orchestrate/apply` with `status: "ERROR"`, the backend 
 
 ---
 
+## AP Apply Lock & TTL
+
+The backend uses an **atomic concurrency lock** (`ap_apply_in_progress`) to prevent duplicate enable/disable operations. Lock acquisition uses a single atomic `UPDATE ... WHERE ap_apply_in_progress = false` to avoid races.
+
+### Stale Lock Auto-Release
+
+If lock acquisition fails, the backend checks whether the existing lock is stale:
+
+```
+Lock acquisition fails (ap_apply_in_progress already true)
+    │
+    ├─ ap_apply_locked_at exists AND is older than AP_LOCK_TTL_SECONDS?
+    │     ├─ Yes → force-release stale lock, re-acquire, log warning, continue
+    │     └─ No  → return 409 REQUEST_IN_PROGRESS
+    │
+    └─ Network row doesn't exist → return 404 NETWORK_NOT_FOUND
+```
+
+Lock acquisition stamps `ap_apply_locked_at = now()` so every subsequent request can detect staleness.
+
+`releaseApLock()` always runs in the `finally` block and clears both `ap_apply_in_progress = false` **and** `ap_apply_locked_at = null`. It logs but never throws.
+
+### Schema
+
+The `ap_apply_locked_at timestamptz` column was added in migration `002_ap_lock_ttl.sql`.
+
+---
+
 ## Timeout Reconciliation
 
 The Pi's `orchestrate/apply` can take 30–60+ seconds. The nginx proxy timeout for this endpoint is **45 seconds**, and `piFetch`'s own timeout is **60 seconds**. Either layer can cut the frontend connection before the Pi responds — even when the AP operation **actually succeeds**.
 
-A timeout is **ambiguous**: it does not prove success or failure.
-
-### Problem
-
-Without reconciliation:
-1. Proxy kills the connection → frontend receives 502/504
-2. `ap_enabled` may or may not have been set in DB (backend may still be running)
-3. Frontend reverts toggle to OFF → shows hard failure message
-4. AP may actually be ON on the Pi → user can't disable it because DB says OFF
-
 ### Solution: Three-layer reconciliation
 
 **Layer 1 — Backend (immediate):**
-When `piFetch` to `orchestrate/apply` fails with 502/503/504, the backend's catch block polls `GET /device/status` on the Pi (8s timeout). If the Pi responds:
-- Updates `ap_enabled` in DB to match the Pi's actual state
-- Returns `200 { ok: true, reconciled: true, ap_enabled: <actual> }` instead of an error
+When `piFetch` to `orchestrate/apply` fails with 502/503/504, the catch block polls `GET /device/status` on the Pi (8 s timeout):
 
 ```
 piFetch('/orchestrate/apply') → timeout/502/503/504
@@ -163,60 +191,37 @@ piFetch('/orchestrate/apply') → timeout/502/503/504
     ▼
 piFetch('/device/status', { timeoutMs: 8000 })
     │
-    ├─ Pi reachable → read ap_enabled → UPDATE networks → return 200 { reconciled: true }
+    ├─ Pi reachable → read ap_enabled → UPDATE networks (ap_enabled + ap_last_applied_at)
+    │                                → return 200 { reconciled: true, ap_enabled }
     │
-    └─ Pi also unreachable → fall through to normal error response
+    └─ Pi also unreachable → fall through to normal error response { timeout: true }
 ```
 
 **Layer 2 — Frontend `reconciled: true` handling:**
-If the backend successfully reconciles before the proxy kills the connection, the frontend receives `{ ok: true, reconciled: true, ap_enabled }`. This is trusted immediately — `fetchAdminState()` is called and UI syncs to backend truth.
+If the backend reconciles before the proxy kills the connection, the frontend receives `{ ok: true, reconciled: true, ap_enabled }`. `fetchAdminState()` is called immediately and UI syncs.
 
 **Layer 3 — Frontend bounded reconciliation polling (settlement gate):**
-If the error reaches the frontend as 502/503/504 (proxy killed the connection before the backend could respond), the frontend enters **bounded reconciliation mode** using `ap_apply_in_progress` as the settlement gate.
-
-Key principle: while `ap_apply_in_progress === true`, the backend has not settled — `ap_enabled` cannot be trusted. Only when `ap_apply_in_progress === false` can the frontend interpret `ap_enabled` as final truth.
+If 502/503/504 reaches the frontend raw, `waitForAdminStateSettlement(targetApEnabled)` is called:
 
 ```
 Axios catches 502/503/504
     │
     ├─ setIsReconcilingToggle(true)
-    ├─ Show banner: "The device is taking longer than expected. Checking actual access point state…"
-    ├─ Suspend normal 12s polling (no race conditions)
+    ├─ Show "The device is taking longer than expected. Checking actual access point state…"
+    ├─ Suspend normal 12 s polling
     │
-    ├─ Bounded reconciliation polling schedule: 3s, 10s, 20s, 35s, 50s, 60s
-    │     │
-    │     ├─ Each poll: GET /device/network/:id/state
-    │     │     ├─ ap_apply_in_progress === false (settled)
-    │     │     │     ├─ ap_enabled matches target → clear error ✓
-    │     │     │     └─ ap_enabled doesn't match → "did not finish enabling/disabling"
-    │     │     └─ ap_apply_in_progress === true → keep waiting (not settled)
-    │     │
-    │     └─ Last poll + still not settled → soft unresolved message
+    ├─ Poll schedule: 3 s, 10 s, 20 s, 35 s, 50 s, 60 s
+    │     ├─ ap_apply_in_progress === false → settled
+    │     │     ├─ ap_enabled matches target → success ✓
+    │     │     └─ ap_enabled doesn't match → "did not finish enabling/disabling"
+    │     └─ ap_apply_in_progress === true → still not settled, continue
+    │
+    └─ Last poll + still in progress → "The device may still be processing…"
     │
     └─ setIsReconcilingToggle(false) → resume normal polling
 ```
 
-**Settlement rules:**
-
-| Attempted | Settled `ap_enabled` | Result |
-|---|---|---|
-| enable | `true` | Eventual success |
-| enable | `false` | Settled unsuccessful enable |
-| disable | `false` | Eventual success |
-| disable | `true` | Settled unsuccessful disable |
-
-**Unresolved:** If the bounded window expires and `ap_apply_in_progress` is still `true`, the frontend stops polling, preserves the latest backend-derived UI state, and shows: *"The device may still be processing the request. Please wait a moment, then refresh or try again."*
-
-### Why 60 seconds?
-
-- nginx proxy timeout: **45 seconds** — this is when the frontend receives 502/504
-- Backend `piFetch` timeout: **60 seconds** — backend may still be running for ~15s after the frontend gets the timeout
-- Backend's own `/device/status` reconciliation adds a few more seconds
-- The **60-second reconciliation window** (6 polls at 3s, 10s, 20s, 35s, 50s, 60s) covers the full backend processing pipeline with margin
-
-### Classified errors are never reconciled
-
-Application-level backend errors (INCORRECT_PASSWORD, SSID_NOT_FOUND, DEVICE_BUSY, etc.) are **not** ambiguous — they are real outcomes. These continue to show immediate specific feedback without entering reconciliation mode. Only 502/503/504 transport errors trigger the reconciliation path.
+Classified errors (INCORRECT_PASSWORD, SSID_NOT_FOUND, etc.) are **never** reconciled — only 502/503/504 transport errors trigger this path.
 
 ---
 
@@ -233,22 +238,32 @@ Terms & Conditions have been **fully removed** from the system (not just hidden 
 | Backend seed | `seedDefaultContent()` no longer inserts a `terms_conditions` row |
 | Pi payload | `buildPortalPayloadFromDB()` no longer includes `patch.portal_content.terms` |
 | Route validation | `VALID_UPDATE_TYPES`, `ALLOWED_PAYLOAD_KEYS`, `KEYS_BY_UPDATE_TYPE` no longer include `terms` |
-| Patch validator | `validatePatchPayload()` terms shape block removed |
 
 The `terms_conditions` DB table still exists but is no longer read from or written to.
+
+> **Note:** The static `buildPortalPatchPayload()` in `scanValidation.js` still includes a `terms` key for backward-compatibility shape purposes. The live `buildPortalPayloadFromDB()` in `captivePortalController.js` — which actually sends content to the Pi — does **not** include terms.
 
 ---
 
 ## DB Schema Additions
 
-Two columns on the `networks` table:
+Columns added to the `networks` table:
 
 ```sql
-ALTER TABLE networks ADD COLUMN portal_initialized boolean NOT NULL DEFAULT false;
-ALTER TABLE networks ADD COLUMN ap_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE networks ADD COLUMN ap_enabled                 boolean     NOT NULL DEFAULT false;
+ALTER TABLE networks ADD COLUMN ap_apply_in_progress       boolean     NOT NULL DEFAULT false;
+ALTER TABLE networks ADD COLUMN ap_apply_locked_at         timestamptz          DEFAULT NULL;  -- migration 002
+ALTER TABLE networks ADD COLUMN ap_last_applied_at         timestamptz          DEFAULT NULL;
+ALTER TABLE networks ADD COLUMN portal_initialized         boolean     NOT NULL DEFAULT false;
+ALTER TABLE networks ADD COLUMN portal_last_patched_at     timestamptz          DEFAULT NULL;
+ALTER TABLE networks ADD COLUMN portal_last_patched_version integer              DEFAULT 0;
+ALTER TABLE networks ADD COLUMN risk_score                 integer     NOT NULL DEFAULT 0;
+ALTER TABLE networks ADD COLUMN risk_bucket                text        NOT NULL DEFAULT 'LOW';
+ALTER TABLE networks ADD COLUMN risk_score_version         integer     NOT NULL DEFAULT 0;
+ALTER TABLE networks ADD COLUMN last_scan_id               uuid                 DEFAULT NULL;
+ALTER TABLE networks ADD COLUMN last_scan_finished_at      timestamptz          DEFAULT NULL;
+ALTER TABLE networks ADD COLUMN last_threat_at             timestamptz          DEFAULT NULL;
 ```
-
-These make AP state and portal initialization persistent across page reloads and server restarts.
 
 ---
 
@@ -256,78 +271,99 @@ These make AP state and portal initialization persistent across page reloads and
 
 ### Backend
 
-#### `backend/controllers/captivePortalController.js`
-- `seedDefaultContent()` — Creates default portal rows (announcements, tips) on first enable. No longer seeds terms.
-- `buildPortalPayloadFromDB()` — Builds full Pi payload: `{ announcements, tips, security }`. No `terms` key.
-- `publishAnnouncement()` — Saves new announcement to DB, then syncs to Pi:
-  - AP disabled → sends full payload via `buildPortalPayloadFromDB()`
-  - AP enabled → sends announcement-only partial payload
-  - Returns `{ ...data, pi_synced, pi_error }`
-
-#### `backend/routes/captivePortalRoutes.js`
-- Removed `/terms` and `/terms/history` routes
-- Remaining: `GET /announcement`, `GET /announcement/history`, `POST /announcement`
-
 #### `backend/routes/deviceMgmtRoutes.js`
-- `classifyOrchestrateError()` — Maps Pi `user_message` to error codes (see table above)
-- `VALID_UPDATE_TYPES` / `ALLOWED_PAYLOAD_KEYS` / `KEYS_BY_UPDATE_TYPE` — No longer include `terms`
-- `validatePatchPayload()` — Terms shape validation removed
-- **`GET /api/device/ap-state/:networkId`** — Returns `{ ap_enabled, portal_initialized }` from `networks` table
+- `classifyOrchestrateError()` — Maps Pi `user_message` to error codes
+- `httpError()` — Typed error helper for structured catch handling
+- `logFastApiCall()` — Debug logging for every FastAPI call + response
+- `releaseApLock()` — Clears `ap_apply_in_progress = false` and `ap_apply_locked_at = null`
+- **AP lock TTL** (C11 fix) — On acquisition failure, checks `ap_apply_locked_at` against `AP_LOCK_TTL_SECONDS`; auto-releases stale locks
+- `VALID_UPDATE_TYPES` — `announcement`, `tips`, `risk`, `active`, `bulk` (no `terms`)
+- `ALLOWED_PAYLOAD_KEYS` — `announcement`, `tips`, `risk`, `is_active`
+- `KEYS_BY_UPDATE_TYPE` — Per-type allowlists; `is_active` is always optional on any type
+- **`GET /api/device/ap-state/:networkId`** — Returns `{ ap_enabled, portal_initialized }`
+- **`GET /api/device/network/:networkId/state`** — Full admin state (AP, lock, scan, portal, risk, flags)
 - **`POST /api/device/enable-ap`** — Secure AP toggle:
-  - Accepts only `{ network_id, scan_id?, ap_status, ap_password? }`
-  - **Backend loads** SSID/BSSID/channel/encryption from Supabase (never from frontend)
-  - On **enable**: validates scan_id exists, is fresh, matches network
-  - If `portal_initialized` is false: calls `portal/patch` first, then `orchestrate/apply`
-  - If portal already initialized: calls `orchestrate/apply` directly
-  - Persists `ap_enabled` and `portal_initialized` in `networks` table
-  - On **disable**: no scan validation; calls `orchestrate/apply` with `ap_status: "disable"`
-  - `piFetch` timeout set to **60 seconds** for `orchestrate/apply` (both enable and disable)
-  - **Timeout reconciliation**: on 502/503/504, polls `/device/status` on Pi and returns `{ reconciled: true, ap_enabled }` if reachable
+  - Backend loads SSID/BSSID/channel/encryption from DB (never from frontend)
+  - Enable: validates scan_id (6 checks), network config, AP password; seeds portal on first enable
+  - **Step 10: Post-enable portal patch** — runs on **every** enable (not just first init)
+  - Disable: no scan validation needed
+  - Stamps `ap_last_applied_at` on every successful apply
+  - `piFetch` timeout: **60 s** for `orchestrate/apply`
+  - Timeout reconciliation via `/device/status` polling
+- **`POST /api/device/portal/update`** — Client-driven portal partial update (announcement, tips, risk, active, bulk); `AP_NOT_ENABLED` guard; risk debounce; version-safe stamping
+- **`POST /api/device/scan-completed`** — Webhook for scan runner. **Fail-closed**: returns 503 if `SCAN_RUNNER_TOKEN` is not configured
+
+#### `backend/utils/riskPipeline.js`
+- `bucketize(score)` — `0 → LOW`, `1–39 → LOW`, `40–69 → MEDIUM`, `70–89 → HIGH`, `90–100 → CRITICAL`
+- `deriveBucketFromScanData(scanData)`, `deriveBucketFromThreats(threatRows)`
+- `updateNetworkRisk(networkId, opts)` — Core risk update + auto-portal patch on bucket change
+- `autoPortalRiskPatch()` — Cooldown + version-safe stamping
+- `onScanCompleted(scanId, req)`, `onThreatEvent(networkId, threatRows, req)`
+
+#### `backend/utils/scanValidation.js`
+- `validateScan()` — 6 ordered checks
+- `validateNetworkConfig()`, `validateApPassword()`
+- `buildPortalPatchPayload()` — Static default payload builder
+
+#### `backend/controllers/captivePortalController.js`
+- `seedDefaultContent(networkId)` — Idempotent; creates announcement, captive_portal FK, tips; no terms
+- `buildPortalPayloadFromDB(networkId, bssid, ssid)` — Reads `risk_score` from `scans` table, looks up `risk_classification`, builds `{ announcements, tips, security }` (no terms)
+- `lookupRiskClassification(score)` — Queries `risk_classification` table; hardcoded fallback tiers
+- `publishAnnouncement()` — AP-aware sync: full payload when AP off, announcement-only when AP on
+
+#### `backend/controllers/rasPiController.js` — `saveNetworkMetadataScan()`
+- Network update now includes `ssid` and `channel` (previously missing, causing stale values after re-scan)
+- Dual-writes to both `scans` (legacy) and `vulnerability_scans` (UUID PK, used by AP enable + risk pipeline). The `vulnerability_scans` write is non-fatal.
+
+#### `backend/utils/piFetch.js`
+- Centralized Pi FastAPI caller with HMAC signing via `CONTROL_SIGNING_SECRET`
+- Default timeout: **10 s** (overridden to 60 s for `orchestrate/apply`)
+- Base URL: `PI_BASE_URL` → `FASTAPI_BASE_URL` → `http://127.0.0.1:8000`
+- Production: signing always required. Dev: bypass with `PI_SIGNING_OPTIONAL=true`
 
 ### Frontend
 
 #### `src/context/NetworkContext.jsx`
-- In-memory React context for `{ networkId, scanId }`
-- `setNetworkScan(nId, sId)` convenience method
+- Backed by `useSessionState("wf:networkScan", ...)` — survives refresh, clears on tab close
+- `setNetworkId(newId)` auto-resets `scanId` to `null` when network changes
+
+#### `src/hooks/useSessionState.js`
+- `useSessionState(key, initialValue)` — syncs to sessionStorage with versioned envelope
+- `clearSessionState()` — wipes all `wf:*` keys (called on logout)
 
 #### `src/api/deviceApi.js`
-- `toggleAP(payload)` → `POST /device/enable-ap` (sends only IDs + password)
+- `toggleAP(payload)` → `POST /device/enable-ap`
 - `getApState(networkId)` → `GET /device/ap-state/:networkId`
-- `getNetworkConfig(networkId)` → `GET /rasPi/networks/:id` (display only)
-- `patchPortal()` removed (portal seeding is now internal to backend)
-- `getTerms()`, `getTermsHistory()`, `publishTerms()` removed
+- `getNetworkConfig(networkId)` → `GET /rasPi/networks/:id`
+- `getNetworkState(networkId)` → `GET /device/network/:networkId/state`
+- `updatePortal(networkId, updateType, payload, reason)` → `POST /device/portal/update`
+- `publishAnnouncement(content, networkId)` → `POST /captivePortal/announcement`
 
 #### `src/hooks/useDevice.js`
 - Accepts `(networkId, scanId)`
-- Fetches AP state from DB on mount
-- Toggle flow with optimistic UI + revert on classified failure
-- Exposes `scanError`, `hasScanId`, and `isReconcilingToggle` for UI scan/timeout banners
-- Handles scan codes: `SCAN_REQUIRED`, `SCAN_TOO_OLD`, `SCAN_NETWORK_MISMATCH`
-- Handles AP enable error codes: `INCORRECT_PASSWORD`, `PASSWORD_REQUIRED`, `SSID_NOT_FOUND`, `ENCRYPTION_MISMATCH`, `NETWORK_DATA_OUTDATED`, `PI_NETWORK_CONFLICT`, `DEVICE_BUSY`, `DEVICE_EXCEPTION`, `INVALID_PAYLOAD`, `CONNECTION_FAILED`, `UPLINK_DISCONNECTED`, `ORCHESTRATE_ERROR`
-- **Timeout reconciliation**: handles `reconciled: true` backend responses; on 502/503/504 gateway errors, enters bounded reconciliation mode using `ap_apply_in_progress` as the settlement gate (6 polls over 60s at 3s, 10s, 20s, 35s, 50s, 60s). Normal 12s polling is suspended during reconciliation. Timers are cleaned up on unmount via `mountedRef` guard.
+- Polls admin state every **12 s** when AP is enabled; suspended during reconciliation
+- Reconciliation timers tracked in `reconcilingTimersRef`; cleaned up on unmount via `mountedRef`
+- `handleUpdatePortal()` calls `updatePortal(networkId, 'risk', { risk: { bucket } }, 'manual_update')`
+- `waitForAdminStateSettlement(targetApEnabled)` — 6-poll bounded reconciliation (3 s / 10 s / 20 s / 35 s / 50 s / 60 s)
+- Maps all backend error codes to `scanError` (scan-related) or `error` (user message)
 
 #### `src/components/device/AccessPointPanel.jsx`
-- Props: `scanError`, `hasScanId`, `isReconcilingToggle` (replaces `isEmpty`)
-- Scan-required banner with "Go to Scan" navigation
-- Scan-too-old and scan-mismatch warning banners
-- Timeout reconciliation banner: *"The device is taking longer than expected. Checking actual access point state…"*
-- Toggle disabled when loading, `ap_apply_in_progress`, `isReconcilingToggle`, or no scan available and AP is off
-- `computeBanner()` priority: config_missing → apply_in_progress → toggle_reconciling_timeout → scan_error → scan_required → scan_stale_blocking → portal_outdated → scan_stale_info
+- `computeBanner()` — strict priority chain, exactly one banner at a time
+- Toggle disabled while loading, during `ap_apply_in_progress`, during `isReconcilingToggle`, or when enabling without a scan ID
 - `scanErrorText` map includes `ENCRYPTION_MISMATCH` and `NETWORK_DATA_OUTDATED`
+- Risk badge from `adminState.risk_state.risk_bucket`
 
 #### `src/pages/DeviceManagement/DeviceManagement.jsx`
-- Reads `networkId` + `scanId` from context (priority) or URL params (fallback)
-- Passes `scanId` to `useDevice(networkId, scanId)`
-- Passes `scanError`, `hasScanId`, and `isReconcilingToggle` to `AccessPointPanel`
-- Announcement-only editor (no tabs, no terms state)
-- Publishes via `publishAnnouncement()` and shows `pi_synced`/`pi_error` warning if sync fails
-- Retry button calls both `refetch()` (network config) and `refetchState()` (admin state from DB)
+- Context-first, URL-param fallback for `networkId` + `scanId`
+- Announcement-only editor (no tabs, no terms)
+- Publishes via `publishAnnouncement()`, shows `pi_synced`/`pi_error` warning
+- Retry calls both `refetch()` and `refetchState()`
 
 #### `src/pages/SAM/SAM.jsx`
-- After scan save: calls `setNetworkScan(networkId, scanId)`
+- Calls `setNetworkScan(networkId, scanId)` after successful scan save
 
 #### `src/layouts/Sidebar.jsx`
-- Device Management link includes `?network_id=<id>&scan_id=<id>` when context has values
+- Appends `?network_id=<id>&scan_id=<id>` to Device Management link when context has values
 
 ---
 
@@ -336,62 +372,120 @@ These make AP state and portal initialization persistent across page reloads and
 ### Enable (with scan validation)
 
 ```
-User clicks toggle ON (+ enters AP password for encrypted networks)
+User clicks toggle ON
     │
     ▼
-Frontend sends POST /api/device/enable-ap
-  Body: { network_id, scan_id, ap_status: "enable", ap_password? }
+POST /api/device/enable-ap  { network_id, scan_id, ap_status: "enable", ap_password? }
     │
     ▼
-Backend validates:
-  1. scan_id exists in scans table
-  2. scan is not older than SCAN_MAX_AGE_SECONDS
-  3. scan.network_id matches request.network_id
+Step 0: Atomic lock (ap_apply_in_progress=true, ap_apply_locked_at=now)
+  → 409 REQUEST_IN_PROGRESS (or stale lock auto-release if TTL exceeded)
+  → 404 NETWORK_NOT_FOUND if network doesn't exist
     │
-    ▼
-Backend loads config from DB:
-  SELECT ssid, bssid, channel, encryption_type FROM networks WHERE network_id = ?
+Step 1–3: scan_id required → load vulnerability_scans → validateScan() (6 checks)
+Step 4–5: Load network config from DB → validateNetworkConfig()
+Step 6:   validateApPassword() → 400 AP_PASSWORD_REQUIRED / AP_PASSWORD_WEAK
     │
-    ▼
-If portal_initialized = false:
-  → POST portal/patch (FastAPI) with default content
-  → UPDATE networks SET portal_initialized = true
+Step 7: If !portal_initialized:
+  → seedDefaultContent() → buildPortalPayloadFromDB() → POST /portal/patch
+  → Re-read risk_score_version → UPDATE: portal_initialized=true, portal_last_patched_version, portal_last_patched_at
     │
-    ▼
-POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
-  Body: { ssid, bssid, channel, encryption_type, ap_password?, ap_status: "enable" }
+Step 8: POST /orchestrate/apply [timeoutMs: 60 s]
+  ├─ HTTP error → 502 FASTAPI_APPLY_FAILED
+  ├─ status:"ERROR" → classifyOrchestrateError() → 422 (ap_enabled NOT set)
+  └─ Success ↓
     │
-    ├─ Success → UPDATE networks SET ap_enabled = true
+Step 9: UPDATE networks SET ap_enabled=true, ap_last_applied_at, last_scan_id, last_scan_finished_at
     │
-    └─ Timeout (502/503/504) → reconcile via GET /device/status
-          ├─ Pi says AP ON  → UPDATE ap_enabled = true  → return { reconciled: true }
-          └─ Pi unreachable → return error → frontend bounded reconciliation polling
-                (6 polls over 60s using ap_apply_in_progress as settlement gate)
+Step 10: POST /portal/patch (post-enable, non-fatal) ← EVERY enable, not just first
+  → buildPortalPayloadFromDB() → Pi receives latest announcements + tips + risk
+  → On success: UPDATE portal_last_patched_at
+    │
+Audit: AP_ENABLE_REQUEST SUCCESS
+Return: { ok:true, ap_enabled:true, portal_initialized:true, portal_patched:true/false }
+    │
+catch (502/503/504):
+  piFetch('/device/status', 8 s)
+  ├─ Pi reachable → UPDATE ap_enabled to match Pi → return { reconciled:true }
+  └─ Pi unreachable → return { error:'AP_TOGGLE_FAILED', timeout:true }
+    │
+finally: releaseApLock()
 ```
 
 ### Disable (no scan required)
 
 ```
-User clicks toggle OFF
+POST /api/device/enable-ap  { network_id, ap_status: "disable" }
     │
-    ▼
-Frontend sends POST /api/device/enable-ap
-  Body: { network_id, ap_status: "disable" }
+Step 0: Atomic lock (same TTL logic)
     │
-    ▼
-Backend loads config from DB (needs SSID/BSSID for FastAPI)
+Load network config → validateNetworkConfig()
     │
-    ▼
-POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
-  Body: { ssid, bssid, channel, encryption_type, ap_status: "disable" }
+POST /orchestrate/apply [timeoutMs: 60 s]
+  ├─ status:"ERROR" → classifyOrchestrateError() → 422
+  ├─ Success → UPDATE ap_enabled=false, ap_last_applied_at
+  └─ Timeout → reconcile via /device/status (same as enable)
     │
-    ├─ Success → UPDATE networks SET ap_enabled = false
-    │
-    └─ Timeout (502/503/504) → reconcile via GET /device/status
-          ├─ Pi says AP OFF → UPDATE ap_enabled = false → return { reconciled: true }
-          └─ Pi unreachable → return error → frontend bounded reconciliation polling
-                (6 polls over 60s using ap_apply_in_progress as settlement gate)
+finally: releaseApLock()
 ```
+
+---
+
+## Banner Priority (AccessPointPanel)
+
+`computeBanner()` enforces strict mutual exclusion — exactly **one** banner renders at a time.
+
+| Priority | Banner Key | Condition | Type |
+|---|---|---|---|
+| 1 | `config_missing` | `network_config_missing` (from `flags`) | Blocking |
+| 2 | `apply_in_progress` | `ap_apply_in_progress && !isReconcilingToggle && !hasError` | Blocking + disable controls |
+| 3 | `toggle_reconciling_timeout` | `isReconcilingToggle` | Info |
+| 4 | `scan_error` | `scanError` (excluding `SCAN_REQUIRED`) | Blocking |
+| 5 | `scan_required` | AP off + no scan | Blocking |
+| 6 | `scan_stale_blocking` | AP off + has scan + not fresh | Blocking |
+| 7 | `portal_outdated` | AP on + `portal_out_of_date` | Warning + Update Portal button |
+| 8 | `scan_stale_info` | AP on + has scan + not fresh | Info |
+
+---
+
+## Admin State Response Shape
+
+`GET /api/device/network/:networkId/state`:
+
+```json
+{
+  "ok": true,
+  "network_id": "uuid",
+  "ap_enabled": false,
+  "ap_apply_in_progress": false,
+  "portal_initialized": false,
+  "scan_state": {
+    "has_scan": true,
+    "scan_fresh": true,
+    "latest_scan_id": "uuid",
+    "latest_scan_finished_at": "2026-03-13T10:00:00Z"
+  },
+  "portal_state": {
+    "portal_out_of_date": false,
+    "portal_last_patched_version": 3,
+    "portal_last_patched_at": "2026-03-13T09:55:00Z"
+  },
+  "risk_state": {
+    "risk_score": 45,
+    "risk_bucket": "MEDIUM",
+    "risk_score_version": 3,
+    "last_threat_at": null
+  },
+  "flags": {
+    "network_config_missing": false
+  }
+}
+```
+
+Key server-side derivations:
+- `scan_fresh` = `has_scan && (Date.now() − finished_at_ms) ≤ SCAN_MAX_AGE_SECONDS × 1000`
+- `portal_out_of_date` = `ap_enabled && portal_last_patched_version < risk_score_version`
+- `network_config_missing` = any of `ssid` / `bssid` / `channel` is falsy
 
 ---
 
@@ -399,5 +493,10 @@ POST orchestrate/apply (FastAPI)  [timeoutMs: 60s]
 
 | Variable | Default | Description |
 |---|---|---|
-| `SCAN_MAX_AGE_SECONDS` | `300` | Max age (seconds) of a scan before it's considered stale for AP enable |
-| `FASTAPI_BASE` | `http://mothership-1.tail781e52.ts.net:8000` | Raspberry Pi FastAPI base URL |
+| `SCAN_MAX_AGE_SECONDS` | `300` | Max scan age (seconds) before AP enable is blocked |
+| `AP_LOCK_TTL_SECONDS` | `120` | AP apply lock TTL — stale locks older than this are auto-released |
+| `PI_BASE_URL` | `http://127.0.0.1:8000` | Pi FastAPI base URL (`FASTAPI_BASE_URL` accepted as fallback) |
+| `CONTROL_SIGNING_SECRET` | `''` | HMAC signing secret for all Express → Pi requests |
+| `PI_SIGNING_OPTIONAL` | `false` | Set `true` in dev to skip signing when no secret is configured |
+| `SCAN_RUNNER_TOKEN` | `''` | Shared secret for `/scan-completed` webhook — returns 503 if unset |
+| `PORTAL_PATCH_COOLDOWN_MS` | `15000` | Min ms between auto risk portal patches |
