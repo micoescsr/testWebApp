@@ -235,7 +235,7 @@ CREATE TABLE public.vulnerability_scans (
   status USER-DEFINED NOT NULL DEFAULT 'QUEUED'::scan_status,
   started_at timestamp with time zone,
   finished_at timestamp with time zone,
-  target_snapshot jsonb NOT NULL CHECK (target_snapshot ? 'channel'::text AND (target_snapshot ->> 'channel'::text) ~ '^\d+$'::text AND ((target_snapshot ->> 'channel'::text)::integer) >= 1 AND ((target_snapshot ->> 'channel'::text)::integer) <= 14),
+  target_snapshot jsonb NOT NULL CHECK (target_snapshot ? 'ssid'::text AND target_snapshot ? 'bssid'::text AND target_snapshot ? 'channel'::text),
   idempotency_key text NOT NULL CHECK (char_length(idempotency_key) >= 8 AND char_length(idempotency_key) <= 128),
   scan_data jsonb,
   error_code text,

@@ -597,7 +597,7 @@ All classes scoped under `.device-page` to prevent cross-page collisions:
 
 3. **Portal payload no longer includes terms** — `buildPortalPayloadFromDB()` in `captivePortalController.js` sends `{ announcements, tips, security }` to the Pi. Terms are fully removed from the live payload.
 
-4. **`lookupRiskClassification()` resilience** — Falls back to hardcoded tiers when the `risk_classification` table does not exist, so risk coloring never breaks.
+4. **`lookupRiskClassification()` resilience** — Falls back to hardcoded tiers when the `wifi_risk_scale` table does not exist, so risk coloring never breaks.
 
 ### NetworkContext Fix
 

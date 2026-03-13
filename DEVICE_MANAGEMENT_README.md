@@ -307,8 +307,8 @@ ALTER TABLE networks ADD COLUMN last_threat_at             timestamptz          
 
 #### `backend/controllers/captivePortalController.js`
 - `seedDefaultContent(networkId)` — Idempotent; creates announcement, captive_portal FK, tips; no terms
-- `buildPortalPayloadFromDB(networkId, bssid, ssid)` — Reads `risk_score` from `scans` table, looks up `risk_classification`, builds `{ announcements, tips, security }` (no terms)
-- `lookupRiskClassification(score)` — Queries `risk_classification` table; hardcoded fallback tiers
+- `buildPortalPayloadFromDB(networkId, bssid, ssid)` — Reads `risk_score` from `scans` table, looks up `wifi_risk_scale`, builds `{ announcements, tips, security }` (no terms)
+- `lookupRiskClassification(score)` — Queries `wifi_risk_scale` table; hardcoded fallback tiers
 - `publishAnnouncement()` — AP-aware sync: full payload when AP off, announcement-only when AP on
 
 #### `backend/controllers/rasPiController.js` — `saveNetworkMetadataScan()`

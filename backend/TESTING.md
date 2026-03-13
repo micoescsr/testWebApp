@@ -286,7 +286,7 @@ End-to-end tests run a real browser (Chromium) against the full app stack — Vi
 | 13 | Announcements text | Contains "Welcome" |
 | 14 | Terms version format | `YYYY-MM-DD` |
 | 15 | Tips array | 3 items |
-| 16 | Security defaults | `score: 0`, `risk_level: "LOW"`, `ui_color: "#22C55E"` |
+| 16 | Security defaults | `score: 0`, `risk_level: "LOW"`, `riskColor: "#22C55E"` |
 | 17 | Default `nowUnix` (uses `Date.now`) | `updated_at` within 60s of now |
 
 ### 5.2 Integration Test Cases
@@ -420,7 +420,7 @@ These modules were extracted from inline `server.js` logic into testable, reusab
 | Module | Functions | Purpose |
 |---|---|---|
 | `captivePortalController.js` | `seedDefaultContent(networkId)` | Idempotent: inserts default announcement, terms, tips + `captive_portal` row if none exists |
-| | `lookupRiskClassification(score)` | Queries `risk_classification` table — finds the row where `risk_percentage >= score` (ascending) |
+| | `lookupRiskClassification(score)` | Queries `wifi_risk_scale` table — finds the row where `min_percentage <= score <= max_percentage` |
 | | `buildPortalPayloadFromDB(networkId, bssid, ssid, score)` | Reads DB content (announcements, terms, tips) + risk classification → builds full `/portal/patch` JSON |
 | | Route handlers | `getAnnouncement`, `publishAnnouncement`, `getTerms`, `publishTerms`, `getTips`, `upsertTips`, `getRiskClassifications`, `getPortalSummary`, `syncPortal` |
 
@@ -619,7 +619,7 @@ setupSupabase({
 
 ### 10.5 Captive Portal Controller Mock
 
-The `captivePortalController` helpers (`seedDefaultContent`, `buildPortalPayloadFromDB`) are mocked at the module level in `deviceMgmt.test.js` so integration tests don't need the `risk_classification` or `captive_portal_*` tables:
+The `captivePortalController` helpers (`seedDefaultContent`, `buildPortalPayloadFromDB`) are mocked at the module level in `deviceMgmt.test.js` so integration tests don't need the `wifi_risk_scale` or `captive_portal_*` tables:
 
 ```js
 jest.mock("../../controllers/captivePortalController", () => ({
@@ -628,7 +628,7 @@ jest.mock("../../controllers/captivePortalController", () => ({
     network_id: "30:40:74:8E:8D:2A | TestNet",
     patch: {
       portal_content: { /* ... */ },
-      security: { score: 0, risk_level: "LOW", ui_color: "#22C55E", description: "..." },
+      security: { score: 0, risk_level: "LOW", riskColor: "#22C55E", riskDescription: "..." },
     },
   }),
 }));
@@ -707,7 +707,7 @@ jobs:
 | **Rate limiting / brute force** | Not tested | Add tests when rate-limiting middleware is implemented |
 | **Device management edge cases** | Core AP toggle + scan gating covered; per-scan `risk_score` used for portal payload | Add: portal/patch content customization, concurrent enable, network row missing on enable |
 | **Captive portal routes** | Fully implemented: 11 endpoints in `captivePortalRoutes.js` (announcement, terms, tips, risk classifications, summary, sync) | Add integration tests for captive portal CRUD (announcement publish, terms publish, tips upsert, risk lookup, portal sync) |
-| **Risk classification** | Lookup table `risk_classification` with 4 tiers (LOW / MEDIUM / HIGH / CRITICAL); `scans.risk_score` persisted by `persistThreatRows` | Add: score recalculation on re-scan, edge cases for boundary scores (25, 50, 75) |
+| **Risk classification** | Lookup table `wifi_risk_scale` with 4 tiers (LOW / MEDIUM / HIGH / CRITICAL); `scans.risk_score` persisted by `persistThreatRows` | Add: score recalculation on re-scan, edge cases for boundary scores (25, 50, 75) |
 
 ---
 

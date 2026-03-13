@@ -72,29 +72,28 @@ async function seedDefaultContent(networkId) {
 
 /**
  * Look up the risk classification for a given security score (0–100).
- * Uses the `risk_classification` table where `risk_percentage` is the upper bound.
- * Returns the lowest tier whose `risk_percentage` ≥ the given score.
+ * Uses the `wifi_risk_scale` table where the score falls between
+ * `min_percentage` and `max_percentage` (inclusive).
  *
  * @param {number} score – network security score between 0 and 100
- * @returns {{ risk_level, riskColor, riskDescription, risk_percentage }}
+ * @returns {{ risk_level, riskColor, riskDescription }}
  */
 async function lookupRiskClassification(score) {
 	try {
 		const { data: raw, error } = await supabaseClient
-			.from('risk_classification')
-			.select('risk_level, ui_color, description, risk_percentage')
-			.gte('risk_percentage', score)
-			.order('risk_percentage', { ascending: true })
+			.from('wifi_risk_scale')
+			.select('risk_label, ui_color, description, min_percentage, max_percentage')
+			.lte('min_percentage', score)
+			.gte('max_percentage', score)
 			.limit(1)
 			.maybeSingle();
 
 		if (error) throw error;
 
 		if (raw) return {
-			risk_level: raw.risk_level,
+			risk_level: raw.risk_label,
 			riskColor: raw.ui_color,
 			riskDescription: raw.description,
-			risk_percentage: raw.risk_percentage,
 		};
 	} catch (err) {
 		console.warn('[lookupRiskClassification] Falling back to default — table may not exist:', err.message);
@@ -102,10 +101,10 @@ async function lookupRiskClassification(score) {
 
 	// Fallback when table is missing or no matching row
 	const s = Number(score) || 0;
-	if (s <= 39) return { risk_level: 'LOW', riskColor: '#22c55e', riskDescription: 'Low risk', risk_percentage: 39 };
-	if (s <= 69) return { risk_level: 'MEDIUM', riskColor: '#f59e0b', riskDescription: 'Medium risk', risk_percentage: 69 };
-	if (s <= 89) return { risk_level: 'HIGH', riskColor: '#ef4444', riskDescription: 'High risk', risk_percentage: 89 };
-	return { risk_level: 'CRITICAL', riskColor: '#dc2626', riskDescription: 'Critical risk', risk_percentage: 100 };
+	if (s <= 39) return { risk_level: 'LOW', riskColor: '#22c55e', riskDescription: 'Low risk' };
+	if (s <= 69) return { risk_level: 'MEDIUM', riskColor: '#f59e0b', riskDescription: 'Medium risk' };
+	if (s <= 89) return { risk_level: 'HIGH', riskColor: '#ef4444', riskDescription: 'High risk' };
+	return { risk_level: 'CRITICAL', riskColor: '#dc2626', riskDescription: 'Critical risk' };
 }
 
 /**
@@ -113,7 +112,7 @@ async function lookupRiskClassification(score) {
  *
  * Reads announcements, tips from their respective tables,
  * fetches the latest risk_score from the scans table for the network,
- * then looks up the corresponding risk_classification.
+ * then looks up the corresponding risk tier from `wifi_risk_scale`.
  *
  * @param {string} networkId  – UUID
  * @param {string} bssid
@@ -465,9 +464,9 @@ async function upsertTips(req, res) {
 async function getRiskClassifications(req, res) {
 	try {
 		const { data, error } = await supabaseClient
-			.from('risk_classification')
+			.from('wifi_risk_scale')
 			.select('*')
-			.order('risk_percentage', { ascending: true });
+			.order('min_percentage', { ascending: true });
 
 		if (error) throw error;
 
