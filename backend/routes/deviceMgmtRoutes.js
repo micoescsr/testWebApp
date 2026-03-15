@@ -14,7 +14,8 @@ const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 const { validateUUID } = require('../middleware/validateUUID');
 const { piFetch } = require('../utils/piFetch');
-const { validate, deviceEnableAp, devicePortalUpdate } = require('../validators/routeValidators');
+const { validate, deviceEnableAp, devicePortalUpdate, deviceJobPoll } = require('../validators/routeValidators');
+const apJobStore = require('../services/apJobStore');
 
 const SCAN_MAX_AGE_SECONDS = parseInt(process.env.SCAN_MAX_AGE_SECONDS || '300', 10); // default 5 min
 const SCAN_RUNNER_TOKEN = process.env.SCAN_RUNNER_TOKEN || ''; // shared secret for webhook
@@ -255,11 +256,24 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 	const { network_id, scan_id, ap_status, ap_password } = req.body;
 	const actorId = req.user?.id || null;
 	let lockAcquired = false;
+	let asyncJobAccepted = false; // when true, keep DB lock for async finalization
 
 	// ── Basic input validation ───────────────────────────────────
 	if (!network_id || !ap_status || !['enable', 'disable'].includes(ap_status)) {
 		return res.status(400).json({
 			error: 'Missing or invalid fields (network_id, ap_status: "enable"|"disable")',
+		});
+	}
+
+	// ── Duplicate-job prevention ─────────────────────────────────
+	const activeJob = apJobStore.getActiveForNetwork(network_id);
+	if (activeJob) {
+		return res.status(409).json({
+			ok: false,
+			error: 'REQUEST_IN_PROGRESS',
+			message: 'An AP configuration change is already in progress.',
+			job_id: activeJob.job_id,
+			target_ap_status: activeJob.target_ap_status,
 		});
 	}
 
@@ -349,15 +363,16 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 				channel: net.channel,
 				encryption_type: net.encryption_status,
 				ap_status: 'disable',
+				async: true,
 			};
 
 			const orchestrateUrl = '/orchestrate/apply';
-			logFastApiCall('orchestrate/apply (DISABLE)', orchestrateUrl, orchestratePayload, null);
+			logFastApiCall('orchestrate/apply (DISABLE, async)', orchestrateUrl, orchestratePayload, null);
 
 			const { ok: piOk, status: piStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 				method: 'POST',
 				jsonBody: orchestratePayload,
-				timeoutMs: 60_000,
+				timeoutMs: 15_000,
 			});
 
 			logFastApiCall('orchestrate/apply RESPONSE (DISABLE)', orchestrateUrl, orchestratePayload, {
@@ -366,7 +381,6 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 			});
 
 			if (!piOk) {
-				// Audit: disable failed
 				await logAuditEvent({
 					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'FAILED',
 					entityType: 'NETWORK', entityIdUuid: network_id,
@@ -378,7 +392,34 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 				});
 			}
 
-			// Check for application-level ERROR (FastAPI returns 200 but status: "ERROR")
+			// ── Async path: Pi accepted the job ──────────────────
+			if (fastapiData?.status === 'ACCEPTED' && fastapiData?.job_id) {
+				asyncJobAccepted = true;
+				const job = apJobStore.create({
+					job_id: fastapiData.job_id,
+					network_id,
+					scan_id: null,
+					target_ap_status: 'disable',
+					payload_snapshot: orchestratePayload,
+				});
+
+				await logAuditEvent({
+					req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'ACCEPTED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, job_id: job.job_id },
+				});
+
+				return res.json({
+					ok: true,
+					status: 'ACCEPTED',
+					job_id: job.job_id,
+					target_ap_status: 'disable',
+					network_id,
+					scan_id: null,
+				});
+			}
+
+			// ── Sync fallback: Pi returned immediate result ──────
 			const disableClassified = classifyOrchestrateError(fastapiData);
 			if (disableClassified) {
 				await logAuditEvent({
@@ -396,15 +437,14 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 				});
 			}
 
-			// Persist ap_enabled = false + update ap_last_applied_at
+			// Sync success: persist immediately
 			await supabaseClient
 				.from('networks')
 				.update({ ap_enabled: false, ap_last_applied_at: new Date().toISOString() })
 				.eq('network_id', network_id);
 
-			console.log('AP disabled successfully for network:', network_id);
+			console.log('AP disabled successfully (sync) for network:', network_id);
 
-			// Audit: disable success
 			await logAuditEvent({
 				req, actorId, eventName: 'AP_DISABLE_REQUEST', eventStatus: 'SUCCESS',
 				entityType: 'NETWORK', entityIdUuid: network_id,
@@ -558,15 +598,16 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 			encryption_type: net.encryption_status,
 			...(ap_password && { ap_password }),
 			ap_status: 'enable',
+			async: true,
 		};
 
 		const orchestrateUrl = '/orchestrate/apply';
-		logFastApiCall('orchestrate/apply (ENABLE)', orchestrateUrl, orchestratePayload, null);
+		logFastApiCall('orchestrate/apply (ENABLE, async)', orchestrateUrl, orchestratePayload, null);
 
 		const { ok: enableOk, status: enableStatus, data: fastapiData } = await piFetch('/orchestrate/apply', {
 			method: 'POST',
 			jsonBody: orchestratePayload,
-			timeoutMs: 60_000,
+			timeoutMs: 15_000,
 		});
 
 		logFastApiCall('orchestrate/apply RESPONSE (ENABLE)', orchestrateUrl, orchestratePayload, {
@@ -586,6 +627,35 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 				fastapi_body: fastapiData,
 			});
 		}
+
+		// ── Async path: Pi accepted the job ──────────────────────
+		if (fastapiData?.status === 'ACCEPTED' && fastapiData?.job_id) {
+			asyncJobAccepted = true;
+			const job = apJobStore.create({
+				job_id: fastapiData.job_id,
+				network_id,
+				scan_id: scan.scan_id,
+				target_ap_status: 'enable',
+				payload_snapshot: orchestratePayload,
+			});
+
+			await logAuditEvent({
+				req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'ACCEPTED',
+				entityType: 'NETWORK', entityIdUuid: network_id,
+				meta: { request_id: requestId, job_id: job.job_id, scan_id: scan.scan_id },
+			});
+
+			return res.json({
+				ok: true,
+				status: 'ACCEPTED',
+				job_id: job.job_id,
+				target_ap_status: 'enable',
+				network_id,
+				scan_id: scan.scan_id,
+			});
+		}
+
+		// ── Sync fallback: Pi returned immediate result ──────────
 
 		// Step 8b: Check for application-level ERROR (FastAPI returns 200 but status: "ERROR")
 		const enableClassified = classifyOrchestrateError(fastapiData);
@@ -728,8 +798,9 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 		};
 		return res.status(httpStatus).json(errorBody);
 	} finally {
-		// ── ALWAYS release the lock ──────────────────────────────
-		if (lockAcquired) {
+		// ── Release lock ONLY for sync paths or errors ───────────
+		// Async jobs keep the lock held until finalizeJob() runs.
+		if (lockAcquired && !asyncJobAccepted) {
 			await releaseApLock(network_id);
 		}
 	}
@@ -824,6 +895,268 @@ router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), asyn
 	} catch (err) {
 		console.error('deviceMgmt /network/:networkId/state error:', err);
 		return res.status(500).json({ ok: false, error: 'STATE_FETCH_FAILED', message: 'Failed to fetch network state' });
+	}
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Async AP Job — Finalization + Poll + AP Live
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Idempotent job finalizer ────────────────────────────────────
+// Called when poll detects terminal state. Safe if called twice,
+// from multiple tabs, or on server restart. Checks both apJobStore
+// finalized flag AND DB ap_apply_in_progress before writing.
+async function finalizeJob(job, piResult) {
+	if (job.finalized) return; // already done
+
+	const networkId = job.network_id;
+
+	// Guard: only finalize if DB lock is still held by this job
+	const { data: net } = await supabaseClient
+		.from('networks')
+		.select('ap_apply_in_progress')
+		.eq('network_id', networkId)
+		.maybeSingle();
+
+	if (!net || !net.ap_apply_in_progress) {
+		// Lock already released (another path finalized, or server restarted)
+		apJobStore.markFinalized(job.job_id);
+		return;
+	}
+
+	const isSuccess = job.status === 'DONE';
+	const nowIso = new Date().toISOString();
+
+	if (isSuccess && job.target_ap_status === 'enable') {
+		await supabaseClient
+			.from('networks')
+			.update({
+				ap_enabled: true,
+				ap_last_applied_at: nowIso,
+			})
+			.eq('network_id', networkId);
+
+		// Post-enable portal patch (non-fatal)
+		try {
+			const { data: netConfig } = await supabaseClient
+				.from('networks')
+				.select('bssid, ssid')
+				.eq('network_id', networkId)
+				.single();
+
+			if (netConfig) {
+				const patchPayload = await buildPortalPayloadFromDB(
+					networkId, netConfig.bssid, netConfig.ssid
+				);
+				const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
+					method: 'POST',
+					jsonBody: patchPayload,
+				});
+				if (patchOk) {
+					await supabaseClient
+						.from('networks')
+						.update({ portal_last_patched_at: nowIso })
+						.eq('network_id', networkId);
+					console.log('[finalizeJob] Portal patched after async enable for', networkId);
+				} else {
+					console.warn('[finalizeJob] Portal patch failed (non-fatal):', patchStatus, patchData);
+				}
+			}
+		} catch (patchErr) {
+			console.error('[finalizeJob] Portal patch error (non-fatal):', patchErr.message);
+		}
+	} else if (isSuccess && job.target_ap_status === 'disable') {
+		await supabaseClient
+			.from('networks')
+			.update({
+				ap_enabled: false,
+				ap_last_applied_at: nowIso,
+			})
+			.eq('network_id', networkId);
+	}
+	// On failure: don't change ap_enabled — leave in previous state
+
+	// Release the DB lock
+	await releaseApLock(networkId);
+	apJobStore.markFinalized(job.job_id);
+	console.log(`[finalizeJob] Job ${job.job_id} finalized (status=${job.status}) for ${networkId}`);
+}
+
+// ─── GET /api/device/jobs/:jobId ─────────────────────────────────
+// Client polls this to track async AP orchestration progress.
+// Proxies to Pi /orchestrate/poll, normalizes the response, and
+// triggers idempotent finalization on terminal state.
+router.get('/jobs/:jobId', authJWT, deviceJobPoll, validate, async (req, res) => {
+	const { jobId } = req.params;
+
+	try {
+		// Check local store first (for context like network_id, target)
+		const storedJob = apJobStore.get(jobId);
+
+		// If already finalized, return cached terminal state immediately
+		if (storedJob?.finalized) {
+			return res.json({
+				ok: storedJob.status === 'DONE',
+				job_id: jobId,
+				job_status: storedJob.status,
+				result: storedJob.result,
+				error_code: storedJob.error_code,
+				error_message: storedJob.error_message,
+			});
+		}
+
+		// Poll upstream Pi
+		const { ok: piOk, data: piData } = await piFetch('/orchestrate/poll', {
+			query: { job_id: jobId },
+			timeoutMs: 8_000,
+		});
+
+		if (!piOk || !piData) {
+			return res.json({
+				ok: false,
+				job_id: jobId,
+				job_status: 'UNKNOWN',
+				result: null,
+				error_code: 'PI_UNREACHABLE',
+				error_message: 'Could not reach device to check job status.',
+			});
+		}
+
+		const upstreamStatus = (piData.status || '').toUpperCase();
+		const piResult = piData.result || null;
+
+		// ── Terminal: DONE ────────────────────────────────────────
+		if (upstreamStatus === 'DONE') {
+			const resultStatus = piResult?.status || '';
+			const isError = resultStatus === 'ERROR' || resultStatus.toUpperCase() === 'ERROR';
+
+			if (isError) {
+				// DONE but application-level error
+				const classified = classifyOrchestrateError(piResult) || {
+					error_code: 'ORCHESTRATE_ERROR',
+					user_message: piResult?.user_message || 'AP operation failed.',
+				};
+
+				if (storedJob) {
+					apJobStore.update(jobId, {
+						status: 'FAILED',
+						result: piResult,
+						error_code: classified.error_code,
+						error_message: classified.user_message,
+					});
+					await finalizeJob(apJobStore.get(jobId), piResult);
+				}
+
+				return res.json({
+					ok: false,
+					job_id: jobId,
+					job_status: 'FAILED',
+					result: piResult,
+					error_code: classified.error_code,
+					error_message: classified.user_message,
+				});
+			}
+
+			// DONE + success
+			if (storedJob) {
+				apJobStore.update(jobId, { status: 'DONE', result: piResult });
+				await finalizeJob(apJobStore.get(jobId), piResult);
+			}
+
+			return res.json({
+				ok: true,
+				job_id: jobId,
+				job_status: 'DONE',
+				result: piResult,
+				error_code: null,
+				error_message: null,
+			});
+		}
+
+		// ── Non-terminal: ACCEPTED / ONGOING ─────────────────────
+		const normalizedStatus = ['ACCEPTED', 'ONGOING'].includes(upstreamStatus)
+			? upstreamStatus
+			: 'ONGOING'; // treat unknown non-terminal as ONGOING
+
+		if (storedJob) {
+			apJobStore.update(jobId, { status: normalizedStatus });
+		}
+
+		return res.json({
+			ok: true,
+			job_id: jobId,
+			job_status: normalizedStatus,
+			result: null,
+			error_code: null,
+			error_message: null,
+		});
+	} catch (err) {
+		console.error(`[jobs/${jobId}] poll error:`, err.message);
+		return res.json({
+			ok: false,
+			job_id: jobId,
+			job_status: 'UNKNOWN',
+			result: null,
+			error_code: 'POLL_ERROR',
+			error_message: 'Failed to check job status.',
+		});
+	}
+});
+
+// ─── GET /api/device/ap-live ─────────────────────────────────────
+// Returns normalized real-time AP/device state by proxying Pi /ap/poll.
+// Used by the frontend to verify actual AP state after job completion.
+router.get('/ap-live', authJWT, async (req, res) => {
+	try {
+		const { ok: piOk, data: piData } = await piFetch('/ap/poll', {
+			timeoutMs: 8_000,
+		});
+
+		if (!piOk || !piData) {
+			return res.json({
+				ok: false,
+				ap_status: 'UNKNOWN',
+				is_transitioning: false,
+				uplink_status: 'UNKNOWN',
+				raw: piData || null,
+			});
+		}
+
+		// Normalize AP status from upstream fields
+		let apStatus = 'UNKNOWN';
+		const rawApStatus = (piData.ap_status || piData.ap_enabled || '').toString().toLowerCase();
+		const rawUplink = piData.uplink || {};
+		const uplinkConnected = (rawUplink.status || '').toLowerCase() === 'connected';
+
+		if (rawApStatus === 'enabled' || rawApStatus === 'on' || rawApStatus === 'true' || piData.ap_enabled === true) {
+			apStatus = 'ENABLED';
+		} else if (rawApStatus === 'disabled' || rawApStatus === 'off' || rawApStatus === 'false' || piData.ap_enabled === false) {
+			apStatus = 'DISABLED';
+		} else if (rawApStatus === 'transitioning' || rawApStatus === 'starting' || rawApStatus === 'stopping') {
+			apStatus = 'TRANSITIONING';
+		}
+
+		const isTransitioning = apStatus === 'TRANSITIONING';
+		const uplinkStatus = uplinkConnected ? 'CONNECTED'
+			: (rawUplink.status || '').toLowerCase() === 'disconnected' ? 'DISCONNECTED'
+			: 'UNKNOWN';
+
+		return res.json({
+			ok: true,
+			ap_status: apStatus,
+			is_transitioning: isTransitioning,
+			uplink_status: uplinkStatus,
+			raw: piData,
+		});
+	} catch (err) {
+		console.error('[ap-live] error:', err.message);
+		return res.json({
+			ok: false,
+			ap_status: 'UNKNOWN',
+			is_transitioning: false,
+			uplink_status: 'UNKNOWN',
+			raw: null,
+		});
 	}
 });
 

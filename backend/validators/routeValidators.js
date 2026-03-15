@@ -2,7 +2,7 @@
 // Input validators for all POST/PUT routes using express-validator.
 // Pattern: export named arrays of validation chains + shared validate() runner.
 
-const { body, validationResult } = require('express-validator');
+const { body, param, validationResult } = require('express-validator');
 
 // ─── Shared validate runner ─────────────────────────────────────
 function validate(req, res, next) {
@@ -200,6 +200,21 @@ const devicePortalUpdate = [
     .isObject().withMessage('payload must be an object'),
 ];
 
+// ═══════════════════════════════════════════════════════════════════
+//  Async AP Job Validators
+// ═══════════════════════════════════════════════════════════════════
+
+// Matches Pi job IDs like "orch_1773418826_72ddfac4"
+const JOB_ID_RE = /^orch_\d+_[a-f0-9]+$/;
+
+const deviceJobPoll = [
+  param('jobId')
+    .exists({ checkFalsy: true }).withMessage('jobId is required')
+    .isString()
+    .isLength({ max: 64 }).withMessage('jobId must be at most 64 characters')
+    .matches(JOB_ID_RE).withMessage('jobId format is invalid'),
+];
+
 module.exports = {
   validate,
   detectStart,
@@ -215,4 +230,5 @@ module.exports = {
   rasPiSaveNetwork,
   deviceEnableAp,
   devicePortalUpdate,
+  deviceJobPoll,
 };

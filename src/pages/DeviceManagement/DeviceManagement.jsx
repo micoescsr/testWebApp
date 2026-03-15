@@ -47,6 +47,13 @@ const DeviceManagement = () => {
     handleToggleAccessPoint,
     handleUpdatePortal,
     isReconcilingToggle,
+    // Async AP job state
+    isJobActive,
+    jobStatus,
+    jobError,
+    apLiveConfirmed,
+    targetApStatus,
+    clearJobState,
   } = useDevice(networkId, scanId);
 
   const canEdit = true;
@@ -214,7 +221,12 @@ const DeviceManagement = () => {
           hasScanId={hasScanId}
           adminState={adminState}
           isReconcilingToggle={isReconcilingToggle}
-          onRetry={() => { refetch(); refetchState(); }}
+          isJobActive={isJobActive}
+          jobStatus={jobStatus}
+          jobError={jobError}
+          apLiveConfirmed={apLiveConfirmed}
+          targetApStatus={targetApStatus}
+          onRetry={() => { clearJobState(); refetch(); refetchState(); }}
           onToggle={handleToggleAccessPoint}
           onUpdatePortal={handleUpdatePortal}
         />

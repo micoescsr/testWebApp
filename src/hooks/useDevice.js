@@ -1,6 +1,9 @@
 // hooks/useDevice.js - DB-driven AP state + admin state from /network/:id/state
+// Async AP job orchestration: submit → poll job → poll AP live → confirm
 import { useState, useEffect, useCallback, useRef } from "react";
-import { toggleAP, getNetworkConfig, getNetworkState, updatePortal } from "../api/deviceApi";
+import { toggleAP, getNetworkConfig, getNetworkState, updatePortal, pollApJob, pollApLive } from "../api/deviceApi";
+import { useSessionState } from "./useSessionState";
+import { pollUntil } from "../utils/pollUntil";
 
 const STATE_POLL_INTERVAL = 12_000; // 12 seconds — just inside 15s portal cooldown
 
@@ -28,6 +31,19 @@ export const useDevice = (networkId, scanId) => {
   const [isReconcilingToggle, setIsReconcilingToggle] = useState(false);
   const reconcilingTimersRef = useRef([]);
   const mountedRef = useRef(true);
+
+  // ─── Async AP job state ──────────────────────────────────────
+  const [jobId, setJobId] = useSessionState(`wf:ap-job-id:${networkId}`, null);
+  const [jobStatus, setJobStatus] = useSessionState(`wf:ap-job-status:${networkId}`, null);
+  const [targetApStatus, setTargetApStatus] = useSessionState(`wf:ap-target:${networkId}`, null);
+  const [jobError, setJobError] = useState(null);             // { code, message }
+  const [apLiveStatus, setApLiveStatus] = useState(null);     // ENABLED|DISABLED|TRANSITIONING|UNKNOWN
+  const [apLiveConfirmed, setApLiveConfirmed] = useState(false);
+
+  const jobPollAbortRef = useRef(null);
+  const livePollAbortRef = useRef(null);
+
+  const isJobActive = !!(jobId && jobStatus && !['DONE', 'FAILED'].includes(jobStatus));
 
   // ─── Fetch network config from Supabase ──────────────────────
   const fetchNetworkConfig = useCallback(async () => {
@@ -88,8 +104,8 @@ export const useDevice = (networkId, scanId) => {
       pollRef.current = null;
     }
 
-    // Suspend normal polling during timeout reconciliation
-    if (apEnabled && networkId && !isReconcilingToggle) {
+    // Suspend normal polling during timeout reconciliation or active async job
+    if (apEnabled && networkId && !isReconcilingToggle && !isJobActive) {
       pollRef.current = setInterval(() => {
         fetchAdminState();
       }, STATE_POLL_INTERVAL);
@@ -101,7 +117,118 @@ export const useDevice = (networkId, scanId) => {
         pollRef.current = null;
       }
     };
-  }, [apEnabled, networkId, fetchAdminState, isReconcilingToggle]);
+  }, [apEnabled, networkId, fetchAdminState, isReconcilingToggle, isJobActive]);
+
+  // ─── Async job: clear all job state ────────────────────────────
+  const clearJobState = useCallback(() => {
+    jobPollAbortRef.current?.abort();
+    livePollAbortRef.current?.abort();
+    jobPollAbortRef.current = null;
+    livePollAbortRef.current = null;
+    setJobId(null);
+    setJobStatus(null);
+    setTargetApStatus(null);
+    setJobError(null);
+    setApLiveStatus(null);
+    setApLiveConfirmed(false);
+  }, [setJobId, setJobStatus, setTargetApStatus]);
+
+  // ─── Async job: poll /jobs/:jobId until terminal ──────────────
+  useEffect(() => {
+    if (!jobId || !jobStatus || ['DONE', 'FAILED'].includes(jobStatus)) return;
+
+    const ac = new AbortController();
+    jobPollAbortRef.current = ac;
+
+    (async () => {
+      try {
+        const terminal = await pollUntil(
+          async () => {
+            const res = await pollApJob(jobId);
+            return res.data;
+          },
+          (d) => ['DONE', 'FAILED'].includes(d?.job_status),
+          { interval: 2_500, maxAttempts: 120, signal: ac.signal }
+        );
+
+        if (!mountedRef.current) return;
+
+        setJobStatus(terminal.job_status);
+
+        if (terminal.job_status === 'FAILED') {
+          setJobError({
+            code: terminal.error_code || 'UNKNOWN',
+            message: terminal.error_message || 'AP operation failed.',
+          });
+          setError(terminal.error_message || 'AP operation failed.');
+          // Refresh admin state to get DB truth
+          await fetchAdminState();
+        }
+        // DONE handled by the live poll effect below
+      } catch (err) {
+        if (err.name === 'AbortError' || !mountedRef.current) return;
+        console.error('[useDevice] job poll error:', err.message);
+        setJobError({ code: 'POLL_ERROR', message: 'Lost contact with device.' });
+        setError('Lost contact with device while checking AP status.');
+      }
+    })();
+
+    return () => ac.abort();
+  }, [jobId, jobStatus, fetchAdminState, setJobStatus]);
+
+  // ─── Async job: AP live poll after DONE ───────────────────────
+  // Verifies the actual AP state on the device matches intention.
+  useEffect(() => {
+    if (jobStatus !== 'DONE' || apLiveConfirmed) return;
+
+    const ac = new AbortController();
+    livePollAbortRef.current = ac;
+
+    const expectedApState = targetApStatus === 'enable' ? 'ENABLED' : 'DISABLED';
+
+    (async () => {
+      try {
+        const liveResult = await pollUntil(
+          async () => {
+            const res = await pollApLive();
+            return res.data;
+          },
+          (d) => d?.ap_status === expectedApState,
+          { interval: 3_000, maxAttempts: 20, signal: ac.signal }
+        );
+
+        if (!mountedRef.current) return;
+
+        setApLiveStatus(liveResult.ap_status);
+        setApLiveConfirmed(true);
+        // Refresh admin state from DB for final truth
+        await fetchAdminState();
+        // Clear job state after a brief delay so UI can show success
+        setTimeout(() => {
+          if (mountedRef.current) clearJobState();
+        }, 2_000);
+      } catch (err) {
+        if (err.name === 'AbortError' || !mountedRef.current) return;
+        console.warn('[useDevice] AP live poll did not confirm in time:', err.message);
+        // Still refresh admin state — DB may be correct even if live poll timed out
+        await fetchAdminState();
+        setApLiveConfirmed(true);
+        setTimeout(() => {
+          if (mountedRef.current) clearJobState();
+        }, 2_000);
+      }
+    })();
+
+    return () => ac.abort();
+  }, [jobStatus, targetApStatus, apLiveConfirmed, fetchAdminState, clearJobState]);
+
+  // ─── Cleanup async poll controllers on unmount ────────────────
+  useEffect(() => {
+    return () => {
+      jobPollAbortRef.current?.abort();
+      livePollAbortRef.current?.abort();
+    };
+  }, []);
 
   // ─── Portal update helper (for "Update Portal" button) ───────
   const handleUpdatePortal = async () => {
@@ -222,6 +349,19 @@ export const useDevice = (networkId, scanId) => {
       const res = await toggleAP(payload);
       console.log("enable-ap response:", res.data);
 
+      // ── Async path: backend returned ACCEPTED with a job_id ──
+      if (res.data?.status === 'ACCEPTED' && res.data?.job_id) {
+        setJobId(res.data.job_id);
+        setJobStatus('ACCEPTED');
+        setTargetApStatus(apStatus);
+        setJobError(null);
+        setApLiveStatus(null);
+        setApLiveConfirmed(false);
+        // Loading stays true — the job polling will manage UI from here
+        return;
+      }
+
+      // ── Sync fallback: Pi returned immediate result ──────────
       // Backend may have reconciled after a timeout — Pi succeeded despite proxy timeout
       if (res.data?.reconciled) {
         setApEnabled(res.data.ap_enabled);
@@ -239,6 +379,16 @@ export const useDevice = (networkId, scanId) => {
       const httpStatus = err?.response?.status;
       const backendError = err?.response?.data?.error;
       const backendMsg = err?.response?.data?.message || err?.response?.data?.user_message;
+
+      // 409 with existing job_id: another tab or stale request — resume polling
+      if (httpStatus === 409 && err?.response?.data?.job_id) {
+        setApEnabled(!nextState); // revert optimistic toggle
+        setJobId(err.response.data.job_id);
+        setJobStatus('ONGOING');
+        setTargetApStatus(err.response.data.target_ap_status || apStatus);
+        setError(null);
+        return;
+      }
 
       // Gateway/transport timeout — ambiguous outcome, enter bounded reconciliation.
       // Do NOT revert optimistic toggle or claim hard failure; let the reconciliation
@@ -389,6 +539,15 @@ export const useDevice = (networkId, scanId) => {
     scanError,
     hasScanId: !!scanId,
     isReconcilingToggle,
+    // Async AP job state
+    jobId,
+    jobStatus,
+    targetApStatus,
+    jobError,
+    apLiveStatus,
+    apLiveConfirmed,
+    isJobActive,
+    clearJobState,
     refetch: fetchNetworkConfig,
     refetchState: fetchAdminState,
     handleToggleAccessPoint,

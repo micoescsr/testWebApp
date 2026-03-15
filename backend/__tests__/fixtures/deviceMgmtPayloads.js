@@ -78,6 +78,48 @@ const disableBody = {
 /** Orchestrate/apply success response from FastAPI */
 const fastapiSuccess = { status: "ok", message: "Applied" };
 
+/** Orchestrate/apply ACCEPTED response (async path) */
+const fastapiAccepted = {
+  status: "ACCEPTED",
+  job_id: "orch_1234567890_abcdef01",
+  message: "Job queued",
+};
+
+/** /orchestrate/poll — job still running */
+const orchestratePollOngoing = {
+  status: "ONGOING",
+  job_id: "orch_1234567890_abcdef01",
+  result: null,
+};
+
+/** /orchestrate/poll — job done successfully */
+const orchestratePollDone = {
+  status: "DONE",
+  job_id: "orch_1234567890_abcdef01",
+  result: { status: "ok", message: "Applied" },
+};
+
+/** /orchestrate/poll — job done with application error */
+const orchestratePollFailed = {
+  status: "DONE",
+  job_id: "orch_1234567890_abcdef01",
+  result: { status: "ERROR", error_code: "CONNECTION_FAILED", user_message: "Could not connect." },
+};
+
+/** /ap/poll — AP enabled */
+const apPollEnabled = {
+  ap_enabled: true,
+  ap_status: "enabled",
+  uplink: { status: "connected" },
+};
+
+/** /ap/poll — AP disabled */
+const apPollDisabled = {
+  ap_enabled: false,
+  ap_status: "disabled",
+  uplink: { status: "disconnected" },
+};
+
 /** Portal/patch success response from FastAPI */
 const portalPatchSuccess = { status: "ok", message: "Patched" };
 
@@ -98,5 +140,11 @@ module.exports = {
   enableBodyNoScan,
   disableBody,
   fastapiSuccess,
+  fastapiAccepted,
+  orchestratePollOngoing,
+  orchestratePollDone,
+  orchestratePollFailed,
+  apPollEnabled,
+  apPollDisabled,
   portalPatchSuccess,
 };

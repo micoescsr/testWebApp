@@ -30,8 +30,19 @@ export const syncPortal = (networkId, score) =>
 // ─── AP Toggle → backend validates scan + loads config from DB ───
 // payload: { network_id, scan_id?, ap_status: "enable"|"disable", ap_password? }
 //   scan_id required for enable only
+// Returns { ok, status, job_id?, ... } — status may be "ACCEPTED" (async) or immediate result
 export const toggleAP = (payload) =>
   api.post("/device/enable-ap", payload);
+
+// ─── Async AP Job Polling ────────────────────────────────────────
+// Poll backend for Pi orchestration job status
+export const pollApJob = (jobId) =>
+  api.get(`/device/jobs/${encodeURIComponent(jobId)}`);
+
+// ─── AP Live State (real-time from Pi) ───────────────────────────
+// Returns { ok, ap_status, is_transitioning, uplink_status }
+export const pollApLive = () =>
+  api.get('/device/ap-live');
 
 // ─── AP State from DB (source of truth) ──────────────────────────
 export const getApState = (networkId) =>

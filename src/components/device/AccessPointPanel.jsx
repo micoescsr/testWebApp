@@ -7,23 +7,29 @@ import { useNavigate } from "react-router-dom";
  *
  * Priority (top wins, stop at first match):
  *  1. network_config_missing       → blocking
- *  2. ap_apply_in_progress (no reconciliation) → blocking + disable controls
- *  3. toggle_reconciling_timeout   → info "checking device state…"
- *  4. scanError (backend validation on toggle attempt)
- *  5. AP off + no scan             → blocking "Scan required"
- *  6. AP off + stale scan          → blocking "Scan is stale"
- *  7. AP on + portal outdated      → warning + Update Portal button
- *  8. AP on + stale scan           → info (non-blocking)
+ *  2. async job active (ACCEPTED/ONGOING) → info "applying…" with spinner
+ *  3. async job DONE, live confirming     → info "verifying…"
+ *  4. async job FAILED                    → error
+ *  5. ap_apply_in_progress (no reconciliation) → blocking + disable controls
+ *  6. toggle_reconciling_timeout   → info "checking device state…"
+ *  7. scanError (backend validation on toggle attempt)
+ *  8. AP off + no scan             → blocking "Scan required"
+ *  9. AP off + stale scan          → blocking "Scan is stale"
+ * 10. AP on + portal outdated      → warning + Update Portal button
+ * 11. AP on + stale scan           → info (non-blocking)
  */
-function computeBanner({ networkConfigMissing, apApplyInProgress, isReconcilingToggle, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate, hasError }) {
-  if (networkConfigMissing)                                    return "config_missing";
-  if (apApplyInProgress && !isReconcilingToggle && !hasError)  return "apply_in_progress";
-  if (isReconcilingToggle)                                     return "toggle_reconciling_timeout";
-  if (scanError && scanError !== "SCAN_REQUIRED")              return "scan_error";
-  if (!apEnabled && !hasScan)           return "scan_required";
-  if (!apEnabled && hasScan && !scanFresh) return "scan_stale_blocking";
-  if (apEnabled && portalOutOfDate)     return "portal_outdated";
-  if (apEnabled && hasScan && !scanFresh) return "scan_stale_info";
+function computeBanner({ networkConfigMissing, apApplyInProgress, isReconcilingToggle, scanError, apEnabled, hasScan, scanFresh, portalOutOfDate, hasError, isJobActive, jobStatus, apLiveConfirmed, jobError }) {
+  if (networkConfigMissing)                                                     return "config_missing";
+  if (isJobActive)                                                              return "job_active";
+  if (jobStatus === 'DONE' && !apLiveConfirmed)                                 return "job_confirming";
+  if (jobStatus === 'FAILED' || jobError)                                       return "job_failed";
+  if (apApplyInProgress && !isReconcilingToggle && !hasError)                   return "apply_in_progress";
+  if (isReconcilingToggle)                                                      return "toggle_reconciling_timeout";
+  if (scanError && scanError !== "SCAN_REQUIRED")                               return "scan_error";
+  if (!apEnabled && !hasScan)                                                   return "scan_required";
+  if (!apEnabled && hasScan && !scanFresh)                                      return "scan_stale_blocking";
+  if (apEnabled && portalOutOfDate)                                             return "portal_outdated";
+  if (apEnabled && hasScan && !scanFresh)                                       return "scan_stale_info";
   return null;
 }
 
@@ -38,6 +44,12 @@ const AccessPointPanel = ({
   hasScanId,
   adminState,
   isReconcilingToggle,
+  // Async AP job props
+  isJobActive,
+  jobStatus,
+  jobError,
+  apLiveConfirmed,
+  targetApStatus,
   onRetry,
   onToggle,
   onUpdatePortal,
@@ -68,10 +80,16 @@ const AccessPointPanel = ({
     scanFresh,
     portalOutOfDate,
     hasError: !!error,
+    isJobActive: isJobActive ?? false,
+    jobStatus: jobStatus ?? null,
+    apLiveConfirmed: apLiveConfirmed ?? false,
+    jobError: jobError ?? null,
   });
 
-  // Toggle is disabled while loading, during in-progress apply, or when enabling without a scan
-  const toggleDisabled = loading || apApplyInProgress || isReconcilingToggle || (!accessPoint?.enabled && !hasScanId);
+  // Toggle is disabled while loading, during in-progress apply, active async job, or when enabling without a scan
+  const toggleDisabled = loading || apApplyInProgress || isReconcilingToggle || isJobActive
+    || (jobStatus === 'DONE' && !apLiveConfirmed)
+    || (!accessPoint?.enabled && !hasScanId);
 
   const handleToggleClick = () => {
     if (!accessPoint?.enabled && isEncrypted && !apPassword) {
@@ -126,6 +144,30 @@ const AccessPointPanel = ({
           <div className="state-message info-state">
             <p>Applying AP configuration…</p>
             <small>Please wait while the change is being applied.</small>
+          </div>
+        )}
+
+        {banner === "job_active" && (
+          <div className="state-message info-state">
+            <p>{targetApStatus === 'enable' ? 'Enabling' : 'Disabling'} access point…</p>
+            <small>This may take up to a minute. Do not close this tab.</small>
+          </div>
+        )}
+
+        {banner === "job_confirming" && (
+          <div className="state-message info-state">
+            <p>Verifying device state…</p>
+            <small>Confirming the access point {targetApStatus === 'enable' ? 'is active' : 'has stopped'}.</small>
+          </div>
+        )}
+
+        {banner === "job_failed" && (
+          <div className="state-message error-state">
+            <p>{jobError?.message || 'AP operation failed.'}</p>
+            <small>You can retry the operation.</small>
+            <button onClick={onRetry} disabled={loading} style={{ marginTop: 8 }}>
+              Retry
+            </button>
           </div>
         )}
 
@@ -226,6 +268,7 @@ const AccessPointPanel = ({
                 onChange={(e) => setApPassword(e.target.value)}
                 placeholder="Enter password for WPA2"
                 className="ap-password-input"
+                disabled={isJobActive || (jobStatus === 'DONE' && !apLiveConfirmed)}
               />
             </div>
           )}

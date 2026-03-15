@@ -16,8 +16,15 @@ const {
   enableBodyNoScan,
   disableBody,
   fastapiSuccess,
+  fastapiAccepted,
+  orchestratePollOngoing,
+  orchestratePollDone,
+  orchestratePollFailed,
+  apPollEnabled,
+  apPollDisabled,
   portalPatchSuccess,
 } = require("../fixtures/deviceMgmtPayloads");
+const apJobStore = require("../../services/apJobStore");
 
 // ── Mocks ───────────────────────────────────────────────────────
 
@@ -32,6 +39,22 @@ jest.mock("jose", () => ({
       aud: "authenticated",
     },
   }),
+}));
+
+// Mock @supabase/supabase-js so authMiddleware's supabaseAdmin profile lookup works
+jest.mock("@supabase/supabase-js", () => ({
+  createClient: jest.fn(() => ({
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          single: jest.fn().mockResolvedValue({
+            data: { status: "active" },
+            error: null,
+          }),
+        })),
+      })),
+    })),
+  })),
 }));
 
 // We control supabaseClient per-test via mockImplementation
@@ -81,6 +104,7 @@ beforeEach(() => {
   jest.restoreAllMocks();
   seedDefaultContent.mockClear();
   buildPortalPayloadFromDB.mockClear();
+  apJobStore._reset();
 });
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -90,12 +114,23 @@ beforeEach(() => {
  * Supports: select().eq().single(), select().eq() (thenable), update().eq()
  */
 function chain({ singleResult = { data: null, error: null }, listResult = { data: [], error: null }, updateResult = { data: null, error: null } } = {}) {
+  // Build a deeply‑chainable update sub‑chain so queries like
+  //   .update({}).eq().eq().select().maybeSingle()
+  // resolve correctly.
+  const updateChain = {
+    eq: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    single: jest.fn().mockResolvedValue(updateResult),
+    maybeSingle: jest.fn().mockResolvedValue(updateResult),
+  };
+  // Make .eq() return the same sub‑chain (allows unlimited chaining)
+  updateChain.eq.mockReturnValue(updateChain);
+  updateChain.select.mockReturnValue(updateChain);
+
   return {
     select: jest.fn().mockReturnThis(),
     insert: jest.fn().mockReturnThis(),
-    update: jest.fn(() => ({
-      eq: jest.fn().mockResolvedValue(updateResult),
-    })),
+    update: jest.fn(() => updateChain),
     upsert: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     gte: jest.fn().mockReturnThis(),
@@ -133,6 +168,11 @@ function mockFetch(responses = {}) {
   });
 }
 
+/** Supertest helpers that include auth header */
+const AUTH_HEADER = { Authorization: "Bearer test-token" };
+const authGet = (path) => request(app).get(path).set(AUTH_HEADER);
+const authPost = (path) => request(app).post(path).set(AUTH_HEADER);
+
 // ─────────────────────────────────────────────────────────────────
 // A. GET /api/device/ap-state/:networkId
 // ─────────────────────────────────────────────────────────────────
@@ -148,7 +188,7 @@ describe("GET /api/device/ap-state/:networkId", () => {
       }),
     });
 
-    const res = await request(app).get(`/api/device/ap-state/${NETWORK_ID}`);
+    const res = await authGet(`/api/device/ap-state/${NETWORK_ID}`);
 
     expect(res.status).toBe(200);
     expect(res.body.ap_enabled).toBe(true);
@@ -165,7 +205,7 @@ describe("GET /api/device/ap-state/:networkId", () => {
       }),
     });
 
-    const res = await request(app).get(`/api/device/ap-state/${NETWORK_ID}`);
+    const res = await authGet(`/api/device/ap-state/${NETWORK_ID}`);
 
     expect(res.status).toBe(200);
     expect(res.body.ap_enabled).toBe(false);
@@ -179,7 +219,7 @@ describe("GET /api/device/ap-state/:networkId", () => {
       }),
     });
 
-    const res = await request(app).get(`/api/device/ap-state/${NETWORK_ID}`);
+    const res = await authGet(`/api/device/ap-state/${NETWORK_ID}`);
 
     expect(res.status).toBe(500);
     expect(res.body.error).toContain("Failed to fetch AP state");
@@ -192,8 +232,7 @@ describe("GET /api/device/ap-state/:networkId", () => {
 
 describe("POST /api/device/enable-ap — validation", () => {
   test("400 when network_id is missing", async () => {
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send({ ap_status: "enable" });
 
     expect(res.status).toBe(400);
@@ -201,8 +240,7 @@ describe("POST /api/device/enable-ap — validation", () => {
   });
 
   test("400 when ap_status is invalid", async () => {
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send({ network_id: NETWORK_ID, ap_status: "toggle" });
 
     expect(res.status).toBe(400);
@@ -210,8 +248,7 @@ describe("POST /api/device/enable-ap — validation", () => {
   });
 
   test("400 SCAN_REQUIRED when enable without scan_id", async () => {
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBodyNoScan);
 
     expect(res.status).toBe(400);
@@ -231,8 +268,7 @@ describe("POST /api/device/enable-ap — enable", () => {
       }),
     });
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(400);
@@ -249,8 +285,7 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     setupSupabase({ scans: scanChain, networks: netChain });
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(400);
@@ -267,8 +302,7 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     setupSupabase({ scans: scanChain, networks: netChain });
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(400);
@@ -285,8 +319,7 @@ describe("POST /api/device/enable-ap — enable", () => {
     setupSupabase({ scans: scanChain, networks: netChain });
     mockFetch({});
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(200);
@@ -328,8 +361,7 @@ describe("POST /api/device/enable-ap — enable", () => {
     setupSupabase({ scans: scanChain, networks: netChain });
     mockFetch({});
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(200);
@@ -349,8 +381,7 @@ describe("POST /api/device/enable-ap — enable", () => {
     setupSupabase({ scans: scanChain, networks: netChain });
     mockFetch({});
 
-    await request(app)
-      .post("/api/device/enable-ap")
+    await authPost("/api/device/enable-ap")
       .send({ ...enableBody, ap_password: "secret123" });
 
     const apPayload = JSON.parse(fetchCalls[0].opts.body);
@@ -376,8 +407,7 @@ describe("POST /api/device/enable-ap — enable", () => {
       };
     });
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(500);
@@ -398,8 +428,7 @@ describe("POST /api/device/enable-ap — disable", () => {
     setupSupabase({ networks: netChain });
     mockFetch({});
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(disableBody);
 
     expect(res.status).toBe(200);
@@ -423,8 +452,7 @@ describe("POST /api/device/enable-ap — disable", () => {
     setupSupabase({ networks: netChain });
     mockFetch({});
 
-    await request(app)
-      .post("/api/device/enable-ap")
+    await authPost("/api/device/enable-ap")
       .send(disableBody);
 
     const payload = JSON.parse(fetchCalls[0].opts.body);
@@ -438,10 +466,256 @@ describe("POST /api/device/enable-ap — disable", () => {
 
     setupSupabase({ networks: netChain });
 
-    const res = await request(app)
-      .post("/api/device/enable-ap")
+    const res = await authPost("/api/device/enable-ap")
       .send(disableBody);
 
     expect(res.status).toBe(500);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// E. Enable-ap — ASYNC (ACCEPTED) path
+// ─────────────────────────────────────────────────────────────────
+
+describe("POST /api/device/enable-ap — async ACCEPTED", () => {
+  // Valid UUIDs to pass route validation (fixtures use non-UUID IDs)
+  const UUID_NET = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+  const UUID_SCAN = "f0e1d2c3-b4a5-6789-0abc-def123456789";
+
+  const asyncEnableBody = { network_id: UUID_NET, scan_id: UUID_SCAN, ap_status: "enable", ap_password: "#Dns1125" };
+
+  test("returns ACCEPTED with job_id when Pi accepts async", async () => {
+    const scanData = {
+      scan_id: UUID_SCAN,
+      network_id: UUID_NET,
+      created_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      status: "COMPLETED",
+      error_code: null,
+      scan_data: { devices: [] },
+      risk_score: 14,
+    };
+    const scanChain = chain({ singleResult: { data: scanData, error: null } });
+    const netChain = chain({
+      singleResult: { data: { ...networkRowInitialized, network_id: UUID_NET }, error: null },
+      updateResult: { data: { network_id: UUID_NET }, error: null },
+    });
+
+    setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
+
+    // Pi returns ACCEPTED
+    global.fetch = jest.fn(async (url) => {
+      fetchCalls.push({ url });
+      if (url.includes("/orchestrate/apply")) {
+        return { ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(fastapiAccepted)) };
+      }
+      return { ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(fastapiSuccess)) };
+    });
+
+    const res = await authPost("/api/device/enable-ap")
+      .send(asyncEnableBody);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("ACCEPTED");
+    expect(res.body.job_id).toBe(fastapiAccepted.job_id);
+    expect(res.body.ok).toBe(true);
+  });
+
+  test("409 when async job is already active for network", async () => {
+    // Pre-create an active job in the store
+    apJobStore.create({
+      job_id: fastapiAccepted.job_id,
+      network_id: UUID_NET,
+      scan_id: UUID_SCAN,
+      target_ap_status: "enable",
+      payload_snapshot: {},
+    });
+
+    const res = await authPost("/api/device/enable-ap")
+      .send(asyncEnableBody);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("REQUEST_IN_PROGRESS");
+    expect(res.body.job_id).toBe(fastapiAccepted.job_id);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// F. GET /api/device/jobs/:jobId — job polling
+// ─────────────────────────────────────────────────────────────────
+
+describe("GET /api/device/jobs/:jobId", () => {
+  test("400 for invalid jobId format", async () => {
+    const res = await authGet("/api/device/jobs/bad-format!");
+    expect(res.status).toBe(400);
+  });
+
+  test("returns ONGOING when Pi reports ongoing", async () => {
+    apJobStore.create({
+      job_id: fastapiAccepted.job_id,
+      network_id: NETWORK_ID,
+      scan_id: SCAN_ID,
+      target_ap_status: "enable",
+      payload_snapshot: {},
+    });
+
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify(orchestratePollOngoing)),
+    }));
+
+    const res = await authGet(`/api/device/jobs/${fastapiAccepted.job_id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.job_status).toBe("ONGOING");
+    expect(res.body.ok).toBe(true);
+  });
+
+  test("returns DONE and finalizes job when Pi reports done", async () => {
+    apJobStore.create({
+      job_id: fastapiAccepted.job_id,
+      network_id: NETWORK_ID,
+      scan_id: SCAN_ID,
+      target_ap_status: "enable",
+      payload_snapshot: {},
+    });
+
+    // Need supabase for finalization
+    const netChain = chain({
+      singleResult: { data: { ...networkRowInitialized, ap_apply_in_progress: true, bssid: networkRow.bssid, ssid: networkRow.ssid }, error: null },
+    });
+    setupSupabase({ networks: netChain });
+
+    global.fetch = jest.fn(async (url) => {
+      fetchCalls.push({ url });
+      if (url.includes("/orchestrate/poll")) {
+        return { ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(orchestratePollDone)) };
+      }
+      // portal/patch during finalization
+      return { ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(portalPatchSuccess)) };
+    });
+
+    const res = await authGet(`/api/device/jobs/${fastapiAccepted.job_id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.job_status).toBe("DONE");
+    expect(res.body.ok).toBe(true);
+
+    // Job should be marked finalized
+    const job = apJobStore.get(fastapiAccepted.job_id);
+    expect(job.finalized).toBe(true);
+  });
+
+  test("returns cached result for already-finalized job without hitting Pi", async () => {
+    apJobStore.create({
+      job_id: fastapiAccepted.job_id,
+      network_id: NETWORK_ID,
+      scan_id: SCAN_ID,
+      target_ap_status: "enable",
+      payload_snapshot: {},
+    });
+    apJobStore.update(fastapiAccepted.job_id, { status: "DONE", result: { status: "ok" } });
+    apJobStore.markFinalized(fastapiAccepted.job_id);
+
+    global.fetch = jest.fn(); // should NOT be called
+
+    const res = await authGet(`/api/device/jobs/${fastapiAccepted.job_id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.job_status).toBe("DONE");
+    expect(res.body.ok).toBe(true);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("returns FAILED when Pi result is ERROR", async () => {
+    apJobStore.create({
+      job_id: fastapiAccepted.job_id,
+      network_id: NETWORK_ID,
+      scan_id: SCAN_ID,
+      target_ap_status: "enable",
+      payload_snapshot: {},
+    });
+
+    const netChain = chain({
+      singleResult: { data: { ap_apply_in_progress: true }, error: null },
+    });
+    setupSupabase({ networks: netChain });
+
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify(orchestratePollFailed)),
+    }));
+
+    const res = await authGet(`/api/device/jobs/${fastapiAccepted.job_id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.job_status).toBe("FAILED");
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error_code).toBeTruthy();
+  });
+
+  test("PI_UNREACHABLE when fetch fails", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve(JSON.stringify({ detail: "Pi unreachable" })),
+    }));
+
+    const res = await authGet(`/api/device/jobs/${fastapiAccepted.job_id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.job_status).toBe("UNKNOWN");
+    expect(res.body.error_code).toBe("PI_UNREACHABLE");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// G. GET /api/device/ap-live — AP live state
+// ─────────────────────────────────────────────────────────────────
+
+describe("GET /api/device/ap-live", () => {
+  test("returns ENABLED when Pi reports AP enabled", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify(apPollEnabled)),
+    }));
+
+    const res = await authGet("/api/device/ap-live");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.ap_status).toBe("ENABLED");
+    expect(res.body.uplink_status).toBe("CONNECTED");
+  });
+
+  test("returns DISABLED when Pi reports AP disabled", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify(apPollDisabled)),
+    }));
+
+    const res = await authGet("/api/device/ap-live");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.ap_status).toBe("DISABLED");
+  });
+
+  test("returns UNKNOWN when Pi is unreachable", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve(JSON.stringify({ detail: "Pi unreachable" })),
+    }));
+
+    const res = await authGet("/api/device/ap-live");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.ap_status).toBe("UNKNOWN");
   });
 });
