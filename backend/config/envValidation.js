@@ -60,7 +60,7 @@ function validateEnv() {
 
     // Prod should be deploying from main or security branch (Railway sets RAILWAY_GIT_BRANCH)
     const branch = process.env.RAILWAY_GIT_BRANCH;
-    const allowedBranches = ['main', 'security', 'security-merge-test'];
+    const allowedBranches = ['main', 'security', 'mar15-async'];
     if (branch && !allowedBranches.includes(branch)) {
       errors.push(
         `[SAFETY] APP_ENV=production but deploying from branch "${branch}" (expected one of: ${allowedBranches.join(', ')})`
