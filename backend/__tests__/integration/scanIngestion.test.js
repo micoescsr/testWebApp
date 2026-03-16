@@ -8,6 +8,8 @@ const request = require("supertest");
 const { createTestApp } = require("../helpers/testApp");
 const { validScanPayload, triggerScanPayload } = require("../fixtures/scanPayloads");
 
+const AUTH_HEADER = { Authorization: "Bearer test-token" };
+
 // ── Mocks ───────────────────────────────────────────────────────────────────
 
 // Mock jose (auth middleware)
@@ -21,6 +23,22 @@ jest.mock("jose", () => ({
       aud: "authenticated",
     },
   }),
+}));
+
+// Mock @supabase/supabase-js so authJWT profile lookup works
+jest.mock("@supabase/supabase-js", () => ({
+  createClient: jest.fn(() => ({
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          single: jest.fn().mockResolvedValue({
+            data: { status: "active" },
+            error: null,
+          }),
+        })),
+      })),
+    })),
+  })),
 }));
 
 // Chainable Supabase mock with configurable responses
@@ -44,8 +62,11 @@ const mockChain = {
 jest.mock("../../config/supabaseClient", () => ({
   supabaseClient: {
     from: jest.fn(() => ({ ...mockChain })),
+    rpc: jest.fn(),
   },
 }));
+
+const { supabaseClient } = require("../../config/supabaseClient");
 
 let app;
 beforeAll(() => {
@@ -56,6 +77,7 @@ afterEach(() => {
   jest.restoreAllMocks();
   // Reset mock call counts
   Object.values(mockChain).forEach((fn) => fn.mockClear?.());
+  supabaseClient.rpc.mockClear();
 });
 
 // ─── A. POST /api/rasPi/networks (saveNetworkMetadataScan) ──────────────────
@@ -89,8 +111,11 @@ describe("POST /api/rasPi/networks — scan ingestion pipeline", () => {
         error: null,
       });
 
+    supabaseClient.rpc.mockResolvedValueOnce({ data: 14, error: null });
+
     const res = await request(app)
       .post("/api/rasPi/networks")
+      .set(AUTH_HEADER)
       .send(validScanPayload);
 
     expect(res.status).toBe(201);
@@ -101,20 +126,23 @@ describe("POST /api/rasPi/networks — scan ingestion pipeline", () => {
   test("returns 400 with missing required fields", async () => {
     const res = await request(app)
       .post("/api/rasPi/networks")
+      .set(AUTH_HEADER)
       .send({ ssid: "Test" }); // missing bssid + channel
 
     expect(res.status).toBe(400);
-    expect(res.body.status).toBe("ERROR");
-    expect(res.body.error).toContain("Missing");
+    expect(res.body.error).toBe("VALIDATION_ERROR");
+    expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
   test("returns 400 with empty body", async () => {
     const res = await request(app)
       .post("/api/rasPi/networks")
+      .set(AUTH_HEADER)
       .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("Missing");
+    expect(res.body.error).toBe("VALIDATION_ERROR");
+    expect(Array.isArray(res.body.errors)).toBe(true);
   });
 });
 
@@ -125,16 +153,19 @@ describe("POST /api/rasPi/scan — trigger scan proxy", () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          status: "OK",
-          scan_id: "fast-scan-1",
-          message: "Scan started",
-        }),
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            status: "OK",
+            scan_id: "fast-scan-1",
+            message: "Scan started",
+          })
+        ),
     });
 
     const res = await request(app)
       .post("/api/rasPi/scan")
+      .set(AUTH_HEADER)
       .send(triggerScanPayload);
 
     expect(res.status).toBe(200);
@@ -148,10 +179,12 @@ describe("POST /api/rasPi/scan — trigger scan proxy", () => {
   test("returns 400 when ssid/bssid/channel missing", async () => {
     const res = await request(app)
       .post("/api/rasPi/scan")
+      .set(AUTH_HEADER)
       .send({ ssid: "Test" }); // missing bssid, channel
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("Missing");
+    expect(res.body.error).toBe("VALIDATION_ERROR");
+    expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
   test("returns 502 when FastAPI is unreachable", async () => {
@@ -159,6 +192,7 @@ describe("POST /api/rasPi/scan — trigger scan proxy", () => {
 
     const res = await request(app)
       .post("/api/rasPi/scan")
+      .set(AUTH_HEADER)
       .send(triggerScanPayload);
 
     expect(res.status).toBe(502);
@@ -172,6 +206,7 @@ describe("POST /api/device/signal_ap — device toggle", () => {
   test("acknowledges toggle ON", async () => {
     const res = await request(app)
       .post("/api/device/signal_ap")
+      .set(AUTH_HEADER)
       .send({ toggleState: true });
 
     expect(res.status).toBe(200);
@@ -182,6 +217,7 @@ describe("POST /api/device/signal_ap — device toggle", () => {
   test("acknowledges toggle OFF", async () => {
     const res = await request(app)
       .post("/api/device/signal_ap")
+      .set(AUTH_HEADER)
       .send({ toggleState: false });
 
     expect(res.status).toBe(200);

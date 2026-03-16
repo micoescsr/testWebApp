@@ -5,6 +5,11 @@
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('./auditLogger');
 const { piFetch } = require('./piFetch');
+const {
+	computePortalTipsetHash,
+	resolveFinalPortalTipsForNetwork,
+} = require('./portalTipResolver');
+const { buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
 
 // Cooldown: don't portal-patch the same network more often than this
 const PORTAL_PATCH_COOLDOWN_MS = parseInt(process.env.PORTAL_PATCH_COOLDOWN_MS || '15000', 10); // 15s
@@ -160,7 +165,7 @@ async function updateNetworkRisk(networkId, opts = {}) {
 	// 1) Read current network state
 	const { data: net, error: netErr } = await supabaseClient
 		.from('networks')
-		.select('risk_score, risk_bucket, risk_score_version, ap_enabled, portal_last_patched_at')
+		.select('risk_score, risk_bucket, risk_score_version, ap_enabled, portal_last_patched_at, portal_tipset_hash')
 		.eq('network_id', networkId)
 		.maybeSingle();
 
@@ -232,15 +237,140 @@ async function updateNetworkRisk(networkId, opts = {}) {
 		});
 	}
 
-	// 6) Auto-trigger portal risk patch if AP enabled + risk changed
+	// 6) Auto-trigger portal patching
+	//    - Risk changes still trigger a patch.
+	//    - Tipset changes can trigger a patch even when risk stays the same.
 	let portalPatched = false;
-	if (riskChanged && net.ap_enabled) {
-		portalPatched = await autoPortalRiskPatch(networkId, newBucket, net.portal_last_patched_at, req);
+	if (net.ap_enabled) {
+		const shouldRecomputePortal = (
+			riskChanged ||
+			reason === 'scan_completed' ||
+			reason === 'threat_detected' ||
+			reason === 'threat_cleared'
+		);
+
+		if (shouldRecomputePortal) {
+			let tipsetChanged = false;
+			try {
+				const resolved = await resolveFinalPortalTipsForNetwork(supabaseClient, networkId);
+				const desiredHash = resolved?.tipsetHash || null;
+				const stampedHash = net.portal_tipset_hash || null;
+				tipsetChanged = !!desiredHash && desiredHash !== stampedHash;
+			} catch (hashErr) {
+				console.warn('[riskPipeline] tipset hash recompute failed (non-fatal):', hashErr.message);
+				tipsetChanged = false;
+			}
+
+			if (tipsetChanged) {
+				portalPatched = await autoPortalAdvisoryPatch(networkId, net.portal_last_patched_at, req);
+			} else if (riskChanged) {
+				portalPatched = await autoPortalRiskPatch(networkId, newBucket, net.portal_last_patched_at, req);
+			}
+		}
 	}
 
 	console.log(`[riskPipeline] network=${networkId} reason=${reason} bucket=${oldBucket}→${newBucket} changed=${riskChanged} portalPatched=${portalPatched}`);
 
 	return { changed: riskChanged, portalPatched, oldBucket, newBucket };
+}
+
+// ─── Auto-portal full advisory patch (tips + security) ──────────
+/**
+ * Trigger a full portal patch using buildPortalPayloadFromDB so the Pi receives
+ * the final resolved flat tips array. Stamps portal_tipset_hash on success.
+ * Uses the same cooldown strategy as autoPortalRiskPatch.
+ */
+async function autoPortalAdvisoryPatch(networkId, lastPatchedAt, req = null) {
+	// Cooldown: skip if patched too recently
+	if (lastPatchedAt) {
+		const elapsed = Date.now() - new Date(lastPatchedAt).getTime();
+		if (elapsed < PORTAL_PATCH_COOLDOWN_MS) {
+			console.log(`[riskPipeline] Portal patch cooldown active for ${networkId} (${elapsed}ms < ${PORTAL_PATCH_COOLDOWN_MS}ms), skipping`);
+			return false;
+		}
+	}
+
+	try {
+		// Snapshot bucket/version + network config before patch
+		const { data: preNet, error: preErr } = await supabaseClient
+			.from('networks')
+			.select('risk_score_version, risk_bucket, bssid, ssid')
+			.eq('network_id', networkId)
+			.single();
+		if (preErr) throw preErr;
+		if (!preNet?.bssid || !preNet?.ssid) {
+			console.warn('[riskPipeline] autoPortalAdvisoryPatch: missing bssid/ssid for network', networkId);
+			return false;
+		}
+
+		const patchBucket = preNet.risk_bucket;
+		const patchVersion = Number(preNet.risk_score_version) || 0;
+
+		const payload = await buildPortalPayloadFromDB(networkId, preNet.bssid, preNet.ssid);
+		const tips = payload?.patch?.portal_content?.tips?.items || [];
+		const tipsetHash = computePortalTipsetHash(tips);
+
+		console.log(`[riskPipeline] Auto portal/patch (advisory) network=${networkId} version=${patchVersion} bucket=${patchBucket} tips=${Array.isArray(tips) ? tips.length : 0}`);
+
+		const { ok: piOk, status: piStatus, data: body } = await piFetch('/portal/patch', {
+			method: 'POST',
+			jsonBody: payload,
+		});
+
+		if (!piOk) {
+			console.error(`[riskPipeline] portal/patch advisory failed: ${piStatus}`, body);
+			await logAuditEvent({
+				req,
+				actorId: null,
+				eventName: 'PORTAL_UPDATE',
+				eventStatus: 'FAILED',
+				entityType: 'NETWORK',
+				entityIdUuid: networkId,
+				meta: { reason: 'auto_advisory_patch', fastapi_status: piStatus, fastapi_body: body },
+			});
+			return false;
+		}
+
+		// Verify bucket hasn't drifted during patch
+		const { data: postNet } = await supabaseClient
+			.from('networks')
+			.select('risk_score_version, risk_bucket')
+			.eq('network_id', networkId)
+			.single();
+
+		const postVersion = Number(postNet?.risk_score_version) || 0;
+		const postBucket = postNet?.risk_bucket;
+
+		if (postBucket !== patchBucket) {
+			console.log(`[riskPipeline] Bucket drifted (${patchBucket}→${postBucket}) during advisory patch, skipping stamp`);
+			return false;
+		}
+
+		await supabaseClient
+			.from('networks')
+			.update({
+				portal_last_patched_at: new Date().toISOString(),
+				portal_last_patched_version: postVersion,
+				portal_tipset_hash: tipsetHash,
+			})
+			.eq('network_id', networkId);
+
+		await logAuditEvent({
+			req,
+			actorId: null,
+			eventName: 'PORTAL_UPDATE',
+			eventStatus: 'SUCCESS',
+			entityType: 'NETWORK',
+			entityIdUuid: networkId,
+			meta: { reason: 'auto_advisory_patch', fastapi_status: piStatus, stamped_version: postVersion },
+		});
+
+		console.log(`[riskPipeline] Auto advisory portal/patch success for ${networkId}, stampedVersion=${postVersion}`);
+		return true;
+	} catch (err) {
+		console.error('[riskPipeline] autoPortalAdvisoryPatch error:', err.message);
+		return false;
+	}
 }
 
 // ─── Auto-portal risk patch (with simple cooldown) ───────────────
@@ -326,7 +456,7 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
 			req, actorId: null,
 			eventName: 'PORTAL_UPDATE', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: networkId,
-			meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: res.status, stamped_version: postVersion },
+			meta: { reason: 'auto_risk_patch', bucket: patchBucket, fastapi_status: piStatus, stamped_version: postVersion },
 		});
 
 		return true;

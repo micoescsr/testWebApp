@@ -4,6 +4,7 @@
 const { supabaseClient } = require('../config/supabaseClient');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { piFetch } = require('../utils/piFetch');
+const { resolveFinalPortalTipsForNetwork } = require('../utils/portalTipResolver');
 
 // ═══════════════════════════════════════════════════════════════════
 //  Shared helpers (exported for use in deviceMgmtRoutes)
@@ -122,17 +123,23 @@ async function lookupRiskClassification(score) {
 async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 	const now = Math.floor(Date.now() / 1000);
 
-	// 1. Fetch the latest risk_score from the scans table
-	const { data: latestScan, error: scanErr } = await supabaseClient
-		.from('scans')
-		.select('risk_score')
-		.eq('network_id', networkId)
-		.order('created_at', { ascending: false })
-		.limit(1)
-		.maybeSingle();
-	if (scanErr) throw scanErr;
-
-	const score = latestScan?.risk_score ?? 0;
+	// 1. Fetch the latest risk_score from the scans table (legacy).
+	//    Fallback to 0 if scans table is missing.
+	let score = 0;
+	try {
+		const { data: latestScan, error: scanErr } = await supabaseClient
+			.from('scans')
+			.select('risk_score')
+			.eq('network_id', networkId)
+			.order('created_at', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+		if (scanErr) throw scanErr;
+		score = latestScan?.risk_score ?? 0;
+	} catch (err) {
+		console.warn('[buildPortalPayloadFromDB] scans lookup failed; defaulting risk score to 0:', err.message);
+		score = 0;
+	}
 
 	// 2. Load active portal row (for FK references)
 	const { data: portal } = await supabaseClient
@@ -153,22 +160,18 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 		if (ann) announcementText = ann.announcement_content;
 	}
 
-	// 4. Tips
-	let tipItems = [
-		'Use a VPN when possible.',
-		'Avoid banking on public Wi-Fi.',
-		'Keep your device software up to date.',
-	];
-	if (portal?.captive_portal_id) {
-		const { data: tips } = await supabaseClient
-			.from('captive_portal_tips')
-			.select('tip_text')
-			.eq('captive_portal_id', portal.captive_portal_id)
-			.eq('is_active', true)
-			.order('sort_order', { ascending: true });
-		if (tips && tips.length > 0) {
-			tipItems = tips.map((t) => t.tip_text);
-		}
+	// 4. Tips (system-generated conditional mapping with safe fallback)
+	let tipItems = [];
+	try {
+		const resolved = await resolveFinalPortalTipsForNetwork(supabaseClient, networkId);
+		tipItems = resolved?.tips || [];
+	} catch (err) {
+		console.warn('[buildPortalPayloadFromDB] tip resolution failed; falling back to hardcoded defaults:', err.message);
+		tipItems = [
+			{ tip_text: 'Use a VPN when possible.', sort_order: 1, is_active: true },
+			{ tip_text: 'Avoid banking on public Wi-Fi.', sort_order: 2, is_active: true },
+			{ tip_text: 'Keep your device software up to date.', sort_order: 3, is_active: true },
+		];
 	}
 
 	// 5. Risk classification lookup
@@ -198,7 +201,11 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 		},
 	};
 
-	console.log(`[portalPayload] network=${networkId} score=${score} risk_level=${risk.risk_level} color=${risk.riskColor} announcement="${announcementText.substring(0, 80)}${announcementText.length > 80 ? '…' : ''}" tips=${tipItems.length} items=[${tipItems.map(t => `"${t.substring(0, 40)}"` ).join(', ')}]`);
+	console.log(
+		`[portalPayload] network=${networkId} score=${score} risk_level=${risk.risk_level} color=${risk.riskColor} announcement="${announcementText.substring(0, 80)}${announcementText.length > 80 ? '…' : ''}" tips=${tipItems.length} items=[${tipItems
+			.map((t) => `"${String(t.tip_text || '').substring(0, 40)}"`)
+			.join(', ')}]`
+	);
 
 	return payload;
 }

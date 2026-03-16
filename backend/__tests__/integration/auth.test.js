@@ -23,6 +23,22 @@ jest.mock("jose", () => ({
   }),
 }));
 
+// Mock @supabase/supabase-js so authJWT profile status lookup works
+jest.mock("@supabase/supabase-js", () => ({
+  createClient: jest.fn(() => ({
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          single: jest.fn().mockResolvedValue({
+            data: { status: "active" },
+            error: null,
+          }),
+        })),
+      })),
+    })),
+  })),
+}));
+
 // Mock the supabaseClient module (used by some routes)
 jest.mock("../../config/supabaseClient", () => ({
   supabaseClient: {
@@ -92,7 +108,7 @@ describe("POST /api/auth/login", () => {
 
     const res = await request(app)
       .post("/api/auth/login")
-      .send({ email: "bad@example.com", password: "wrong" });
+		.send({ email: "bad@example.com", password: "wrongpw" });
 
     expect(res.status).toBe(401);
     expect(res.body).toHaveProperty("error");
@@ -105,7 +121,8 @@ describe("POST /api/auth/login", () => {
       .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("required");
+		expect(Array.isArray(res.body.errors)).toBe(true);
+		expect(res.body.errors.length).toBeGreaterThan(0);
   });
 });
 

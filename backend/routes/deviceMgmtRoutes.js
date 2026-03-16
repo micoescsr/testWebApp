@@ -10,6 +10,7 @@ const {
 	buildPortalPatchPayload,
 } = require('../utils/scanValidation');
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
+const { computePortalTipsetHash, resolveFinalPortalTipsForNetwork } = require('../utils/portalTipResolver');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 const { validateUUID } = require('../middleware/validateUUID');
@@ -277,6 +278,14 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 		});
 	}
 
+	// scan_id required only for enable; validate before locking/DB.
+	if (ap_status === 'enable' && !scan_id) {
+		return res.status(400).json({
+			error: 'SCAN_REQUIRED',
+			message: 'A recent scan is required to enable the access point.',
+		});
+	}
+
 	try {
 		// ── Step 0: Atomic concurrency lock with TTL ─────────────
 		// Single UPDATE that checks + sets in one query to avoid races.
@@ -529,6 +538,7 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 			const patchPayload = await buildPortalPayloadFromDB(
 				network_id, net.bssid, net.ssid
 			);
+			const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
 
 			const portalUrl = '/portal/patch';
 			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
@@ -576,6 +586,7 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 					portal_initialized: true,
 					portal_last_patched_version: latestNet?.risk_score_version ?? net.risk_score_version,
 					portal_last_patched_at: new Date().toISOString(),
+					portal_tipset_hash: tipsetHash,
 				})
 				.eq('network_id', network_id);
 			if (updErr) throw updErr;
@@ -722,9 +733,23 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 
 			if (patchOk) {
 				portalPatched = true;
+				const nowIso = new Date().toISOString();
+				const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+
+				// Re-read risk_score_version to avoid stamping a stale value
+				const { data: latestNet } = await supabaseClient
+					.from('networks')
+					.select('risk_score_version')
+					.eq('network_id', network_id)
+					.single();
+
 				await supabaseClient
 					.from('networks')
-					.update({ portal_last_patched_at: new Date().toISOString() })
+					.update({
+						portal_last_patched_at: nowIso,
+						portal_last_patched_version: latestNet?.risk_score_version ?? net.risk_score_version,
+						portal_tipset_hash: tipsetHash,
+					})
 					.eq('network_id', network_id);
 				console.log('Portal content pushed after AP enable for network:', network_id);
 			} else {
@@ -827,6 +852,7 @@ router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), asyn
 				'risk_score_version',
 				'portal_last_patched_version',
 				'portal_last_patched_at',
+				'portal_tipset_hash',
 				'last_threat_at',
 				'last_scan_id',
 				'last_scan_finished_at',
@@ -860,7 +886,22 @@ router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), asyn
 		const scanFresh = hasScan && finishedAtMs !== null && (Date.now() - finishedAtMs) <= maxAgeSeconds * 1000;
 
 		// 3) Compute portal freshness
-		const portalOutOfDate = !!net.ap_enabled && (Number(net.portal_last_patched_version) < Number(net.risk_score_version));
+		const riskOutOfDate = Number(net.portal_last_patched_version) < Number(net.risk_score_version);
+		let tipsetOutOfDate = false;
+		if (net.ap_enabled) {
+			try {
+				const resolvedTips = await resolveFinalPortalTipsForNetwork(supabaseClient, networkId);
+				const desiredHash = resolvedTips?.tipsetHash || null;
+				const stampedHash = net.portal_tipset_hash || null;
+				if (desiredHash && desiredHash !== stampedHash) {
+					tipsetOutOfDate = true;
+				}
+			} catch (hashErr) {
+				console.warn('[adminState] Failed to compute portal tipset hash (non-fatal):', hashErr.message);
+			}
+		}
+
+		const portalOutOfDate = !!net.ap_enabled && (riskOutOfDate || tipsetOutOfDate);
 
 		// 4) Optional: network config missing flag
 		const networkConfigMissing = !net.ssid || !net.bssid || net.channel == null;
@@ -953,9 +994,20 @@ async function finalizeJob(job, piResult) {
 					jsonBody: patchPayload,
 				});
 				if (patchOk) {
+					const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+					const { data: latestNet } = await supabaseClient
+						.from('networks')
+						.select('risk_score_version')
+						.eq('network_id', networkId)
+						.single();
+
 					await supabaseClient
 						.from('networks')
-						.update({ portal_last_patched_at: nowIso })
+						.update({
+							portal_last_patched_at: nowIso,
+							portal_last_patched_version: Number(latestNet?.risk_score_version) || 0,
+							portal_tipset_hash: tipsetHash,
+						})
 						.eq('network_id', networkId);
 					console.log('[finalizeJob] Portal patched after async enable for', networkId);
 				} else {
@@ -1343,6 +1395,12 @@ router.post('/portal/update', authJWT, devicePortalUpdate, validate, async (req,
 		// ── DB stamping ────────────────────────────────────────────
 		const stampUpdate = { portal_last_patched_at: new Date().toISOString() };
 		let stampedVersion = null;
+		let stampedTipsetHash = null;
+
+		if (patch.tips) {
+			stampedTipsetHash = computePortalTipsetHash(patch.tips);
+			stampUpdate.portal_tipset_hash = stampedTipsetHash;
+		}
 
 		if (patch.risk) {
 			// Re-read current risk_score_version to avoid stale stamp
@@ -1374,6 +1432,7 @@ router.post('/portal/update', authJWT, devicePortalUpdate, validate, async (req,
 			stamped: {
 				portal_last_patched_at: stampUpdate.portal_last_patched_at,
 				portal_last_patched_version: stampedVersion,
+				portal_tipset_hash: stampedTipsetHash,
 			},
 			fastapi: fastapiData,
 		});

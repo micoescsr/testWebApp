@@ -1,8 +1,8 @@
 // __tests__/fixtures/deviceMgmtPayloads.js
 // Canonical test fixtures for device management / AP toggle tests.
 
-const NETWORK_ID = "net-abc-123";
-const SCAN_ID = "scan-001";
+const NETWORK_ID = "11111111-1111-1111-1111-111111111111";
+const SCAN_ID = "22222222-2222-2222-2222-222222222222";
 const BSSID = "30:40:74:8E:8D:2A";
 const SSID = "DMSCVG 2.4G";
 const CHANNEL = 4;
@@ -17,6 +17,7 @@ const networkRow = {
   encryption_status: ENCRYPTION,
   portal_initialized: false,
   ap_enabled: false,
+	risk_score_version: 0,
 };
 
 /** Network row after portal has already been initialized */
@@ -31,28 +32,34 @@ const networkRowEnabled = {
   ap_enabled: true,
 };
 
-/** Fresh scan row (created "now") — tests should inject created_at */
-const freshScan = (createdAt) => ({
+/** Fresh vulnerability scan row (finished "now") */
+const freshScan = (finishedAt) => ({
   scan_id: SCAN_ID,
   network_id: NETWORK_ID,
-  created_at: createdAt || new Date().toISOString(),
-  risk_score: 14,
+  status: "COMPLETED",
+  finished_at: finishedAt || new Date().toISOString(),
+  error_code: null,
+  scan_data: { findings: { example: { id: "WFVT-005", status: "DETECTED" } } },
 });
 
 /** Scan from a different network */
-const mismatchedScan = (createdAt) => ({
+const mismatchedScan = (finishedAt) => ({
   scan_id: SCAN_ID,
-  network_id: "other-net-999",
-  created_at: createdAt || new Date().toISOString(),
-  risk_score: 0,
+  network_id: "33333333-3333-3333-3333-333333333333",
+  status: "COMPLETED",
+  finished_at: finishedAt || new Date().toISOString(),
+  error_code: null,
+  scan_data: { findings: { example: { id: "WFVT-005", status: "DETECTED" } } },
 });
 
 /** Old scan (10 min ago) */
 const oldScan = () => ({
   scan_id: SCAN_ID,
   network_id: NETWORK_ID,
-  created_at: new Date(Date.now() - 600_000).toISOString(), // 10 min ago
-  risk_score: 7,
+	status: "COMPLETED",
+	finished_at: new Date(Date.now() - 600_000).toISOString(), // 10 min ago
+	error_code: null,
+	scan_data: { findings: { example: { id: "WFVT-005", status: "DETECTED" } } },
 });
 
 /** Valid enable request body */

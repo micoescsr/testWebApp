@@ -74,7 +74,14 @@ jest.mock("../../controllers/captivePortalController", () => ({
       portal_content: {
         announcements: { updated_at: 1740000000, announcement_text: "Welcome" },
         terms: { version: "2026-02-25", updated_at: 1740000000, text: "Terms" },
-        tips: { updated_at: 1740000000, items: ["Tip 1", "Tip 2", "Tip 3"] },
+        tips: {
+          updated_at: 1740000000,
+          items: [
+            { tip_text: "Tip 1", sort_order: 1, is_active: true },
+            { tip_text: "Tip 2", sort_order: 2, is_active: true },
+            { tip_text: "Tip 3", sort_order: 3, is_active: true },
+          ],
+        },
       },
       security: {
         score: 0,
@@ -160,10 +167,15 @@ function mockFetch(responses = {}) {
     fetchCalls.push({ url, opts });
     const body = responses[url] || fastapiSuccess;
     const ok = !body.__fail;
+    const status = body.__status ?? (ok ? 200 : 500);
+    const payload = { ...body };
+    delete payload.__fail;
+    delete payload.__status;
     return {
       ok,
-      status: ok ? 200 : 500,
-      json: () => Promise.resolve(body),
+      status,
+      text: () => Promise.resolve(JSON.stringify(payload)),
+      json: () => Promise.resolve(payload),
     };
   });
 }
@@ -236,7 +248,8 @@ describe("POST /api/device/enable-ap — validation", () => {
       .send({ ap_status: "enable" });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("Missing or invalid");
+		expect(res.body.error).toBe("VALIDATION_ERROR");
+		expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
   test("400 when ap_status is invalid", async () => {
@@ -244,7 +257,8 @@ describe("POST /api/device/enable-ap — validation", () => {
       .send({ network_id: NETWORK_ID, ap_status: "toggle" });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("Missing or invalid");
+		expect(res.body.error).toBe("VALIDATION_ERROR");
+		expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
   test("400 SCAN_REQUIRED when enable without scan_id", async () => {
@@ -261,18 +275,22 @@ describe("POST /api/device/enable-ap — validation", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("POST /api/device/enable-ap — enable", () => {
-  test("400 SCAN_REQUIRED when scan not found in DB", async () => {
+  test("400 SCAN_NOT_FOUND when scan not found in DB", async () => {
     setupSupabase({
-      scans: chain({
+      vulnerability_scans: chain({
         singleResult: { data: null, error: { message: "not found" } },
       }),
+		networks: chain({
+			singleResult: { data: networkRow, error: null },
+			updateResult: { data: { network_id: NETWORK_ID }, error: null },
+		}),
     });
 
     const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("SCAN_REQUIRED");
+		expect(res.body.error).toBe("SCAN_NOT_FOUND");
   });
 
   test("400 SCAN_NETWORK_MISMATCH when scan belongs to different network", async () => {
@@ -280,10 +298,11 @@ describe("POST /api/device/enable-ap — enable", () => {
       singleResult: { data: mismatchedScan(), error: null },
     });
     const netChain = chain({
-      singleResult: { data: networkRow, error: null },
+		singleResult: { data: networkRow, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
 
     const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
@@ -297,10 +316,11 @@ describe("POST /api/device/enable-ap — enable", () => {
       singleResult: { data: oldScan(), error: null },
     });
     const netChain = chain({
-      singleResult: { data: networkRow, error: null },
+		singleResult: { data: networkRow, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
 
     const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
@@ -314,28 +334,43 @@ describe("POST /api/device/enable-ap — enable", () => {
   test("first enable → calls portal/patch THEN orchestrate/apply, sets ap_enabled + portal_initialized", async () => {
     const scanData = freshScan();
     const scanChain = chain({ singleResult: { data: scanData, error: null } });
-    const netChain = chain({ singleResult: { data: { ...networkRow, portal_initialized: false }, error: null } });
+    const netChain = chain({
+		singleResult: { data: { ...networkRow, portal_initialized: false }, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
+	});
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
     mockFetch({});
 
     const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("success");
-    expect(res.body.ap_status).toBe("enable");
+    expect(res.body.ok).toBe(true);
+    expect(res.body.ap_enabled).toBe(true);
+    expect(res.body.portal_initialized).toBe(true);
 
     // Verify seedDefaultContent + buildPortalPayloadFromDB were called
     expect(seedDefaultContent).toHaveBeenCalledWith(NETWORK_ID);
-    expect(buildPortalPayloadFromDB).toHaveBeenCalledWith(
-      NETWORK_ID, networkRow.bssid, networkRow.ssid
+    expect(buildPortalPayloadFromDB).toHaveBeenCalledTimes(2);
+    expect(buildPortalPayloadFromDB).toHaveBeenNthCalledWith(
+      1,
+      NETWORK_ID,
+      networkRow.bssid,
+      networkRow.ssid
+    );
+    expect(buildPortalPayloadFromDB).toHaveBeenNthCalledWith(
+      2,
+      NETWORK_ID,
+      networkRow.bssid,
+      networkRow.ssid
     );
 
     // Verify portal/patch was called BEFORE orchestrate/apply
-    expect(fetchCalls.length).toBe(2);
+    expect(fetchCalls.length).toBe(3);
     expect(fetchCalls[0].url).toContain("/portal/patch");
     expect(fetchCalls[1].url).toContain("/orchestrate/apply");
+    expect(fetchCalls[2].url).toContain("/portal/patch");
 
     // Verify portal/patch payload includes risk classification fields (real score)
     const portalPayload = JSON.parse(fetchCalls[0].opts.body);
@@ -356,9 +391,10 @@ describe("POST /api/device/enable-ap — enable", () => {
     const scanChain = chain({ singleResult: { data: scanData, error: null } });
     const netChain = chain({
       singleResult: { data: networkRowInitialized, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
     mockFetch({});
 
     const res = await authPost("/api/device/enable-ap")
@@ -366,9 +402,12 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     expect(res.status).toBe(200);
 
-    // Only orchestrate/apply — no portal/patch
-    expect(fetchCalls.length).toBe(1);
+    // Orchestrate/apply then portal/patch after enable
+    expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0].url).toContain("/orchestrate/apply");
+    expect(fetchCalls[1].url).toContain("/portal/patch");
+    expect(seedDefaultContent).not.toHaveBeenCalled();
+    expect(buildPortalPayloadFromDB).toHaveBeenCalledTimes(1);
   });
 
   test("enable includes ap_password in orchestrate/apply when provided", async () => {
@@ -376,9 +415,10 @@ describe("POST /api/device/enable-ap — enable", () => {
     const scanChain = chain({ singleResult: { data: scanData, error: null } });
     const netChain = chain({
       singleResult: { data: networkRowInitialized, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
     mockFetch({});
 
     await authPost("/api/device/enable-ap")
@@ -388,14 +428,15 @@ describe("POST /api/device/enable-ap — enable", () => {
     expect(apPayload.ap_password).toBe("secret123");
   });
 
-  test("500 when orchestrate/apply returns error", async () => {
+  test("502 when orchestrate/apply returns error", async () => {
     const scanData = freshScan();
     const scanChain = chain({ singleResult: { data: scanData, error: null } });
     const netChain = chain({
       singleResult: { data: networkRowInitialized, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
-    setupSupabase({ scans: scanChain, networks: netChain });
+		setupSupabase({ vulnerability_scans: scanChain, networks: netChain });
 
     // Make orchestrate/apply fail
     global.fetch = jest.fn(async (url) => {
@@ -403,15 +444,15 @@ describe("POST /api/device/enable-ap — enable", () => {
       return {
         ok: false,
         status: 500,
-        json: () => Promise.resolve({ detail: "Pi unreachable" }),
+        text: () => Promise.resolve(JSON.stringify({ detail: "Pi unreachable" })),
       };
     });
 
     const res = await authPost("/api/device/enable-ap")
       .send(enableBody);
 
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("AP toggle failed");
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("FASTAPI_APPLY_FAILED");
   });
 });
 
@@ -422,7 +463,8 @@ describe("POST /api/device/enable-ap — enable", () => {
 describe("POST /api/device/enable-ap — disable", () => {
   test("disable works without scan_id", async () => {
     const netChain = chain({
-      singleResult: { data: networkRow, error: null },
+		singleResult: { data: networkRow, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
     setupSupabase({ networks: netChain });
@@ -446,7 +488,8 @@ describe("POST /api/device/enable-ap — disable", () => {
 
   test("disable does not include ap_password", async () => {
     const netChain = chain({
-      singleResult: { data: networkRow, error: null },
+		singleResult: { data: networkRow, error: null },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
     setupSupabase({ networks: netChain });
@@ -462,6 +505,7 @@ describe("POST /api/device/enable-ap — disable", () => {
   test("500 when network not found in DB on disable", async () => {
     const netChain = chain({
       singleResult: { data: null, error: { message: "no rows" } },
+		updateResult: { data: { network_id: NETWORK_ID }, error: null },
     });
 
     setupSupabase({ networks: netChain });

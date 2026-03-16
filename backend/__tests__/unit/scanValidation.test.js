@@ -15,7 +15,10 @@ const MAX_AGE = 300; // 5 minutes
 const makeScan = (overrides = {}) => ({
   scan_id: "scan-001",
   network_id: NETWORK_ID,
-  created_at: new Date(NOW - 60 * 1000).toISOString(), // 1 min ago
+	status: "COMPLETED",
+	finished_at: new Date(NOW - 60 * 1000).toISOString(), // 1 min ago
+	error_code: null,
+	scan_data: { findings: { example: { id: "WFVT-005", status: "DETECTED" } } },
   ...overrides,
 });
 
@@ -25,16 +28,16 @@ const makeScan = (overrides = {}) => ({
 
 describe("validateScan", () => {
   // 1. Scan missing / null
-  test("returns SCAN_REQUIRED when scan is null", () => {
+  test("returns SCAN_NOT_FOUND when scan is null", () => {
     const result = validateScan(null, NETWORK_ID, MAX_AGE, NOW);
     expect(result.valid).toBe(false);
-    expect(result.error).toBe("SCAN_REQUIRED");
+    expect(result.error).toBe("SCAN_NOT_FOUND");
   });
 
-  test("returns SCAN_REQUIRED when scan is undefined", () => {
+  test("returns SCAN_NOT_FOUND when scan is undefined", () => {
     const result = validateScan(undefined, NETWORK_ID, MAX_AGE, NOW);
     expect(result.valid).toBe(false);
-    expect(result.error).toBe("SCAN_REQUIRED");
+    expect(result.error).toBe("SCAN_NOT_FOUND");
   });
 
   // 2. Network mismatch
@@ -55,7 +58,7 @@ describe("validateScan", () => {
   // 3. Scan freshness
   test("returns SCAN_TOO_OLD when scan exceeds max age", () => {
     const scan = makeScan({
-      created_at: new Date(NOW - 600 * 1000).toISOString(), // 10 min ago
+		finished_at: new Date(NOW - 600 * 1000).toISOString(), // 10 min ago
     });
     const result = validateScan(scan, NETWORK_ID, MAX_AGE, NOW);
     expect(result.valid).toBe(false);
@@ -66,9 +69,9 @@ describe("validateScan", () => {
   });
 
   test("passes when scan is exactly at the age boundary", () => {
-    // created_at exactly 300 s ago → age === limit → NOT too old (scanAge > not >=)
+    // finished_at exactly 300 s ago → age === limit → NOT too old (scanAge > not >=)
     const scan = makeScan({
-      created_at: new Date(NOW - MAX_AGE * 1000).toISOString(),
+		finished_at: new Date(NOW - MAX_AGE * 1000).toISOString(),
     });
     const result = validateScan(scan, NETWORK_ID, MAX_AGE, NOW);
     // 300 > 300 is false so it passes
@@ -77,7 +80,7 @@ describe("validateScan", () => {
 
   test("returns SCAN_TOO_OLD when scan is 1 second past the limit", () => {
     const scan = makeScan({
-      created_at: new Date(NOW - (MAX_AGE + 1) * 1000).toISOString(),
+		finished_at: new Date(NOW - (MAX_AGE + 1) * 1000).toISOString(),
     });
     const result = validateScan(scan, NETWORK_ID, MAX_AGE, NOW);
     expect(result.valid).toBe(false);
@@ -94,7 +97,7 @@ describe("validateScan", () => {
 
   test("valid scan 0 seconds ago", () => {
     const scan = makeScan({
-      created_at: new Date(NOW).toISOString(),
+		finished_at: new Date(NOW).toISOString(),
     });
     const result = validateScan(scan, NETWORK_ID, MAX_AGE, NOW);
     expect(result.valid).toBe(true);
@@ -103,7 +106,7 @@ describe("validateScan", () => {
   // 5. Configurable max age
   test("respects custom max age", () => {
     const scan = makeScan({
-      created_at: new Date(NOW - 120 * 1000).toISOString(), // 2 min ago
+		finished_at: new Date(NOW - 120 * 1000).toISOString(), // 2 min ago
     });
     // 2 min old, but max is 1 min
     const result = validateScan(scan, NETWORK_ID, 60, NOW);
@@ -114,7 +117,7 @@ describe("validateScan", () => {
   // 6. Default now (uses Date.now if nowMs omitted)
   test("uses Date.now() when nowMs is not provided", () => {
     const scan = makeScan({
-      created_at: new Date().toISOString(), // just now
+		finished_at: new Date().toISOString(), // just now
     });
     const result = validateScan(scan, NETWORK_ID, MAX_AGE);
     expect(result.valid).toBe(true);
