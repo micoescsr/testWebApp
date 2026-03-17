@@ -188,7 +188,7 @@ async function buildPortalPayloadFromDB(networkId, bssid, ssid) {
 				},
 				tips: {
 					updated_at: now,
-					items: tipItems,
+					items: tipItems.map((t) => t.tip_text || ''),
 				},
 			},
 			security: {

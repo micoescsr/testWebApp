@@ -54,8 +54,9 @@ function finalizePortalTips(rawTips, { maxTips = MAX_PORTAL_TIPS } = {}) {
 	const normalized = [];
 
 	for (let i = 0; i < rawTips.length; i++) {
-		const r = rawTips[i] || {};
-		const tipText = sanitizeTipText(r.tip_text);
+		const r = rawTips[i];
+		if (!r) continue;
+		const tipText = sanitizeTipText(typeof r === 'string' ? r : r.tip_text);
 		if (!tipText) continue;
 
 		const dedupeKey = tipText.toLowerCase();
