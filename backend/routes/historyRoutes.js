@@ -8,9 +8,10 @@
 const express = require("express");
 const router = express.Router();
 const { authJWT } = require("../middleware/authMiddleware");
+const { requireActiveProfile } = require("../middleware/statusMiddleware");
 const historyController = require("../controllers/historyController");
 
-router.get("/vulnerabilities", authJWT, historyController.getVulnerabilityHistory);
-router.get("/threats", authJWT, historyController.getThreatHistory);
+router.get("/vulnerabilities", authJWT, requireActiveProfile, historyController.getVulnerabilityHistory);
+router.get("/threats", authJWT, requireActiveProfile, historyController.getThreatHistory);
 
 module.exports = router;

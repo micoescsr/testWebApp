@@ -345,9 +345,7 @@ export const useDevice = (networkId, scanId) => {
         ...(nextState && scanId && { scan_id: scanId }),
       };
 
-      console.log(`Sending enable-ap (${apStatus}):`, payload);
       const res = await toggleAP(payload);
-      console.log("enable-ap response:", res.data);
 
       // ── Async path: backend returned ACCEPTED with a job_id ──
       if (res.data?.status === 'ACCEPTED' && res.data?.job_id) {

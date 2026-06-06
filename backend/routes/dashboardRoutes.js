@@ -6,19 +6,21 @@
 const express = require("express");
 const router = express.Router();
 const { authJWT } = require("../middleware/authMiddleware");
+const { requireActiveProfile } = require("../middleware/statusMiddleware");
 const { validateUUID } = require("../middleware/validateUUID");
 const dashboardController = require("../controllers/dashboardController");
 
 // Summary (all networks aggregated)
-router.get("/summary", authJWT, dashboardController.getSummary);
+router.get("/summary", authJWT, requireActiveProfile, dashboardController.getSummary);
 
 // Network list (for dropdown)
-router.get("/networks", authJWT, dashboardController.getNetworks);
+router.get("/networks", authJWT, requireActiveProfile, dashboardController.getNetworks);
 
 // Per-network dashboard (optional ?scanId= query param for date filter)
 router.get(
   "/network/:networkId",
   authJWT,
+  requireActiveProfile,
   validateUUID("networkId"),
   dashboardController.getNetwork
 );
@@ -27,6 +29,7 @@ router.get(
 router.get(
   "/network/:networkId/scans",
   authJWT,
+  requireActiveProfile,
   validateUUID("networkId"),
   dashboardController.getScans
 );

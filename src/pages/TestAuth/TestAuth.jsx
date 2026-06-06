@@ -382,14 +382,14 @@ export default function TestAuth() {
         );
       } catch (err) {
         const elapsed = (performance.now() - start).toFixed(0);
-        const errBody = JSON.stringify(err.response?.data ?? null).slice(0, 200);
         setResult(
           id,
           "fail",
-          `Error: ${err.message}\nStatus: ${err.response?.status ?? "N/A"}\nTime: ${elapsed}ms\nBody: ${errBody}`
+          `Error: ${err.message}\nStatus: ${err.response?.status ?? "N/A"}\nTime: ${elapsed}ms\nBody: Server returned an error.`
         );
         log("fail", `[${id}] FAIL — ${err.response?.status ?? err.message}`);
         setAccessToken(originalToken);
+
         log("warn", `[${id}] Restored original token.`);
       }
     });
@@ -455,11 +455,10 @@ export default function TestAuth() {
         }
       } catch (err) {
         const elapsed = (performance.now() - start).toFixed(0);
-        const errBody = JSON.stringify(err.response?.data ?? null).slice(0, 200);
         setResult(
           id,
           "fail",
-          `Error: ${err.message}\nStatus: ${err.response?.status ?? "N/A"}\nTime: ${elapsed}ms\nBody: ${errBody}`
+          `Error: ${err.message}\nStatus: ${err.response?.status ?? "N/A"}\nTime: ${elapsed}ms\nBody: Server returned an error.`
         );
         log("fail", `[${id}] FAIL — ${err.message}`);
         setAccessToken(originalToken);

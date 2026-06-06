@@ -128,7 +128,7 @@ export const useVulnerabilities = (bssid) => {
   const clearVulnerabilities = (targetBssid) => {
     if (targetBssid) {
       const key = `sam_cleared_${targetBssid.toUpperCase()}`;
-      localStorage.setItem(key, new Date().toISOString());
+      sessionStorage.setItem(key, new Date().toISOString());
     }
     setVulnerabilities([]);
   };
@@ -146,27 +146,20 @@ export const useVulnerabilities = (bssid) => {
 
       // Check if the user previously cleared results for this BSSID
       const clearedKey = `sam_cleared_${targetBssid.toUpperCase()}`;
-      const clearedAfter = localStorage.getItem(clearedKey);
+      const clearedAfter = sessionStorage.getItem(clearedKey);
 
       const url = `/webapp/vulnerabilities_latest?bssid=${encodeURIComponent(
         targetBssid,
       )}`;
 
-      console.log("[loadVulnerabilities] fetching:", url);
       const { default: api } = await import("../api/axios");
       const res = await api.get(url);
-      console.log("[loadVulnerabilities] response status:", res.status);
 
       const body = res.data;
-      console.log(
-        "[loadVulnerabilities] response body:",
-        JSON.stringify(body).slice(0, 500),
-      );
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");
       }
 
-      console.log("vulns from backend", body.rows); // TEMP: see data shape
       //setVulnerabilities(body.rows || []);
 
       const deriveSeverity = (score) => {
@@ -201,7 +194,6 @@ export const useVulnerabilities = (bssid) => {
       }
 
       setVulnerabilities(mapped);
-      console.log("[loadVulnerabilities] mapped rows:", mapped.length, mapped);
     } catch (err) {
       console.error("fetchVulnerabilities error:", err);
       setVulnError(err.message || "Failed to load vulnerabilities");

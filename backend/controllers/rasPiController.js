@@ -56,7 +56,7 @@ async function triggerScan(req, res) {
         eventStatus: "FAILED",
         entityType: "SCAN",
         entityIdUuid: req.user.id,
-        meta: { error: err.message },
+        meta: { error: "SCAN_TRIGGER_ERROR" },
       }).catch(() => {});
     }
     return res.status(502).json({ status: "ERROR", error: "Scan failed" });
@@ -333,7 +333,7 @@ async function saveNetworkMetadataScan(req, res) {
         eventStatus: "FAILED",
         entityType: "SCAN",
         entityIdUuid: req.user.id,
-        meta: { error: err.message },
+        meta: { error: "SCAN_SAVE_ERROR" },
       }).catch(() => {});
     }
     return res.status(500).json({

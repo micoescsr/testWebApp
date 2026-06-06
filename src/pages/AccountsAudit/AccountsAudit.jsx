@@ -195,8 +195,7 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
     }
   } catch (err) {
     console.error("Confirm action error:", err.response?.data || err);
-    const errorMsg = err.response?.data?.error || err.message || "Failed to complete action";
-    alert(`Error: ${errorMsg}`);
+    alert("Failed to complete action. Please try again.");
   } finally {
     setIsProcessing(false);
   }

@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/userController");
 const authMiddleware = require("../middleware/authMiddleware");
+const { requireActiveProfile } = require("../middleware/statusMiddleware");
 const { validateUUID } = require("../middleware/validateUUID");
 const { validate, userUpdate, userActivateWithTemp, userDeactivate, userReactivate } = require("../validators/routeValidators");
 
@@ -10,6 +11,7 @@ const { validate, userUpdate, userActivateWithTemp, userDeactivate, userReactiva
 router.get(
   "/profiles/me",
   authMiddleware.authJWT,
+  requireActiveProfile,
   userController.getCurrentProfile
 );
 
@@ -17,6 +19,7 @@ router.get(
 router.get(
   "/profiles",
   authMiddleware.authJWT,
+  requireActiveProfile,
   userController.getAllUsers
 );
 
@@ -24,6 +27,7 @@ router.get(
 router.put(
   "/profiles/:id",
   authMiddleware.authJWT,
+  requireActiveProfile,
   validateUUID('id'),
   userUpdate, validate,
   userController.updateUser
@@ -33,6 +37,7 @@ router.put(
 router.delete(
   "/profiles/:id",
   authMiddleware.authJWT,
+  requireActiveProfile,
   validateUUID('id'),
   userController.deleteUser
 );
@@ -41,6 +46,7 @@ router.delete(
 router.post(
   "/profiles/:id/activate-with-temp",
   authMiddleware.authJWT,
+  requireActiveProfile,
   validateUUID('id'),
   userActivateWithTemp, validate,
   userController.activateUserWithTemp
@@ -50,6 +56,7 @@ router.post(
 router.post(
   "/profiles/:id/deactivate",
   authMiddleware.authJWT,
+  requireActiveProfile,
   validateUUID('id'),
   userDeactivate, validate,
   userController.deactivateUser
@@ -59,6 +66,7 @@ router.post(
 router.post(
   "/profiles/:id/reactivate",
   authMiddleware.authJWT,
+  requireActiveProfile,
   validateUUID('id'),
   userReactivate, validate,
   userController.reactivateUser

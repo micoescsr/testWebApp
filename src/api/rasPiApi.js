@@ -13,7 +13,6 @@ export const sendMetadata = (payload) => {
 
 // api/rasPiApi.js
 export const triggerScan = async (network) => {  // Pass full network object
-  console.log('triggerScan payload:', network);  // Debug
   const res = await api.post("/rasPi/scan", {
     ssid: network.ssid,
     bssid: network.bssid,
@@ -28,6 +27,5 @@ export const toggleAccessPoint = async (toggleState) => {
     toggleState,
   });
 
-  console.log("Toggle AP response data:", res.data);
   return res.data;
 };

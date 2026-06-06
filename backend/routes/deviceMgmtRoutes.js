@@ -207,9 +207,10 @@ function classifyOrchestrateError(fastapiData) {
 
 // ─── Phase 2-C: All browser-called device routes require JWT ────
 const { authJWT } = require('../middleware/authMiddleware');
+const { requireActiveProfile } = require('../middleware/statusMiddleware');
 
 // ─── Legacy toggle signal (keep for backward compat) ────────────
-router.post('/signal_ap', authJWT, async (req, res) => {
+router.post('/signal_ap', authJWT, requireActiveProfile, async (req, res) => {
 	try {
 		const { toggleState } = req.body;
 		console.log('DeviceMgmt: Received toggleState:', toggleState);
@@ -225,7 +226,7 @@ router.post('/signal_ap', authJWT, async (req, res) => {
 
 // ─── GET AP state from DB (source of truth) ─────────────────────
 // GET /api/device/ap-state/:networkId
-router.get('/ap-state/:networkId', authJWT, validateUUID('networkId'), async (req, res) => {
+router.get('/ap-state/:networkId', authJWT, requireActiveProfile, validateUUID('networkId'), async (req, res) => {
 	try {
 		const { networkId } = req.params;
 
@@ -252,7 +253,7 @@ router.get('/ap-state/:networkId', authJWT, validateUUID('networkId'), async (re
 // Body: { network_id, scan_id?, ap_status, ap_password? }
 //   scan_id required only for enable (not disable)
 //   Backend loads SSID/BSSID/channel/encryption from DB — never trust frontend
-router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) => {
+router.post('/enable-ap', authJWT, requireActiveProfile, deviceEnableAp, validate, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, scan_id, ap_status, ap_password } = req.body;
 	const actorId = req.user?.id || null;
@@ -834,7 +835,7 @@ router.post('/enable-ap', authJWT, deviceEnableAp, validate, async (req, res) =>
 // ─── Admin State Endpoint (cheap, read-only) ─────────────────────
 // GET /api/device/network/:networkId/state
 // Returns authoritative AP + scan + portal + risk state for the UI
-router.get('/network/:networkId/state', authJWT, validateUUID('networkId'), async (req, res) => {
+router.get('/network/:networkId/state', authJWT, requireActiveProfile, validateUUID('networkId'), async (req, res) => {
 	const { networkId } = req.params;
 	const maxAgeSeconds = SCAN_MAX_AGE_SECONDS;
 
@@ -1038,7 +1039,7 @@ async function finalizeJob(job, piResult) {
 // Client polls this to track async AP orchestration progress.
 // Proxies to Pi /orchestrate/poll, normalizes the response, and
 // triggers idempotent finalization on terminal state.
-router.get('/jobs/:jobId', authJWT, deviceJobPoll, validate, async (req, res) => {
+router.get('/jobs/:jobId', authJWT, requireActiveProfile, deviceJobPoll, validate, async (req, res) => {
 	const { jobId } = req.params;
 
 	try {
@@ -1158,7 +1159,7 @@ router.get('/jobs/:jobId', authJWT, deviceJobPoll, validate, async (req, res) =>
 // ─── GET /api/device/ap-live ─────────────────────────────────────
 // Returns normalized real-time AP/device state by proxying Pi /ap/poll.
 // Used by the frontend to verify actual AP state after job completion.
-router.get('/ap-live', authJWT, async (req, res) => {
+router.get('/ap-live', authJWT, requireActiveProfile, async (req, res) => {
 	try {
 		const { ok: piOk, data: piData } = await piFetch('/ap/poll', {
 			timeoutMs: 8_000,
@@ -1298,7 +1299,7 @@ function validatePatchPayload(payload) {
 // ─── Client-Driven Captive Portal Partial Update ─────────────────
 // POST /api/device/portal/update
 // Body: { network_id, update_type, reason?, payload }
-router.post('/portal/update', authJWT, devicePortalUpdate, validate, async (req, res) => {
+router.post('/portal/update', authJWT, requireActiveProfile, devicePortalUpdate, validate, async (req, res) => {
 	const requestId = crypto.randomUUID();
 	const { network_id, update_type, reason: rawReason, payload: patch } = req.body;
 	const actorId = req.user?.id || null;
