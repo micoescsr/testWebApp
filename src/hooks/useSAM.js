@@ -1,25 +1,16 @@
 // hooks/useSAM.js
-//import { useState, useEffect } from "react";
-import { useState, useEffect, useRef } from "react"; // Ensure useRef is imported
+import { useState, useEffect, useRef } from "react";
 import api from "../api/axios";
-import {
-  getThreats,
-  getVulnerabilities,
-  getThreatDetail,
-  getVulnerabilityDetail,
-} from "../api/samApi";
+import { getThreatDetail, getVulnerabilityDetail } from "../api/samApi";
+import { useApiResource } from "./useApiResource";
 
 export const useNetworks = () => {
   const [networks, setNetworks] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [cached, setCached] = useState(false);
+  const { loading, error, run } = useApiResource("Failed to load networks");
 
-  const fetchNetworks = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
+  const fetchNetworks = () =>
+    run(async () => {
       const res = await api.get("/rasPi/networks_list/");
       const body = res.data; // { status, networks, cached }
 
@@ -29,14 +20,7 @@ export const useNetworks = () => {
 
       setNetworks(body.networks || []);
       setCached(body.cached ?? false);
-    } catch (err) {
-      setError(
-        err.response?.data?.error || err.message || "Failed to load networks",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    });
 
   useEffect(() => {
     fetchNetworks();
@@ -51,42 +35,9 @@ export const useNetworks = () => {
    THREATS
 ========================= */
 export const useThreats = () => {
-  const [threats, setThreats] = useState([
-    {
-      id: 1,
-      severity: "CRITICAL",
-      name: "Rogue AP",
-      detectedTime: "Nov 14, 2025",
-      score: "8.0",
-      occurrences: 1,
-    },
-  ]);
-
   const [threatDetail, setThreatDetail] = useState(null);
-  const [threatsLoading, setThreatsLoading] = useState(false);
   const [threatDetailLoading, setThreatDetailLoading] = useState(false);
   const [threatError, setThreatError] = useState(null);
-
-  useEffect(() => {
-    const fetchThreats = async () => {
-      try {
-        setThreatsLoading(true);
-        setThreatError(null);
-
-        // TODO: uncomment when backend is ready
-        // const res = await getThreats();
-        // setThreats(res.data);
-
-        // keep current mock as fallback
-      } catch (err) {
-        setThreatError(err.message || "Failed to load threats");
-      } finally {
-        setThreatsLoading(false);
-      }
-    };
-
-    fetchThreats();
-  }, []);
 
   const fetchThreatDetail = async (threatIdOrName) => {
     try {
@@ -104,8 +55,6 @@ export const useThreats = () => {
   };
 
   return {
-    threats,
-    threatsLoading,
     threatError,
     threatDetail,
     threatDetailLoading,

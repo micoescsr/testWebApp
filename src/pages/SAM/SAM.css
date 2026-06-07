@@ -147,26 +147,39 @@
   background-color: #f97316;
 }
 
+/* Reset button chrome so semantic <button>s inherit table-cell/header look */
+.cell-action-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.cell-action-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .view-action {
   font-weight: 600;
   color: #000;
   cursor: pointer;
 }
 
-.view-action:hover {
-  text-decoration: underline;
+.view-action .cell-action-btn {
+  font-weight: 600;
+  color: #000;
 }
 
-.empty-state {
-  padding: 80px 20px;
-  text-align: center;
-  font-size: 14px;
-  color: #777;
-  background: #f9f9f9;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.view-action:hover {
+  text-decoration: underline;
 }
 
 .sam-actions {
@@ -823,6 +836,12 @@ th.sortable {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.group-header-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
 }
 
 .group-label {

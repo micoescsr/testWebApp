@@ -1,6 +1,8 @@
 //hooks/useAuditLogs.js
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getAuditLogs, exportAuditLogs } from "../api/auditApi";
+import { getApiErrorMessage } from "../utils/apiError";
+import { useApiResource } from "./useApiResource";
 
 /**
  * useAuditLogs
@@ -10,8 +12,7 @@ import { getAuditLogs, exportAuditLogs } from "../api/auditApi";
  */
 const useAuditLogs = () => {
   const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const { loading, error, run } = useApiResource("Failed to load audit logs");
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
@@ -29,40 +30,37 @@ const useAuditLogs = () => {
   const debounceRef = useRef(null);
 
   const fetchAuditLogs = useCallback(
-    async (overrides = {}) => {
-      try {
-        setLoading(true);
-        setError(null);
+    (overrides = {}) => {
+      const params = {
+        page: overrides.page ?? page,
+        limit,
+        search: overrides.search ?? search,
+        status: overrides.status ?? statusFilter,
+        startDate: overrides.fromDate ?? fromDate,
+        endDate: overrides.toDate ?? toDate,
+      };
 
-        const params = {
-          page: overrides.page ?? page,
-          limit,
-          search: overrides.search ?? search,
-          status: overrides.status ?? statusFilter,
-          startDate: overrides.fromDate ?? fromDate,
-          endDate: overrides.toDate ?? toDate,
-        };
+      return run(
+        async () => {
+          const res = await getAuditLogs(params);
+          const data = res.data;
 
-        const res = await getAuditLogs(params);
-        const data = res.data;
+          setLogs(data.logs || []);
+          setTotal(data.total || 0);
 
-        setLogs(data.logs || []);
-        setTotal(data.total || 0);
-
-        // Sync page in case backend clamped it
-        if (data.page) setPage(data.page);
-      } catch (err) {
-        console.error("Fetch audit logs error:", err);
-        const msg =
-          err.response?.data?.error || err.message || "Failed to load audit logs";
-        setError(msg);
-        setLogs([]);
-        setTotal(0);
-      } finally {
-        setLoading(false);
-      }
+          // Sync page in case backend clamped it
+          if (data.page) setPage(data.page);
+        },
+        {
+          onError: (err) => {
+            console.error("Fetch audit logs error:", err);
+            setLogs([]);
+            setTotal(0);
+          },
+        }
+      );
     },
-    [page, limit, search, statusFilter, fromDate, toDate]
+    [page, limit, search, statusFilter, fromDate, toDate, run]
   );
 
   // Auto-fetch on mount and when page/statusFilter/dates change
@@ -152,9 +150,7 @@ const useAuditLogs = () => {
       return true;
     } catch (err) {
       console.error("Export audit logs error:", err);
-      const msg =
-        err.response?.data?.error || err.message || "Failed to export audit logs";
-      setExportError(msg);
+      setExportError(getApiErrorMessage(err, "Failed to export audit logs"));
       return false;
     } finally {
       setIsExporting(false);

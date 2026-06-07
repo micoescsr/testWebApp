@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,23 +6,31 @@ import {
   Navigate,
 } from "react-router-dom";
 import Sidebar from "./layouts/Sidebar";
-import Dashboard from "./pages/Dashboard/Dashboard";
-import SAM from "./pages/SAM/SAM";
-import DeviceManagement from "./pages/DeviceManagement/DeviceManagement";
-import AccountsAudit from "./pages/AccountsAudit/AccountsAudit";
-import History from "./pages/History/History";
-import Profile from "./pages/Profile/Profile";
-import Login from "./pages/Login/Login";
-import ForgotPassword from "./pages/Auth/ForgotPassword";
-import ResetPassword from "./pages/Auth/ResetPassword";
-import ForceResetPassword from "./pages/Auth/ForceResetPassword";
 
-import TestAuth from "./pages/TestAuth/TestAuth";
+// Route-level code splitting — each page ships in its own chunk, loaded on demand.
+const Dashboard = lazy(() => import("./pages/Dashboard/Dashboard"));
+const SAM = lazy(() => import("./pages/SAM/SAM"));
+const DeviceManagement = lazy(() => import("./pages/DeviceManagement/DeviceManagement"));
+const AccountsAudit = lazy(() => import("./pages/AccountsAudit/AccountsAudit"));
+const History = lazy(() => import("./pages/History/History"));
+const Profile = lazy(() => import("./pages/Profile/Profile"));
+const Login = lazy(() => import("./pages/Login/Login"));
+const ForgotPassword = lazy(() => import("./pages/Auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/Auth/ResetPassword"));
+const ForceResetPassword = lazy(() => import("./pages/Auth/ForceResetPassword"));
+
 import api, { setAccessToken, getAccessToken } from "./api/axios";
 import { NetworkProvider } from "./context/NetworkContext";
 import { ThreatDetectionProvider } from "./context/ThreatDetectionContext";
+import { ToastProvider } from "./context/ToastContext";
 import "./App.css";
 import UserMenu from "./components/common/UserMenu/UserMenu";
+import Spinner from "./components/common/Spinner/Spinner";
+
+// QA debug harness — never ship to production builds
+const TestAuth = import.meta.env.DEV
+  ? lazy(() => import("./pages/TestAuth/TestAuth"))
+  : null;
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -51,14 +59,16 @@ function App() {
   }, []);
 
   if (!authReady) {
-    return <div className="loading-screen">Loading...</div>;
+    return <Spinner fullScreen label="Loading..." />;
   }
 
   const isAuthenticated = !!getAccessToken();
 
   return (
+    <ToastProvider>
     <NetworkProvider>
       <Router>
+        <Suspense fallback={<Spinner fullScreen label="Loading..." />}>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
 
@@ -102,7 +112,16 @@ function App() {
                         />
                         <Route path="/history" element={<History />} />
                         <Route path="/profile" element={<Profile />} />
-                        <Route path="/test-auth" element={<TestAuth />} />
+                        {import.meta.env.DEV && (
+                          <Route
+                            path="/test-auth"
+                            element={
+                              <Suspense fallback={null}>
+                                <TestAuth />
+                              </Suspense>
+                            }
+                          />
+                        )}
                       </Routes>
                     </main>
                   </div>
@@ -113,8 +132,10 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
       </Router>
     </NetworkProvider>
+    </ToastProvider>
   );
 }
 

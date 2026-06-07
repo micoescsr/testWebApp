@@ -13,6 +13,8 @@ import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
 import { updateUser, activateUserWithTemp, deactivateUser, reactivateUser } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
 import { useSessionState } from "../../hooks/useSessionState";
+import { useToast } from "../../context/ToastContext";
+import { getApiErrorMessage } from "../../utils/apiError";
 
 
 const AccountsAudit = () => {
@@ -26,6 +28,7 @@ const AccountsAudit = () => {
   const [pendingUser, setPendingUser] = useState(null);
 
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const { profile, profileLoading } = useProfile();
   const { users, loading, error, fetchUsers } = useUsers();
 
@@ -195,7 +198,7 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
     }
   } catch (err) {
     console.error("Confirm action error:", err.response?.data || err);
-    alert("Failed to complete action. Please try again.");
+    showToast(getApiErrorMessage(err, "Failed to complete action. Please try again."), "error");
   } finally {
     setIsProcessing(false);
   }

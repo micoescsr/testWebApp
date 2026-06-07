@@ -2,6 +2,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
+import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
@@ -193,14 +194,20 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
         <table className="sam-table">
           <thead>
             <tr>
-              <th onClick={() => toggleSort("severity")} className="sortable">
-                SEVERITY {sortBy.field === "severity" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("severity")}>
+                  SEVERITY {sortBy.field === "severity" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
-              <th onClick={() => toggleSort("name")} className="sortable">
-                VULNERABILITY NAME {sortBy.field === "name" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("name")}>
+                  VULNERABILITY NAME {sortBy.field === "name" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
-              <th onClick={() => toggleSort("score")} className="sortable">
-                SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("score")}>
+                  SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
               <th>OBSERVED CONFIGURATION</th>
               <th>ACTION</th>
@@ -214,23 +221,27 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
                 return (
                   <Fragment key={group.key}>
                     {/* ── Group header row ── */}
-                    <tr
-                      className="group-header-row"
-                      onClick={() => toggleGroup(group.key)}
-                    >
+                    <tr className="group-header-row">
                       <td colSpan={COL_COUNT}>
-                        <div className="group-header-content">
-                          <ChevronIcon expanded={isExpanded} />
-                          <span className="group-label">
-                            {group.label}
+                        <button
+                          type="button"
+                          className="cell-action-btn group-header-btn"
+                          onClick={() => toggleGroup(group.key)}
+                          aria-expanded={isExpanded}
+                        >
+                          <span className="group-header-content">
+                            <ChevronIcon expanded={isExpanded} />
+                            <span className="group-label">
+                              {group.label}
+                            </span>
+                            <span className="group-count">
+                              ({group.rows.length}{" "}
+                              {group.rows.length === 1
+                                ? "vulnerability"
+                                : "vulnerabilities"})
+                            </span>
                           </span>
-                          <span className="group-count">
-                            ({group.rows.length}{" "}
-                            {group.rows.length === 1
-                              ? "vulnerability"
-                              : "vulnerabilities"})
-                          </span>
-                        </div>
+                        </button>
                       </td>
                     </tr>
 
@@ -253,11 +264,14 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
                           <td>{vuln.name}</td>
                           <td>{vuln.score ?? "N/A"}</td>
                           <td>{vuln.observedConfig || "N/A"}</td>
-                          <td
-                            className="view-action"
-                            onClick={() => onView(vuln)}
-                          >
-                            View Details
+                          <td className="view-action">
+                            <button
+                              type="button"
+                              className="cell-action-btn"
+                              onClick={() => onView(vuln)}
+                            >
+                              View Details
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -269,10 +283,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
         </table>
 
         {!hasVulns && (
-          <div className="empty-state">
-            Nothing to analyze. Connect to a Wi-Fi network to start
-            detecting threats / scanning vulnerabilities.
-          </div>
+          <EmptyState message="Nothing to analyze. Connect to a Wi-Fi network to start detecting threats / scanning vulnerabilities." />
         )}
 
           <Pagination

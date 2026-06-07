@@ -5,6 +5,7 @@ import {
   getDashboardForNetwork,
   getNetworks,
 } from "../api/dashboardApi";
+import { useApiResource } from "./useApiResource";
 
 export const useDashboard = () => {
   // ΓöÇΓöÇ View mode: "Summary" or a network_id UUID ΓöÇΓöÇ
@@ -28,8 +29,7 @@ export const useDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [networkData, setNetworkData] = useState(null);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const { loading, error, run } = useApiResource("Failed to load dashboard data");
 
   // ΓöÇΓöÇ Fetch network list once on mount ΓöÇΓöÇ
   useEffect(() => {
@@ -63,11 +63,8 @@ export const useDashboard = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
+    run(
+      async () => {
         if (isSummary) {
           const res = await getDashboardSummary();
           if (!cancelled) setSummary(res.data);
@@ -85,18 +82,12 @@ export const useDashboard = () => {
             }
           }
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.error || err.message || "Failed to load dashboard data");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+      },
+      { isStale: () => cancelled }
+    );
 
-    fetchData();
     return () => { cancelled = true; };
-  }, [viewMode, isSummary, selectedScanId]);
+  }, [viewMode, isSummary, selectedScanId, run]);
 
   return {
     viewMode,

@@ -1,5 +1,6 @@
 // components/modals/RawEvidenceModal/RawEvidenceModal.jsx
 import { useState, useEffect } from "react";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import "./RawEvidenceModal.css";
 
 // Mapping helper: WFVT ID → source key path for Formatted View
@@ -145,6 +146,7 @@ const RawEvidenceModal = ({
 }) => {
   const [activeTab, setActiveTab] = useState("formatted");
   const [copySuccess, setCopySuccess] = useState(false);
+  const containerRef = useFocusTrap(open, onClose);
 
   // Reset tab and copy state when modal opens with a new finding
   useEffect(() => {
@@ -188,7 +190,15 @@ const RawEvidenceModal = ({
 
   return (
     <div className="raw-evidence-overlay" onClick={onClose}>
-      <div className="raw-evidence-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="raw-evidence-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        ref={containerRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="raw-evidence-header">
           <div className="raw-evidence-header-left">

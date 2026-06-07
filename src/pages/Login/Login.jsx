@@ -3,6 +3,7 @@ import "./Login.css";
 import { useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import api, { setAccessToken } from "../../api/axios";
+import { getApiErrorMessage } from "../../utils/apiError";
 import { Link } from "react-router-dom";
 
 const Login = () => {
@@ -89,11 +90,7 @@ const Login = () => {
     } catch (err) {
       console.error("Login failed:", err);
       setAccessToken(null);
-      setError(
-        err?.response?.data?.error ||
-          err.message ||
-          "Login failed. Please try again."
-      );
+      setError(getApiErrorMessage(err, "Login failed. Please try again."));
       setLoading(false);
     }
   };

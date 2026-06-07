@@ -4,6 +4,7 @@ import { useDashboard } from "../../hooks/useDashboard";
 import DashboardHeader from "../../components/dashboard/DashboardHeader";
 import SummarySection from "../../components/dashboard/SummarySection";
 import NetworkSection from "../../components/dashboard/NetworkSection";
+import Spinner from "../../components/common/Spinner/Spinner";
 
 const Dashboard = () => {
   const {
@@ -37,7 +38,7 @@ const Dashboard = () => {
         onScanChange={setSelectedScanId}
       />
 
-      {loading && <p>Loading...</p>}
+      {loading && <Spinner label="Loading dashboard data..." />}
       {error && <p className="error-text">{error}</p>}
 
       {!loading && !error && (

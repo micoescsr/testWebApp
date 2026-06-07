@@ -1,16 +1,22 @@
 // components/modals/FindingDetailModal/FindingDetailModal.jsx
 import { useState } from "react";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import "./FindingDetailModal.css";
 
 const FindingDetailModal = ({ onClose, vulnerability, loading }) => {
   const [activeRecommendationTab, setActiveRecommendationTab] =
     useState("nist");
+  const containerRef = useFocusTrap(true, onClose);
 
   if (loading || !vulnerability) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div
           className="modal-content"
+          role="dialog"
+          aria-modal="true"
+          tabIndex={-1}
+          ref={containerRef}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="modal-header">
@@ -33,6 +39,11 @@ const FindingDetailModal = ({ onClose, vulnerability, loading }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${vulnerability.severity} ${vulnerability.name}`}
+        tabIndex={-1}
+        ref={containerRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">

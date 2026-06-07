@@ -6,6 +6,7 @@ import { useDevice } from "../../hooks/useDevice";
 import { useProfile } from "../../hooks/useProfile";
 import { useNetworkContext } from "../../context/NetworkContext";
 import AccessPointPanel from "../../components/device/AccessPointPanel";
+import Spinner from "../../components/common/Spinner/Spinner";
 import {
   getAnnouncement,
   publishAnnouncement,
@@ -86,7 +87,7 @@ const DeviceManagement = () => {
 
   // ─── Guards ────────────────────────────────────────────────────
   if (profileLoading || configLoading) {
-    return <p>Loading device config...</p>;
+    return <Spinner label="Loading device config..." />;
   }
   if (!networkId) {
     return <p>No network selected. Run a scan first.</p>;

@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
+import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
@@ -142,17 +143,25 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
         <table className="sam-table">
           <thead>
             <tr>
-              <th onClick={() => toggleSort("severity")} className="sortable">
-                SEVERITY {sortBy.field === "severity" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("severity")}>
+                  SEVERITY {sortBy.field === "severity" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
-              <th onClick={() => toggleSort("name")} className="sortable">
-                THREAT {sortBy.field === "name" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("name")}>
+                  THREAT {sortBy.field === "name" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
-              <th onClick={() => toggleSort("detectedTime")} className="sortable">
-                DETECTED TIME {sortBy.field === "detectedTime" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("detectedTime")}>
+                  DETECTED TIME {sortBy.field === "detectedTime" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
-              <th onClick={() => toggleSort("score")} className="sortable">
-                SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
+              <th className="sortable">
+                <button type="button" className="cell-action-btn" onClick={() => toggleSort("score")}>
+                  SEVERITY SCORE {sortBy.field === "score" && (sortBy.dir === "desc" ? "↓" : "↑")}
+                </button>
               </th>
               <th>OCCURRENCES</th>
               <th></th>
@@ -191,18 +200,25 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
                           </span>
                         ) : null}
                       </td>
-                      <td
-                        className="expand-cell"
-                        onClick={() => toggleExpand(t.id)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        {isExpanded ? "▾" : "▸"}
+                      <td className="expand-cell">
+                        <button
+                          type="button"
+                          className="cell-action-btn"
+                          onClick={() => toggleExpand(t.id)}
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? "Collapse session details" : "Expand session details"}
+                        >
+                          {isExpanded ? "▾" : "▸"}
+                        </button>
                       </td>
-                      <td
-                        className="view-action"
-                        onClick={() => onView(t)}
-                      >
-                        View
+                      <td className="view-action">
+                        <button
+                          type="button"
+                          className="cell-action-btn"
+                          onClick={() => onView(t)}
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
 
@@ -257,15 +273,17 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
         </table>
 
         {!hasThreats && (
-          <div className="empty-state">
-            {detectionStatus === "DETECTING"
-              ? "Monitoring in progress. No threats detected yet."
-              : detectionStatus === "SCANNING"
-                ? "Starting scan\u2026 Please wait."
-                : detectionStatus === "FAILED"
-                  ? "Detection failed. Run a new scan to restart."
-                  : "Nothing to analyze. Connect to a Wi\u2011Fi network to start detecting threats."}
-          </div>
+          <EmptyState
+            message={
+              detectionStatus === "DETECTING"
+                ? "Monitoring in progress. No threats detected yet."
+                : detectionStatus === "SCANNING"
+                  ? "Starting scan\u2026 Please wait."
+                  : detectionStatus === "FAILED"
+                    ? "Detection failed. Run a new scan to restart."
+                    : "Nothing to analyze. Connect to a Wi\u2011Fi network to start detecting threats."
+            }
+          />
         )}
 
         <Pagination

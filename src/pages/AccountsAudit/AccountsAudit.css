@@ -344,6 +344,26 @@
 }
 
 /* --- Form Styles --- */
+.form-validation-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 15px;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.form-validation-error strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.form-validation-error ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .user-form {
   display: flex;
   flex-direction: column;

@@ -46,6 +46,9 @@ const UserForm = ({
     status: "active", // Default status
   });
 
+  // Inline validation feedback — replaces alert()-based messages
+  const [validationError, setValidationError] = useState(null);
+
   // UI: Detect anonymized placeholder values set during deactivation
   const isAnonymizedValue = (value = "") => {
     const v = value.toLowerCase().trim();
@@ -87,6 +90,7 @@ const UserForm = ({
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    setValidationError(null);
   };
 
   // Deactivation / reactivation is handled by parent via callbacks
@@ -106,15 +110,15 @@ const UserForm = ({
         (f) => !formData[f.key]?.trim() || isAnonymizedValue(formData[f.key])
       );
       if (missing.length > 0) {
-        alert(
-          `Please fill in the following fields before saving:\n• ${missing
-            .map((f) => f.label)
-            .join("\n• ")}`
-        );
+        setValidationError({
+          title: "Please fill in the following fields before saving:",
+          fields: missing.map((f) => f.label),
+        });
         return;
       }
     }
 
+    setValidationError(null);
     onSubmit({
       ...formData,
       name: `${formData.firstName} ${formData.lastName}`.trim(),
@@ -136,14 +140,14 @@ const UserForm = ({
     );
 
     if (missing.length > 0) {
-      alert(
-        `Please provide valid values for the following fields before reactivating:\n• ${missing
-          .map((f) => f.label)
-          .join("\n• ")}`
-      );
+      setValidationError({
+        title: "Please provide valid values for the following fields before reactivating:",
+        fields: missing.map((f) => f.label),
+      });
       return;
     }
 
+    setValidationError(null);
     if (onReactivate) {
       onReactivate({
         ...formData,
@@ -282,6 +286,17 @@ const UserForm = ({
            <option value="user">User</option>
         </select>
       </div>
+
+      {validationError && (
+        <div className="form-validation-error" role="alert">
+          <strong>{validationError.title}</strong>
+          <ul>
+            {validationError.fields.map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="user-form-footer" style={{marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '15px'}}>
         {/* Deactivate account action — only for existing active/on_hold users */}

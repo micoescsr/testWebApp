@@ -1,0 +1,21 @@
+.shared-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 80px 20px;
+  text-align: center;
+  font-size: 14px;
+  color: #777;
+  background: #f9f9f9;
+  flex: 1;
+}
+
+.shared-empty-state-icon {
+  font-size: 1.6rem;
+}
+
+.shared-empty-state-message {
+  margin: 0;
+}

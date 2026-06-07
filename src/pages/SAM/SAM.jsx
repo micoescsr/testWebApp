@@ -22,9 +22,12 @@ import {
   timeAgo,
 } from "../../context/ThreatDetectionContext";
 import { useSessionState } from "../../hooks/useSessionState";
+import { getApiErrorMessage } from "../../utils/apiError";
+import { useToast } from "../../context/ToastContext";
 
 const SAM = () => {
   const { setNetworkScan } = useNetworkContext();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useSessionState(
     "wf:samTab",
     "vulnerabilities",
@@ -66,7 +69,7 @@ const SAM = () => {
     ssid: null,
   });
 
-  const { threats, fetchThreatDetail, threatDetail, threatDetailLoading } =
+  const { fetchThreatDetail, threatDetail, threatDetailLoading } =
     useThreats();
 
   const {
@@ -307,7 +310,7 @@ const SAM = () => {
       }, 1000);
     } catch (err) {
       console.error("Scan error:", err);
-      alert("Scan failed");
+      showToast("Scan failed", "error");
       setDetectionStatus("IDLE");
     }
   };
@@ -326,11 +329,10 @@ const SAM = () => {
         channel: selectedNetwork.channel,
       });
 
-      alert("Network saved to DB!");
+      showToast("Network saved to DB!", "success");
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.error || err.message;
-      alert(`Save failed: ${msg}`);
+      showToast(`Save failed: ${getApiErrorMessage(err, "Please try again.")}`, "error");
     }
   };
 
@@ -364,9 +366,7 @@ const SAM = () => {
       setShowStopModal(false);
     } catch (err) {
       console.error("[stop detection]", err);
-      const msg =
-        err?.response?.data?.error || err.message || "Failed to stop detection";
-      alert(msg);
+      showToast(getApiErrorMessage(err, "Failed to stop detection"), "error");
     } finally {
       setStopProcessing(false);
     }
