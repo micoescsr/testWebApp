@@ -118,7 +118,7 @@ npm run dev          # Vite dev server on http://localhost:5173
 cd backend
 npm install
 cp .env.example .env  # Fill in Supabase keys, JWT secret, etc.
-npm start             # Express on http://localhost:3001
+npm start             # Express on http://localhost:3000
 ```
 
 ### Tests
@@ -138,7 +138,7 @@ npm run test:e2e:headed
 
 ## Security Hardening
 
-The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md).
+The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](docs/feature-notes/SECURITY_HARDENING_PLAN.md).
 
 ### Current Security Posture: 8/10
 
@@ -146,12 +146,12 @@ The project is undergoing a phased security hardening process documented in [`SE
 |-------|-----------------------------|--------------|----------------------------------------------------------------|
 | 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `CONTROL_SIGNING_SECRET` in env (unified HMAC auth for all Pi endpoints) |
 | 1     | P0 Infrastructure           | **Done**     | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies (`CROSS_ORIGIN_COOKIES`) |
-| 2     | Route Auth Lockdown         | **Done**     | `authJWT` on all 9 route groups, `requireSuperadmin` on audit  |
-| 3     | Bug Fixes & Info Disclosure | **Partial**  | Most leaks sealed; residual `err.message` in rasPi/auth/user/detect controllers |
+| 2     | Route Auth Lockdown         | **Done**     | `authJWT` + `requireActiveProfile` mounted on all 11 protected route groups; `requireSuperadmin` on audit |
+| 3     | Bug Fixes & Info Disclosure | **Partial**  | `rasPiController` audit-log leaks sealed (generic `SCAN_TRIGGER_ERROR` / `SCAN_SAVE_ERROR` codes); residual `err.message` remains in `detectController` audit meta |
 | 4     | Deployment Readiness        | **Partial**  | CORS via env, `VITE_API_BASE_URL` in axios; `deviceApi.js` still hardcoded |
 | 4.5   | Pi Connectivity Readiness   | Not started  | Funnel URL stability, nginx binding, timeouts, Idempotency-Key |
-| 5     | Optional Polish             | **Done**     | UUID validation middleware on device/user/rasPi routes          |
-| 6     | Testing Deliverables        | **Done**     | Jest unit + integration tests, Playwright E2E, coverage reports |
+| 5     | Optional Polish             | **Done**     | UUID validation middleware on device/user/rasPi routes; dead `userValidators.js` removed |
+| 6     | Testing Deliverables        | **Done**     | 11 integration + 16 unit Jest suites, Playwright E2E, coverage reports |
 
 ### Deployment Watchlist Items
 
@@ -167,18 +167,20 @@ The project is undergoing a phased security hardening process documented in [`SE
 
 | Document                                                                  | Covers                                              |
 |---------------------------------------------------------------------------|------------------------------------------------------|
-| [`SECURITY_HARDENING_PLAN.md`](SECURITY_HARDENING_PLAN.md)               | Full phased security plan, audit findings, risk notes |
-| [`DEVICE_MANAGEMENT_README.md`](DEVICE_MANAGEMENT_README.md)             | Device management feature (AP, portal, scans)        |
-| [`AP_ENABLE_PORTAL_README.md`](AP_ENABLE_PORTAL_README.md)               | Access Point & captive portal flow                   |
-| [`ACCOUNTS_FLOW_README.md`](ACCOUNTS_FLOW_README.md)                     | User account management flow                         |
-| [`AUDIT_README.md`](AUDIT_README.md)                                     | Audit logging system                                 |
-| [`SESSION_PERSISTENCE_README.md`](SESSION_PERSISTENCE_README.md)         | Session persistence & token refresh                  |
-| [`SAM_CHANGES_README.md`](SAM_CHANGES_README.md)                         | Security Assessment Management changes               |
-| [`HISTORY_CHANGES_README.md`](HISTORY_CHANGES_README.md)                 | History/vulnerability tracking changes               |
-| [`CHANGES_README.md`](CHANGES_README.md)                                 | General changelog                                    |
-| [`scanREADME.md`](scanREADME.md)                                         | Scan workflow                                        |
-| [`threatsREADME.md`](threatsREADME.md)                                   | Threat detection system                              |
-| [`clearListREADME.md`](clearListREADME.md)                               | Clear list functionality                             |
+| [`SECURITY_HARDENING_PLAN.md`](docs/feature-notes/SECURITY_HARDENING_PLAN.md) | Full phased security plan, audit findings, risk notes |
+| [`SECURITY_AND_RISKS.md`](docs/SECURITY_AND_RISKS.md)                     | Architectural security model & risk register         |
+| [`DEVICE_MANAGEMENT_README.md`](docs/feature-notes/DEVICE_MANAGEMENT_README.md) | Device management feature (AP, portal, scans)   |
+| [`AP_ENABLE_PORTAL_README.md`](docs/feature-notes/AP_ENABLE_PORTAL_README.md) | Access Point & captive portal flow                |
+| [`ACCOUNTS_FLOW_README.md`](docs/feature-notes/ACCOUNTS_FLOW_README.md)   | User account management flow                         |
+| [`AUDIT_README.md`](docs/feature-notes/AUDIT_README.md)                   | Audit logging system                                 |
+| [`SESSION_PERSISTENCE_README.md`](docs/feature-notes/SESSION_PERSISTENCE_README.md) | Session persistence & token refresh         |
+| [`SAM_CHANGES_README.md`](docs/feature-notes/SAM_CHANGES_README.md)       | Security Assessment Management changes               |
+| [`HISTORY_CHANGES_README.md`](docs/feature-notes/HISTORY_CHANGES_README.md) | History/vulnerability tracking changes             |
+| [`CHANGES_README.md`](docs/feature-notes/CHANGES_README.md)               | General changelog                                    |
+| [`scanREADME.md`](docs/feature-notes/scanREADME.md)                       | Scan workflow                                        |
+| [`threatsREADME.md`](docs/feature-notes/threatsREADME.md)                 | Threat detection system                              |
+| [`clearListREADME.md`](docs/feature-notes/clearListREADME.md)             | Clear list functionality                             |
+| [`PRD_STATUS.md`](docs/feature-notes/PRD_STATUS.md)                       | Whitebox assessment PRD & remediation tracker        |
 | [`backend/TESTING.md`](backend/TESTING.md)                               | Backend test guide                                   |
 | [`backend/THREATS.md`](backend/THREATS.md)                                | Backend threat model                                 |
 
