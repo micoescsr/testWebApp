@@ -48,7 +48,7 @@ async function main() {
   // Try both: Funnel (HTTPS) and direct nginx (9000)
   const urls = [
     `${PI_BASE_URL}${pathWithQuery}`,
-    `http://mothership-1.tail781e52.ts.net:9000${pathWithQuery}`,
+    `${process.env.FASTAPI_BASE_URL}${pathWithQuery}`,
   ];
 
   for (const url of urls) {

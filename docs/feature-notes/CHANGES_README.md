@@ -4,6 +4,19 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Local Dev Fix — June 9, 2026
+
+### Frontend white screen — Missing `.env`
+
+**File:** `.env` (created at repo root, gitignored)
+
+- **Symptom**: Frontend loaded to a blank white screen; `[pageerror] supabaseUrl is required` thrown from `src/lib/supabaseClient.js:6` during module init, before React could mount.
+- **Root cause**: Repo root had no `.env` (only `.env.example`), so `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` were `undefined` and `createClient()` threw synchronously.
+- **Fix**: Created `.env` from `.env.example`, populated `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the same Supabase project values already present in `backend/.env`. Left `VITE_API_BASE_URL` blank so the Vite dev proxy forwards `/api` → `localhost:3000`.
+- **Note**: Vite only reads `.env` at server startup — dev server restart required to pick up the new file.
+
+---
+
 ## UI/UX Fixes — March 7, 2026
 
 ### 1. Login Page — Removed "Welcome back" text

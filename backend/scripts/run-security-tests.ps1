@@ -143,7 +143,15 @@ foreach ($ep in $protected) {
     $parts = $ep -split " ", 2
     $method = $parts[0]; $path = $parts[1]
     try {
-        $r = Invoke-WebRequest -Uri "$base$path" -Method $method -UseBasicParsing -ContentType "application/json" -Body '{}' -ErrorAction Stop
+        # GET/HEAD must not carry a body — .NET's HttpWebRequest throws a
+        # client-side ProtocolViolationException (no .Response) if they do,
+        # which masquerades as an unreadable status code further down.
+        $reqArgs = @{ Uri = "$base$path"; Method = $method; UseBasicParsing = $true; ErrorAction = "Stop" }
+        if ($method -notin @("GET", "HEAD")) {
+            $reqArgs["ContentType"] = "application/json"
+            $reqArgs["Body"] = '{}'
+        }
+        $r = Invoke-WebRequest @reqArgs
         Write-Host "  FAIL: $ep -> $($r.StatusCode)" -ForegroundColor Red
         $fail401++
         $accessDetails += "${ep} -> $($r.StatusCode) FAIL"
@@ -399,7 +407,8 @@ Write-Host "====================================================================
 Write-Host " GENERATING RESULTS FILE..." -ForegroundColor Cyan
 Write-Host "====================================================================" -ForegroundColor Cyan
 
-$outPath = Join-Path (Split-Path $PSScriptRoot -Parent) ".." "security_testing_results.md"
+$repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$outPath = Join-Path (Join-Path $repoRoot "reports") "security_testing_results_rerun.md"
 
 # Count results
 $passCount = ($results | Where-Object { $_.Status -eq "PASS" }).Count
