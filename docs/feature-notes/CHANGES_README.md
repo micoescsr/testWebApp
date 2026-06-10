@@ -4,6 +4,29 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Risk Scoring Design Proposal — June 10, 2026
+
+### New file: `docs/scoring-refactor/WIFI_RISK_SCORE_SPEC.md`
+
+- **Problem**: Current `compute_scan_risk` formula (`Σ Pi×CVSSi / 60.7 × 100`)
+  understates single-finding networks — e.g. "Open Auth only" (CVSS 9.4)
+  scores 15.49% / LOW despite being a Critical vuln (see
+  `wifi_risk_scoring_review.md`).
+- **Cause**: fixed `Rmax=60.7` denominator dilutes any single severe finding;
+  a "max-CVSS-only" alternative was also considered but collapses
+  single-finding and multi-finding networks to the same score.
+- **Proposal (no code changed yet)**: replace the formula with a noisy-OR /
+  probabilistic combination — `Score% = (1 - Π(1-CVSSi/10)) × 100` over all
+  ACTIVE findings. Bounded 0-100, drops the `60.7` constant, single
+  Open-Auth finding now scores 94%/Critical, and multi-finding networks score
+  higher than single-finding ones. Bucket thresholds, `bucketize()`,
+  `getRiskLabel()`, and the continuous-detection recompute lifecycle are
+  unaffected — only the SQL body of `compute_scan_risk` would change.
+  Justification (CVSS v4.0, NIST SP 800-30 Rev.1, OWASP Risk Rating
+  Methodology, FTA OR-gate) documented in the new spec file.
+
+---
+
 ## Local Dev Fix — June 9, 2026
 
 ### Frontend white screen — Missing `.env`
