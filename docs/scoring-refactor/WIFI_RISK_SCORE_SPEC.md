@@ -1,7 +1,8 @@
 # WiFi Risk Score — Noisy-OR Formula Spec
 
-> Status: **Design proposal** — documents the recommended replacement for the
-> current `compute_scan_risk` formula. No code/schema changes have been made yet.
+> Status: **Implemented** — SQL body of `compute_scan_risk` replaced with the
+> noisy-OR formula in `backend/migrations/004_noisy_or_risk_score.sql`. Run
+> that migration in the Supabase SQL Editor to apply.
 > See `docs/scoring-refactor/README.md` for the existing scoring architecture
 > this proposal builds on.
 
@@ -184,14 +185,15 @@ implementation, since `Rmax` is no longer used (eliminating this discrepancy
 as a scoring concern, but it's still worth reconciling the dataset values
 themselves against the CVSS v4.0 vector strings on PDF page 7).
 
-## 9. Implementation Note (Follow-up Task — Not This One)
+## 9. Implementation Notes
 
-When implementing:
-- Only the SQL body of the `compute_scan_risk` RPC changes (replace the
-  `SUM(...)/60.7*100` expression with the `1-PRODUCT(1-cvss/10)` expression,
-  e.g. via `EXP(SUM(LN(1 - cvss/10)))` for the product over rows, since SQL
-  has no native `PRODUCT()` aggregate).
+- SQL body of the `compute_scan_risk` RPC replaced via
+  `backend/migrations/004_noisy_or_risk_score.sql` — `SUM(...)/60.7*100`
+  → `1-PRODUCT(1-cvss/10)`, computed as `EXP(SUM(LN(1 - cvss/10)))` over
+  observed rows (SQL has no native `PRODUCT()` aggregate). A CVSS of exactly
+  10 is special-cased to force the product to 0 (avoids `ln(0)`).
 - `bucketize()`, `getRiskLabel()`, `riskPipeline.js`, and all JS callers
-  require **no changes** — output domain is still `[0,100]`.
-- Add/extend unit tests around `compute_scan_risk` worked examples in
-  Section 3 (single-finding vs multi-finding cases).
+  require **no changes** — output domain is still `[0,100]`, function
+  signature/return type unchanged.
+- Worked examples from Section 3 are included as comments in the migration
+  file for verification after applying it against a test scan.

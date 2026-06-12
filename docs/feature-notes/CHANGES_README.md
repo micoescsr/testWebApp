@@ -4,6 +4,40 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Security Headers Remediation — ZAP Findings — June 13, 2026
+
+### Problem
+
+ZAP scan (`ZAP-Security-Report.md`) against `http://localhost:5173/` (Vite dev server) flagged 3 missing-header alerts: CSP not set (10038), missing anti-clickjacking header (10020), and X-Content-Type-Options missing (10021, systemic). Backend (`backend/server.js`) already had helmet + CSP configured (Phase 1-C) — the gap was the Vite dev/preview/prod-serve paths, which had zero header config of their own.
+
+### `vite.config.js` — Updated
+
+Added `server.headers` (dev, port 5173) and `preview.headers` (`vite preview`), both setting:
+
+- `Content-Security-Policy` — `default-src 'self'`. Dev additionally allows `'unsafe-inline'`/`'unsafe-eval'` in `script-src` (required for Vite HMR / React Fast Refresh) and `ws://localhost:*` / `wss://localhost:*` in `connect-src`; preview drops eval (`script-src 'self'`).
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+
+### New file: `public/serve.json`
+
+- Header rules (same set as `preview.headers`) for the `npm start` → `serve -s dist` production path. `serve` auto-reads `serve.json` from the directory it serves; Vite copies `public/*` into `dist/` on build, so `dist/serve.json` is produced with no `start` script change.
+- `connect-src` includes a `https://*.up.railway.app` wildcard for the Railway backend. Railway is currently paused, so this is unverified against the real `VITE_API_BASE_URL` — adjust on resume if the actual domain differs.
+
+### Rescan follow-up (port 5174)
+
+Re-scan confirmed the original 3 alerts were resolved, but surfaced 4 new Medium CSP-quality alerts (Plugin 10055) on the CSP just added — these couldn't fire while no CSP existed:
+
+- **Failure to Define Directive with No Fallback** (`form-action` / `base-uri`) — fixed: added `base-uri 'self'; form-action 'self'; object-src 'none'` to `server.headers`, `preview.headers`, and `public/serve.json`. Verified via curl.
+- **CSP: script-src unsafe-eval** — left as-is, dev-only, required for Vite HMR / React Fast Refresh. Not present in preview/prod `script-src` (`'self'` only).
+- **CSP: script-src unsafe-inline** — left as-is, same dev-only reasoning.
+- **CSP: style-src unsafe-inline** — left as-is, dev + prod, required for React inline `style={{}}` attributes (recharts etc.). Removing would need a nonce/hash-based CSP rewrite — out of scope.
+
+### New file: `docs/feature-notes/SECURITY_HEADERS_FRONTEND.md`
+
+Full mitigation record: per-alert breakdown, exact CSP/header values for all 3 serving paths (dev/preview/prod-serve), rescan results, accepted-risk rationale, and re-verification steps (curl + ZAP rescan).
+
+---
+
 ## Risk Scoring Design Proposal — June 10, 2026
 
 ### New file: `docs/scoring-refactor/WIFI_RISK_SCORE_SPEC.md`
