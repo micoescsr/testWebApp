@@ -4,6 +4,37 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## WiFi Risk Score — Noisy-OR Implementation — June 13, 2026
+
+### Updated: `docs/scoring-refactor/WIFI_RISK_SCORE_SPEC.md`
+
+- Status changed from **Design proposal** to **Implemented**.
+- Section 9 rewritten from "Implementation Note (Follow-up Task)" to
+  "Implementation Notes", pointing at the new migration file.
+
+### New file: `backend/migrations/004_noisy_or_risk_score.sql`
+
+- `CREATE OR REPLACE FUNCTION public.compute_scan_risk(p_scan_id bigint)` —
+  replaces the `Σ Pi×CVSSi / 60.7 × 100` body with the noisy-OR formula
+  `Score% = (1 - Π(1-CVSSi/10)) × 100`.
+- Scope/presence rules unchanged: fixed WFVT-001..007 dataset, vulnerability
+  rows present-if-row-exists, threat rows present-if-latest `vt_status='ACTIVE'`.
+- Product computed as `EXP(SUM(LN(1 - cvss/10)))`; a CVSS of exactly 10 is
+  short-circuited to `product = 0` to avoid `ln(0)`.
+- Output still clamped `[0,100]`, rounded to integer, written to
+  `scans.risk_score` — signature, return type, and all callers unchanged, so
+  `bucketize()`, `getRiskLabel()`, `riskPipeline.js` need no JS changes.
+- **Applied to Supabase** via SQL Editor — confirmed success.
+
+### Updated: `docs/current_sql_schema.sql`
+
+- Replaced with the 2026-06-12 schema dump (previously a root-level file,
+  `DB AS OF 6-12-26.txt`, now removed). Reflects current `networks`, `scans`,
+  `vulnerabilities_threat`, `vulnerability_threat_details`, etc. table
+  definitions.
+
+---
+
 ## Security Headers Remediation — ZAP Findings — June 13, 2026
 
 ### Problem
