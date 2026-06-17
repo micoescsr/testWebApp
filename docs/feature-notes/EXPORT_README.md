@@ -1,9 +1,16 @@
 # PDF Export Feature — SAM Page
 
-> **Status:** Mock-data implementation ✅ — Live-data integration pending  
+> **Status:** Live-data integration ✅ — see `docs/feature-notes/CHANGES_README.md` ("SAM Export — Live Data Wiring — June 17, 2026")  
 > **Branch:** `security`  
 > **Date implemented:** March 6, 2026  
-> **Last updated:** March 6, 2026
+> **Last updated:** June 17, 2026
+
+**Live data, as of June 17, 2026:** `src/utils/reportDataAdapter.js` now feeds both reports from `dashboardService.getSummaryData()` / `getNetworkDashboard()` instead of `mockReportData.js`. Two things to know if you touch this feature:
+
+- **Detailed Findings categorization** (`openAndWeakCrypto` / `misconfigurations` / `activeThreats`) is a static `vt_code` → category map in `backend/utils/findingCategory.js`, because `vulnerability_threat_details` has no category column. **Add new WFVT codes there** when the catalog grows, or they'll silently fall into `misconfigurations`.
+- **Remediation Plan / Executive Summary "Top 5 Actions" / "Key Business Impacts"** are driven by a static rule-based catalog in `backend/utils/reportAggregations.js` (`REMEDIATION_CATALOG`), keyed by the same `vt_code`s. Same rule: add new codes there too, or their remediation/impact text won't appear.
+- `meta.preparedBy`/`reviewedBy`/`classification` are still static placeholder strings (no reviewer/sign-off system exists) — not pulled from real data.
+- `src/data/mockReportData.js` is no longer imported anywhere but hasn't been deleted yet — pending a live-DB smoke test (Step 6 below).
 
 ---
 
@@ -287,7 +294,7 @@ Styling for the dropdown wrapper, menu, and items. Uses `bottom: calc(100% + 6px
 
 ## TODO — Live Data Integration
 
-When ready to switch from mock data to real data, follow these steps:
+**Done (June 17, 2026), except Step 6** — kept below for reference on how the integration was structured.
 
 ### Step 1: Identify existing API endpoints
 

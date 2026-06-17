@@ -4,6 +4,55 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## SAM Export — Live Data Wiring — June 17, 2026
+
+### Problem
+
+SAM page's Export dropdown (Summary Report / Per-Network Report) and `ThreatDetail`'s Export button rendered fully-built PDF templates (`reportTemplates.js`, browser print-to-PDF) but fed them hardcoded mock data (`src/data/mockReportData.js`) instead of real scan results.
+
+### Cause
+
+`buildOverallReportData()`/`buildPerNetworkReportData()` (the live-data adapter) never existed; `dashboardService.getSummaryData()`/`getNetworkDashboard()` also didn't return several fields the report templates need (full network list beyond top-5, bucketed `detailedFindings`, historical scans with risk scores, a rule-based remediation plan, network ssid/bssid/channel).
+
+### Fix
+
+- **New:** `backend/utils/findingCategory.js` — `categorizeFinding()`, a static `vt_code`→category map (`openAndWeakCrypto`/`misconfigurations`/`activeThreats`) since `vulnerability_threat_details` has no category column.
+- **New:** `backend/utils/reportAggregations.js` — pure data-shaping functions (`riskLabelForReport`, `buildNetworkRiskTable`, `buildDetailedFindings`, `buildFindingsLists`, `buildHistoricalScansTable`, `buildRemediationPlan`) used by `dashboardService` to build export-ready report data. `buildRemediationPlan` is a static rule-based catalog keyed by `vt_code` (mirrors the report's own "rule-based, no AI" claim) — update it when new WFVT codes are catalogued.
+- **Updated:** `backend/services/dashboardService.js` — `getSummaryData()` now also returns `allNetworks`, `detailedFindings`, `historicalScans`, `remediation`; `getNetworkDashboard()`/`shapeNetworkResponse()` now also return `ssid`, `bssid`, `channel`, `riskLabel`, `reportFindings` (full vulnerabilities/threats lists), `historicalScans`. Findings queries extended to select `vt_code` (needed for categorization/IDs).
+- **New:** `src/utils/reportDataAdapter.js` — `buildOverallReportData()` / `buildPerNetworkReportData(networkId)`, mapping the above API responses into the shape `reportTemplates.js` expects.
+- **Updated:** `src/components/sam/ExportDropdown.jsx` — accepts a `networkId` prop, handlers are now async, calls the adapter instead of mock data, shows a "Generating…" disabled state, toasts on failure or missing `networkId`.
+- **Updated:** `src/components/sam/VulnerabilitiesTable.jsx`, `ThreatsTable.jsx` — pass `networkId` from `useNetworkContext()` into `ExportDropdown`.
+- **Updated:** `src/components/sam/ThreatDetail.jsx` — same async/live-data/guard pattern as `ExportDropdown`, using `useNetworkContext()`.
+- **New:** `package.json` — `"test": "vitest run"` script; `vite.config.js` — added `test.include: ["src/**/*.test.{js,jsx}"]` so Vitest doesn't try to run backend's Jest-syntax test files.
+- **Not done yet:** `src/data/mockReportData.js` left in place (no longer imported anywhere) pending a live-DB smoke test — delete once verified against real scan data per `EXPORT_README.md` Step 6.
+
+### Tests
+
+- `backend/__tests__/unit/findingCategory.test.js`, `backend/__tests__/unit/reportAggregations.test.js` — full TDD coverage (95% branch on the new utils, backend suite at 447 passing).
+- `src/utils/reportDataAdapter.test.js` (new Vitest suite, 10 tests) — TDD coverage of both adapter functions.
+
+---
+
+## SAM Export — Fix `vt_code does not exist` on `latest_scan_findings` — June 17, 2026
+
+### Problem
+
+After the live-data wiring above, Summary Report and Per-Network Report exports both failed with a generic "Failed to generate report" toast. Backend log: `column latest_scan_findings.vt_code does not exist`.
+
+### Cause
+
+The `latest_scan_findings` Postgres view (not version-controlled, lives only in Supabase) exposes `vt_name` but not `vt_code`. The June 17 export work added `vt_code` to that view's `.select()` calls without verifying the view's actual columns — Postgrest threw `42703` on every request.
+
+### Fix
+
+`backend/services/dashboardService.js` — `getSummaryData()` and `getNetworkDashboardLatest()`: removed `vt_code` from the `latest_scan_findings` select; instead, after fetching findings, collect distinct `vt_detail_id`s and look up `vt_code` via a follow-up query against `vulnerability_threat_details` (which does have the column), then merge it back onto each finding. Mirrors the enrichment pattern `getNetworkDashboardByScan()` already used for its legacy scan path.
+
+### Tests
+
+Full backend suite re-run after fix: 447/447 passing (existing mocked tests already covered the new query shape since they mock at the `supabaseClient` boundary).
+
+---
+
 ## WiFi Risk Score — Noisy-OR Implementation — June 13, 2026
 
 ### Updated: `docs/scoring-refactor/WIFI_RISK_SCORE_SPEC.md`
@@ -32,6 +81,19 @@ This document describes the specific and explicit changes made across chat sessi
   `DB AS OF 6-12-26.txt`, now removed). Reflects current `networks`, `scans`,
   `vulnerabilities_threat`, `vulnerability_threat_details`, etc. table
   definitions.
+
+---
+
+## PROJECT_CONTEXT_AND_PRD.md Update — June 17, 2026
+
+### File: `docs/PROJECT_CONTEXT_AND_PRD.md`
+
+- **Problem:** Doc dated 2026-06-02 was stale vs codebase changes made June 9–13.
+- **Cause:** New components and security hardening not reflected in doc.
+- **Fix:**
+  - Updated `Last Updated` date to 2026-06-17.
+  - Added `EmptyState`, `Spinner`, `Toast` to common components list (added in commit `a467cde`).
+  - Updated Security Overview: active-profile enforcement now noted as applying to all authenticated routes; rate limit values corrected (login 10, refresh 30, global 300); frontend security headers row added noting `vite.config.js` + `backend/server.js` sync requirement.
 
 ---
 

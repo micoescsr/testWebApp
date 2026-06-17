@@ -1,11 +1,30 @@
-import { perNetworkMockData } from "../../data/mockReportData";
+import { useState } from "react";
+import { buildPerNetworkReportData } from "../../utils/reportDataAdapter";
 import { generatePerNetworkReportHTML } from "../../utils/reportTemplates";
 import { exportReport } from "../../utils/exportReport";
+import { useNetworkContext } from "../../context/NetworkContext";
+import { useToast } from "../../context/ToastContext";
 
 const ThreatDetail = ({ threat, onBack }) => {
-  const handleExport = () => {
-    const html = generatePerNetworkReportHTML(perNetworkMockData);
-    exportReport(html);
+  const { networkId } = useNetworkContext();
+  const { showToast } = useToast();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!networkId) {
+      showToast?.("Scan a network first to export its report.", "error");
+      return;
+    }
+    setExporting(true);
+    try {
+      const data = await buildPerNetworkReportData(networkId);
+      const html = generatePerNetworkReportHTML(data);
+      exportReport(html);
+    } catch {
+      showToast?.("Failed to generate network report. Please try again.", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -44,7 +63,9 @@ const ThreatDetail = ({ threat, onBack }) => {
         </div>
       </div>
 
-      <button className="export-btn" onClick={handleExport}>Export</button>
+      <button className="export-btn" onClick={handleExport} disabled={exporting}>
+        {exporting ? "Generating…" : "Export"}
+      </button>
     </div>
   );
 };

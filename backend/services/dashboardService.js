@@ -10,6 +10,14 @@
 // All queries use the service-role client (bypasses RLS).
 
 const { supabaseClient } = require("../config/supabaseClient");
+const {
+  buildNetworkRiskTable,
+  buildDetailedFindings,
+  buildHistoricalScansTable,
+  buildFindingsLists,
+  buildRemediationPlan,
+  riskLabelForReport,
+} = require("../utils/reportAggregations");
 
 // ─── Severity buckets (always include all four, even if count is 0) ──
 const SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"];
@@ -110,19 +118,30 @@ async function getSummaryData() {
     .select("network_id, risk_score");
 
   // --- Queries #14, #17, #18: need findings ---
+  // NOTE: latest_scan_findings view does not expose vt_code — only the
+  // vulnerability_threat_details table does. Joined in below via vt_detail_id.
   const findingsP = supabaseClient
     .from("latest_scan_findings")
     .select(
-      "vt_detail_id, vt_severity_rating, vt_kind, vt_cvss_base_score, network_id"
+      "vt_detail_id, vt_name, vt_severity_rating, vt_kind, vt_cvss_base_score, network_id"
     );
 
-  // --- Networks for top-5 join (ssid + clients only; risk score comes from latest_scan_per_network) ---
+  // --- Networks for top-5 / full report table join (risk score comes from latest_scan_per_network) ---
   const networksP = supabaseClient
     .from("networks")
-    .select("network_id, ssid, num_clients");
+    .select("network_id, ssid, num_clients, bssid, channel, encryption_status");
+
+  // --- Appendix: historical scans across all networks (export report) ---
+  const historicalScansP = supabaseClient
+    .from("vulnerability_scans")
+    .select("scan_id, finished_at, scan_risk_score, network_id")
+    .eq("status", "COMPLETED")
+    .not("finished_at", "is", null)
+    .order("finished_at", { ascending: false })
+    .limit(20);
 
   // Execute all in parallel
-  const [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR] =
+  const [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR] =
     await Promise.all([
       lastScanP,
       openP,
@@ -131,12 +150,33 @@ async function getSummaryData() {
       riskP,
       findingsP,
       networksP,
+      historicalScansP,
     ]);
 
   // Throw on any critical error
-  for (const r of [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR]) {
+  for (const r of [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR]) {
     if (r.error) throw r.error;
   }
+
+  // --- Enrich findings with vt_code (not on latest_scan_findings view) ---
+  const detailIds = [
+    ...new Set((findingsR.data || []).map((f) => f.vt_detail_id).filter(Boolean)),
+  ];
+  let vtCodeMap = {};
+  if (detailIds.length > 0) {
+    const { data: vtCodeRows, error: vtCodeErr } = await supabaseClient
+      .from("vulnerability_threat_details")
+      .select("vt_detail_id, vt_code")
+      .in("vt_detail_id", detailIds);
+    if (vtCodeErr) throw vtCodeErr;
+    (vtCodeRows || []).forEach((d) => {
+      vtCodeMap[d.vt_detail_id] = d.vt_code;
+    });
+  }
+  findingsR.data = (findingsR.data || []).map((f) => ({
+    ...f,
+    vt_code: vtCodeMap[f.vt_detail_id] || null,
+  }));
 
   // --- Derive values ---
   const lastScan = lastScanR.data?.finished_at || null;
@@ -206,6 +246,42 @@ async function getSummaryData() {
     { name: "Encrypted", value: encryptedNetworks },
   ];
 
+  // --- Export report: full network table (all networks, not just top 5) ---
+  const allNetworks = buildNetworkRiskTable(
+    Object.values(networkMap).map((n) => ({
+      ssid: n.ssid || "Unknown",
+      bssid: n.bssid,
+      channel: n.channel,
+      encryption_status: n.encryption_status,
+      num_clients: n.num_clients,
+      risk_score: latestRiskMap[n.network_id] ?? 0,
+      findings: netSevCount[n.network_id] || 0,
+    }))
+  );
+
+  // --- Export report: detailed findings, bucketed into the 3 fixed sections ---
+  const detailedFindings = buildDetailedFindings(
+    (findingsR.data || []).map((f) => ({
+      ...f,
+      network: networkMap[f.network_id]?.ssid || "Unknown",
+    }))
+  );
+
+  // --- Export report: appendix historical scans (joined with ssid/bssid) ---
+  const historicalScans = buildHistoricalScansTable(
+    (historicalScansR.data || []).map((s) => ({
+      scan_id: s.scan_id,
+      finished_at: s.finished_at,
+      risk_score: s.scan_risk_score ?? latestRiskMap[s.network_id] ?? 0,
+      ssid: networkMap[s.network_id]?.ssid || "Unknown",
+      bssid: networkMap[s.network_id]?.bssid || null,
+    }))
+  );
+
+  // --- Export report: rule-based remediation plan + executive-summary inputs ---
+  const detectedCodes = [...new Set((findingsR.data || []).map((f) => f.vt_code).filter(Boolean))];
+  const remediation = buildRemediationPlan(detectedCodes);
+
   return {
     lastScan,
     openNetworks,
@@ -216,6 +292,10 @@ async function getSummaryData() {
     severityData,
     topRisks,
     networkEncryptionData,
+    allNetworks,
+    detailedFindings,
+    historicalScans,
+    remediation,
   };
 }
 
@@ -241,11 +321,12 @@ async function getNetworkDashboardLatest(networkId) {
   // --- #3 + #4: network info ---
   const networkP = supabaseClient
     .from("networks")
-    .select("encryption_status, num_clients")
+    .select("ssid, bssid, channel, encryption_status, num_clients")
     .eq("network_id", networkId)
     .maybeSingle();
 
   // --- #5-#9: findings for this network's latest scan ---
+  // NOTE: latest_scan_findings view does not expose vt_code — joined in below.
   const findingsP = supabaseClient
     .from("latest_scan_findings")
     .select(
@@ -256,7 +337,7 @@ async function getNetworkDashboardLatest(networkId) {
   // --- #10: historical scans (always all, not scoped) ---
   const historyP = supabaseClient
     .from("vulnerability_scans")
-    .select("finished_at, scan_risk_score")
+    .select("scan_id, finished_at, scan_risk_score")
     .eq("network_id", networkId)
     .eq("status", "COMPLETED")
     .not("finished_at", "is", null)
@@ -286,6 +367,26 @@ async function getNetworkDashboardLatest(networkId) {
   for (const r of [latestScanR, networkR, findingsR, historyR, networkClientsR]) {
     if (r.error) throw r.error;
   }
+
+  // --- Enrich findings with vt_code (not on latest_scan_findings view) ---
+  const detailIds = [
+    ...new Set((findingsR.data || []).map((f) => f.vt_detail_id).filter(Boolean)),
+  ];
+  let vtCodeMap = {};
+  if (detailIds.length > 0) {
+    const { data: vtCodeRows, error: vtCodeErr } = await supabaseClient
+      .from("vulnerability_threat_details")
+      .select("vt_detail_id, vt_code")
+      .in("vt_detail_id", detailIds);
+    if (vtCodeErr) throw vtCodeErr;
+    (vtCodeRows || []).forEach((d) => {
+      vtCodeMap[d.vt_detail_id] = d.vt_code;
+    });
+  }
+  findingsR.data = (findingsR.data || []).map((f) => ({
+    ...f,
+    vt_code: vtCodeMap[f.vt_detail_id] || null,
+  }));
 
   return shapeNetworkResponse(
     latestScanR.data,
@@ -352,7 +453,7 @@ async function getNetworkDashboardByScan(networkId, scanId) {
       if (detailIds.length > 0) {
         const { data: details, error: dErr } = await supabaseClient
           .from("vulnerability_threat_details")
-          .select("vt_detail_id, vt_severity_rating, vt_kind, vt_cvss_base_score, vt_name")
+          .select("vt_detail_id, vt_code, vt_severity_rating, vt_kind, vt_cvss_base_score, vt_name")
           .in("vt_detail_id", detailIds);
 
         if (dErr) throw dErr;
@@ -366,6 +467,7 @@ async function getNetworkDashboardByScan(networkId, scanId) {
           const d = detailMap[v.vt_detail_id] || {};
           return {
             vt_detail_id: v.vt_detail_id,
+            vt_code: d.vt_code || null,
             vt_name: d.vt_name || v.vt_name,
             vt_severity_rating: d.vt_severity_rating || null,
             vt_kind: d.vt_kind || v.vt_kind,
@@ -379,7 +481,7 @@ async function getNetworkDashboardByScan(networkId, scanId) {
   // Network info
   const { data: networkInfo, error: netErr } = await supabaseClient
     .from("networks")
-    .select("encryption_status, num_clients")
+    .select("ssid, bssid, channel, encryption_status, num_clients")
     .eq("network_id", networkId)
     .maybeSingle();
 
@@ -388,7 +490,7 @@ async function getNetworkDashboardByScan(networkId, scanId) {
   // History (always all scans)
   const { data: history, error: histErr } = await supabaseClient
     .from("vulnerability_scans")
-    .select("finished_at, scan_risk_score")
+    .select("scan_id, finished_at, scan_risk_score")
     .eq("network_id", networkId)
     .eq("status", "COMPLETED")
     .not("finished_at", "is", null)
@@ -432,6 +534,9 @@ function shapeNetworkResponse(
   const riskScore = latestScan?.risk_score ?? 0;
   const riskScoreData = [{ name: "Wi-Fi Risk", value: riskScore }];
 
+  const ssid = networkInfo?.ssid || "Unknown";
+  const bssid = networkInfo?.bssid || null;
+  const channel = networkInfo?.channel ?? null;
   const encryptionStatus = networkInfo?.encryption_status || "Unknown";
   const numClients = networkClients?.num_clients ?? 0;
 
@@ -473,9 +578,27 @@ function shapeNetworkResponse(
     risk: h.scan_risk_score ?? 0,
   }));
 
+  // Export report: full vulnerabilities/threats lists (not just top-5 by CVSS)
+  const reportFindings = buildFindingsLists(safeFindings);
+
+  // Export report: appendix historical scans for this network
+  const historicalScans = buildHistoricalScansTable(
+    (history || []).map((h) => ({
+      scan_id: h.scan_id,
+      finished_at: h.finished_at,
+      risk_score: h.scan_risk_score ?? 0,
+      ssid,
+      bssid,
+    }))
+  );
+
   return {
     lastScan,
     riskScoreData,
+    riskLabel: riskLabelForReport(riskScore),
+    ssid,
+    bssid,
+    channel,
     encryptionStatus,
     numClients,
     totalVulns,
@@ -485,6 +608,8 @@ function shapeNetworkResponse(
     commonVulnsData,
     clientsRiskTrendData,
     scanList: scanList || [],
+    reportFindings,
+    historicalScans,
   };
 }
 

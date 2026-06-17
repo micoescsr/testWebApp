@@ -1,6 +1,6 @@
 # Why-PII? — Project Context & Product Requirements Document
 
-> **Generated:** 2026-06-02  
+> **Generated:** 2026-06-02 | **Last Updated:** 2026-06-17  
 > **Codebase Version:** 0.0.0 (package.json)  
 > **Status:** Documentation-only analysis — no source code was modified.
 
@@ -146,7 +146,7 @@ whypii/
 │   ├── assets/                   # Static assets (react.svg)
 │   ├── components/               # Reusable UI components (8 subdirs)
 │   │   ├── accounts/             # AccountsTable, AuditLogsTable, UserForm
-│   │   ├── common/               # ErrorBoundary, Modal, Pagination, Tabs, UserMenu
+│   │   ├── common/               # EmptyState, ErrorBoundary, Modal, Pagination, Spinner, Tabs, Toast, UserMenu
 │   │   ├── dashboard/            # DashboardHeader, LegendForScore, NetworkSection, SummarySection
 │   │   ├── device/               # AccessPointPanel
 │   │   ├── history/              # ScanDetailsDrawer, ThreatHistoryTable, VulnerabilityHistoryTable
@@ -250,8 +250,9 @@ The frontend relies on these backend API groups:
 | Area | Implementation |
 |------|---------------|
 | Authentication | Supabase Auth → JWT access token (in-memory) + HttpOnly refresh cookie |
-| Authorization | Role-based (admin/superadmin) with `requireSuperadmin` middleware |
-| API Security | Helmet, CSP, CORS whitelist, rate limiting, request ID tracking |
+| Authorization | Role-based (admin/superadmin) with `requireSuperadmin` middleware; `profiles.status === 'active'` enforced on all authenticated routes |
+| API Security | Helmet, CSP, CORS whitelist, rate limiting (login: 10/window, refresh: 30/window, global: 300/window), request ID tracking |
+| Frontend Security Headers | CSP, `X-Frame-Options`, `X-Content-Type-Options` set in both `vite.config.js` (dev/preview) and `backend/server.js` (Helmet) — must stay in sync |
 | Pi Communication | HMAC-signed requests via Tailscale Funnel |
 | Session | `sessionStorage` for UI state (`wf:*` keys), cleared on logout |
 | Secrets | `.env` files gitignored, `VITE_` prefix for browser-exposed vars only |

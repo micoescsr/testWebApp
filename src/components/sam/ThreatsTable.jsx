@@ -4,10 +4,12 @@ import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
 import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
+import { useNetworkContext } from "../../context/NetworkContext";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
 const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
+  const { networkId } = useNetworkContext();
   const hasThreats = Array.isArray(threats) && threats.length > 0;
   const [expandedIds, setExpandedIds] = useState(new Set());
 
@@ -294,7 +296,7 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
         />
 
         <div className="sam-actions">
-          <ExportDropdown />
+          <ExportDropdown networkId={networkId} />
         </div>
 
       </div>

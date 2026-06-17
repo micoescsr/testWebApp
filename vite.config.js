@@ -46,6 +46,9 @@ const securityHeaders = (csp) => ({
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    include: ["src/**/*.test.{js,jsx}"],
+  },
   cacheDir: ".vite-cache", // avoid node_modules/.vite lock on Railway
   preview: {
     host: true,

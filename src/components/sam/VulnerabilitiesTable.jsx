@@ -4,6 +4,7 @@ import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import Pagination from "../../components/common/Pagination/Pagination";
 import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
+import { useNetworkContext } from "../../context/NetworkContext";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -65,6 +66,7 @@ const ChevronIcon = ({ expanded }) => (
 );
 
 const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
+  const { networkId } = useNetworkContext();
   const hasVulns =
     Array.isArray(vulnerabilities) && vulnerabilities.length > 0;
 
@@ -295,7 +297,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
       </div>
 
       <div className="sam-actions">
-        <ExportDropdown />
+        <ExportDropdown networkId={networkId} />
         <button
           className="clear-btn"
           onClick={() => {

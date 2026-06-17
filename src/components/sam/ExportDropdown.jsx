@@ -2,17 +2,23 @@
 // Dropdown button that lets users choose between Summary or Per-Network PDF export.
 
 import { useState, useRef, useEffect } from "react";
-import { overallMockData, perNetworkMockData } from "../../data/mockReportData";
+import {
+  buildOverallReportData,
+  buildPerNetworkReportData,
+} from "../../utils/reportDataAdapter";
 import {
   generateOverallReportHTML,
   generatePerNetworkReportHTML,
 } from "../../utils/reportTemplates";
 import { exportReport } from "../../utils/exportReport";
+import { useToast } from "../../context/ToastContext";
 import "./ExportDropdown.css";
 
-const ExportDropdown = () => {
+const ExportDropdown = ({ networkId }) => {
   const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const ref = useRef(null);
+  const { showToast } = useToast();
 
   // Close on outside click
   useEffect(() => {
@@ -25,16 +31,36 @@ const ExportDropdown = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const handleExportSummary = () => {
+  const handleExportSummary = async () => {
     setOpen(false);
-    const html = generateOverallReportHTML(overallMockData);
-    exportReport(html);
+    setExporting(true);
+    try {
+      const data = await buildOverallReportData();
+      const html = generateOverallReportHTML(data);
+      exportReport(html);
+    } catch {
+      showToast?.("Failed to generate summary report. Please try again.", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const handleExportPerNetwork = () => {
+  const handleExportPerNetwork = async () => {
     setOpen(false);
-    const html = generatePerNetworkReportHTML(perNetworkMockData);
-    exportReport(html);
+    if (!networkId) {
+      showToast?.("Scan a network first to export its report.", "error");
+      return;
+    }
+    setExporting(true);
+    try {
+      const data = await buildPerNetworkReportData(networkId);
+      const html = generatePerNetworkReportHTML(data);
+      exportReport(html);
+    } catch {
+      showToast?.("Failed to generate network report. Please try again.", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -42,15 +68,17 @@ const ExportDropdown = () => {
       <button
         className="export-btn"
         type="button"
+        disabled={exporting}
         onClick={() => setOpen((prev) => !prev)}
       >
-        📎 Export
+        {exporting ? "Generating…" : "📎 Export"}
       </button>
       {open && (
         <div className="export-dropdown-menu">
           <button
             className="export-dropdown-item"
             type="button"
+            disabled={exporting}
             onClick={handleExportSummary}
           >
             <span className="export-item-icon">📊</span>
@@ -64,6 +92,7 @@ const ExportDropdown = () => {
           <button
             className="export-dropdown-item"
             type="button"
+            disabled={exporting}
             onClick={handleExportPerNetwork}
           >
             <span className="export-item-icon">📡</span>

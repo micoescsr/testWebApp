@@ -1,104 +1,90 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file = project context + immutable repo facts + entry point. For engineering philosophy, workflow, coding conventions, and decision-making rules, see **[`.claude/rules.md`](rules.md)**.
+
+## Engineering Rules
+
+Before implementing features, fixing bugs, refactoring, or making architectural changes, consult `.claude/rules.md` first.
+
+- `CLAUDE.md` (this file): project context and non-negotiable repository facts — what the system is, how it's structured, and constraints that must never be violated.
+- `rules.md`: engineering philosophy and coding conventions — how to make decisions, what pattern to follow when several exist, and the pre-completion checklist to run before calling work done.
+
+The two files don't duplicate each other. If a fact and a convention seem related, the fact lives here and the convention lives in `rules.md`, cross-referenced.
+
+---
 
 ## Project Overview
 
-**Why-PII?** is a full-stack Wi-Fi security assessment tool: a React (Vite) frontend, an Express/Node backend, Supabase (Postgres) for data, and a Raspberry Pi running FastAPI as a field probe. The browser never talks to the Pi directly — Express relays commands to it over a Tailscale Funnel tunnel, HMAC-signing every request.
+**Why-PII?** — Wi-Fi security assessment tool. React/Vite frontend + Express/Node backend + Supabase (Postgres) + Raspberry Pi running FastAPI as a field probe. Browser never talks to Pi directly — Express relays all Pi commands, HMAC-signing every request.
 
-This is a monorepo with **two independent npm projects**: the root (frontend) and `backend/` (Express API), each with their own `package.json`/`node_modules`.
+**Monorepo with two independent npm projects**: root (frontend) and `backend/` (Express API). Run `npm install` in each separately.
 
-## Commands
-
-### Frontend (run from repo root)
-
-```bash
-npm install
-npm run dev            # Vite dev server, http://localhost:5173 (proxies /api -> localhost:3000)
-npm run build           # production build to dist/
-npm run preview         # preview built bundle
-npm run lint            # eslint .
-```
-
-### Backend (run from backend/)
-
-```bash
-cd backend
-npm install
-cp .env.example .env    # fill in Supabase keys, CONTROL_SIGNING_SECRET, etc.
-npm start                # node server.js, http://localhost:3000
-npm run start:dev        # APP_ENV=development node server.js
-npm test                  # full Jest suite (unit + integration)
-npm run test:unit         # only __tests__/unit
-npm run test:integration  # only __tests__/integration
-npm run test:coverage     # with coverage thresholds (utils/, middleware/)
-npm run test:watch
-npm run lint:security     # scripts/lint-security.ps1 (PowerShell, ZAP-related checks)
-```
-
-Run a single backend test file:
-
-```bash
-cd backend
-npx jest __tests__/unit/scoring.test.js
-npx jest __tests__/integration/detectController.test.js
-```
-
-### E2E (Playwright, run from repo root)
-
-```bash
-npm run test:e2e          # auto-starts backend (3000) + frontend (5173) per playwright.config.js
-npm run test:e2e:headed
-npm run test:e2e:ui
-npx playwright test e2e/device-management.spec.js   # single spec
-```
+---
 
 ## Architecture
 
-### Backend layering
+### Backend
 
-`routes/*.js` (mounted under `/api/*` in `server.js`) → `controllers/*.js` → `services/` and `repositories/*.js` → `config/supabaseClient.js`. Zero raw SQL — all DB access via the Supabase JS SDK. Schema migrations live in `backend/migrations/*.sql`.
+Layering: `routes/` → `controllers/` → `services/` + `repositories/` → `config/supabaseClient.js`. (See `rules.md` → Architecture Awareness for the behavioral rules around this layering.)
 
-Key middleware (`backend/middleware/`):
-- `authMiddleware.js` — `authJWT`/`optionalAuthJWT`: verifies Supabase-issued JWTs via JWKS (ECC P-256), then checks `profiles.status === 'active'` on **every** authenticated request (rejects deactivated/on_hold users even with a valid JWT).
-- `statusMiddleware.js` (`requireActiveProfile`) and `roleMiddleware.js` (`requireSuperadmin`) — additional per-route checks; `requireSuperadmin` also writes `AUTHORIZATION.DENIED` audit events.
-- `rateLimiter.js` (global limiter, in-memory — resets on restart, not multi-instance safe), `requestIdMiddleware.js`, `validateUUID.js`.
+New pure-function logic goes in `backend/utils/` — it's fully unit-tested and has enforced coverage thresholds. Most scoring/formatting bugs belong there, not in controllers.
 
-`backend/utils/` holds dependency-free, fully unit-tested logic — this is where most scoring/formatting bugs should be fixed:
-- `scoring.js`, `riskPipeline.js` — `bucketize(score)` maps a 0–100 score from the Supabase RPC `compute_scan_risk` to LOW/MEDIUM/HIGH/CRITICAL; also handles version bumping and auto-portal-patching with a cooldown (`PORTAL_PATCH_COOLDOWN_MS`).
-- `normalization.js`, `sorting.js`, `exportFormatters.js`, `scanValidation.js`, `portalTipResolver.js`.
-- `signing.js` + `piFetch.js` — HMAC-SHA256 signing for every Express→Pi call. Canonical string is `METHOD\nPATH_WITH_QUERY\nTIMESTAMP\nNONCE\nBODY_SHA256`, sent as `X-Control-*` headers; secret is `CONTROL_SIGNING_SECRET` (must match the Pi-side verifier, see `docs/feature-notes/PI_SIGNING_README.md`).
+- `scoring.js` / `riskPipeline.js`: `bucketize(score)` maps 0–100 (from Supabase RPC `compute_scan_risk`) → `LOW/MEDIUM/HIGH/CRITICAL`. Also handles version bumping and auto-portal-patching with cooldown (`PORTAL_PATCH_COOLDOWN_MS`).
+- `signing.js` + `piFetch.js`: HMAC-SHA256. Canonical string: `METHOD\nPATH_WITH_QUERY\nTIMESTAMP\nNONCE\nBODY_SHA256`, sent as `X-Control-*` headers. Secret = `CONTROL_SIGNING_SECRET` (must match Pi-side verifier — see `docs/feature-notes/PI_SIGNING_README.md`).
 
-`server.js` notes:
-- Global error handler (last middleware) returns only generic `{error, message}` — never leak `err.message`/stack to clients. Preserve this when adding new error paths.
-- Helmet/CSP, CORS (`ALLOWED_ORIGINS` env, credentials enabled), rate limiting, `trust proxy` for Railway — all configured here and env-driven.
-- `/health` is intentionally before all middleware (uptime probes); `/internal/pi-smoke` checks Pi connectivity and is token-gated in production via `INTERNAL_SMOKE_TOKEN`.
-- `detectStateService.startServerHeartbeatLoop()` runs a server-side polling loop independent of browser tabs, so threat detection doesn't lapse when no tab is open.
+`requireSuperadmin` (roleMiddleware) writes `AUTHORIZATION.DENIED` audit events on denial — don't remove this side effect.
+
+`/health` is intentionally mounted before all middleware (uptime probes must not require auth).
+
+`detectStateService.startServerHeartbeatLoop()` runs server-side, independent of browser tabs — threat detection must not depend on a tab being open.
+
+In-memory rate limiter resets on restart and is not multi-instance safe — known limitation, don't make it worse.
 
 ### Frontend
 
-- `src/api/*.js` — one module per backend domain (auth, dashboard, sam, device, audit, etc.), all built on `src/api/axios.js`. The axios instance attaches the in-memory Bearer access token and, on a 401, does a single queued `auth/refresh` (via HttpOnly cookie) then retries — don't duplicate this refresh logic elsewhere.
-- `src/context/` — `NetworkProvider`, `ThreatDetectionProvider` (single global polling loop for live threat detection, only mounted for authenticated routes), `ToastProvider`.
-- `src/hooks/` — per-page data hooks (`useDashboard`, `useSAM`, `useDevice`, `useUsers`, ...) wrapping `src/api` calls.
-- `src/pages/<Page>/<Page>.jsx` + co-located `.css` — route-level pages, lazy-loaded in `src/App.jsx`.
-- Routing (`App.jsx`): public routes (`/login`, `/forgot-password`, `/reset-password`, `/force-reset-password`) vs. a catch-all protected tree gated on `getAccessToken()`, wrapped in `ThreatDetectionProvider` + `Sidebar`. `/test-auth` is a dev-only QA harness, excluded from production builds via `import.meta.env.DEV`.
+JWT is in-memory only — never persisted to localStorage/sessionStorage. Refresh via `HttpOnly` cookie (`sb_refresh`). Set `CROSS_ORIGIN_COOKIES=true` server-side when frontend/backend are on different domains (switches to `SameSite=None; Secure`).
 
-### Auth model
+`/test-auth` is a dev-only QA harness — excluded from production builds via `import.meta.env.DEV`. Keep it that way.
 
-Supabase-issued JWT (in-memory on the frontend, never persisted) + `HttpOnly` refresh cookie (`sb_refresh`). Set `CROSS_ORIGIN_COOKIES=true` server-side when frontend/backend are on different domains (switches cookies to `SameSite=None; Secure`).
+`ThreatDetectionProvider` wraps the entire authenticated route tree — a single global polling loop, not per-page.
 
-### Pi / FastAPI integration
+### Pi / FastAPI
 
-`backend/controllers/rasPiController.js`, `detectController.js`, `captivePortalController.js`, `piProxyController.js` talk to the Pi's FastAPI service through `piFetch`/`signing.js`. `FASTAPI_BASE_URL` points at the Pi (Tailscale Funnel URL in prod, `127.0.0.1:8000` in dev). The Pi-side nginx gateway only forwards via Funnel ports 443/8443/10000 — port 9000 is internal-only.
+Pi controllers: `rasPiController.js`, `detectController.js`, `captivePortalController.js`, `piProxyController.js`. All use `piFetch`/`signing.js`.
 
-### Testing strategy
+`FASTAPI_BASE_URL`: Tailscale Funnel URL in prod, `127.0.0.1:8000` in dev. Pi-side nginx only forwards via Funnel ports 443/8443/10000 — port 9000 is internal-only.
 
-Backend tests use Jest + supertest with **DB mocking at the repository/Supabase-client layer** (real Express app, routes, and middleware; `supabaseClient` is mocked via `jest.mock`). `__tests__/helpers/testApp.js` builds a minimal app for integration tests, `__tests__/helpers/mockSupabase.js` stubs the Supabase client, `__tests__/fixtures/` holds sample payloads. Coverage thresholds for `utils/` and `middleware/` are enforced in `backend/jest.config.js` — keep new pure-function logic in `utils/` to stay covered.
+---
 
-## Security context
+## Non-Negotiables
 
-The project tracks a phased hardening effort — see `docs/SECURITY_AND_RISKS.md` and `docs/feature-notes/SECURITY_HARDENING_PLAN.md` for the current posture and outstanding watchlist items (e.g. `src/api/deviceApi.js` still has a hardcoded `localhost:3000` URL instead of using the shared axios instance; in-memory rate limiter isn't multi-instance safe). CSP is defined in **two places** that must stay consistent: `backend/server.js` (Helmet, for the API) and `vite.config.js` (dev/preview server headers).
+**Never leak error details to clients.** The global error handler in `server.js` returns only `{error, message}` — never forward `err.message` or stack traces. Preserve this on every new error path.
 
-## Documentation
+**Zero raw SQL.** All DB access via Supabase JS SDK. Migrations in `backend/migrations/*.sql`.
 
-`README.md` has a full documentation index. Feature-specific design notes and changelogs live under `docs/feature-notes/*.md` (e.g. scoring refactor, audit logging, captive portal, session persistence, device management).
+**CSP is defined in two places that must stay in sync:** `backend/server.js` (Helmet) and `vite.config.js` (dev/preview headers). Changing one without the other breaks parity.
+
+**Auth middleware checks `profiles.status === 'active'` on every authenticated request** — deactivated/on_hold users are rejected even with a valid JWT. Don't short-circuit this in new routes.
+
+**The axios 401 refresh is in `src/api/axios.js` only.** It queues a single `auth/refresh` call (via HttpOnly cookie) then retries. Do not duplicate this logic in individual API modules.
+
+---
+
+## Testing — Repo Facts
+
+Backend: Jest + supertest, mocked at the `supabaseClient` boundary. Coverage thresholds are enforced for `utils/` and `middleware/` only (not `controllers/`/`services/`/`routes/`) in `backend/jest.config.js`.
+
+For testing strategy and what's expected when adding new code, see `rules.md` → Testing & Verification.
+
+---
+
+## Known Pitfalls / Watchlist
+
+- `src/api/deviceApi.js` has a hardcoded `localhost:3000` URL — it should use the shared axios instance. Don't copy this pattern; fix it if you touch this file.
+- In-memory rate limiter is not multi-instance safe.
+- Full security posture: `docs/SECURITY_AND_RISKS.md` and `docs/feature-notes/SECURITY_HARDENING_PLAN.md`.
+- Feature-specific notes: `docs/feature-notes/*.md`.
+
+---
+
+See `.claude/rules.md` for engineering philosophy, workflow, coding conventions, and the pre-completion checklist.
