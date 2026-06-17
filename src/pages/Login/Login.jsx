@@ -5,34 +5,20 @@ import { supabase } from "../../lib/supabaseClient";
 import api, { setAccessToken } from "../../api/axios";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { Link } from "react-router-dom";
+import MFAChallenge from "../Auth/MFAChallenge";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState(null);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
+  // Steps that used to run unconditionally right after password sign-in.
+  // Now shared between "no MFA challenge needed" and "challenge verified"
+  // paths, since both end up with a session to finish logging in with.
+  const finishLogin = async (session) => {
     try {
-      // 1) Sign in via Supabase JS (tokens NOT persisted — persistSession: false)
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
-
-      const session = data.session;
-      if (!session) throw new Error("No session returned");
-
       // 2) Store access token in memory for axios
       setAccessToken(session.access_token);
 
@@ -53,6 +39,7 @@ const Login = () => {
         setAccessToken(null);
         setError("Unable to verify account status. Please try again.");
         setLoading(false);
+        setMfaFactorId(null);
         return;
       }
 
@@ -66,6 +53,7 @@ const Login = () => {
         };
         setError(statusMessages[status] || "Your account is not active. Please contact the administrator.");
         setLoading(false);
+        setMfaFactorId(null);
         return;
       }
 
@@ -92,8 +80,95 @@ const Login = () => {
       setAccessToken(null);
       setError(getApiErrorMessage(err, "Login failed. Please try again."));
       setLoading(false);
+      setMfaFactorId(null);
     }
   };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      // 1) Sign in via Supabase JS (tokens NOT persisted — persistSession: false)
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        setError(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      const session = data.session;
+      if (!session) throw new Error("No session returned");
+
+      // Prime the Supabase JS client session so supabase.auth.mfa.* calls
+      // below have something to attach to (persistSession: false means
+      // there's no session by default — same pattern as ForceResetPassword).
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+      if (sessionError) {
+        setError(sessionError.message || "Failed to establish session.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: aalData, error: aalError } =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aalError) {
+        setError(aalError.message || "Failed to check MFA status.");
+        setLoading(false);
+        return;
+      }
+
+      if (aalData.nextLevel === "aal2" && aalData.currentLevel === "aal1") {
+        const { data: factorsData, error: factorsError } =
+          await supabase.auth.mfa.listFactors();
+        if (factorsError) {
+          setError(factorsError.message || "Failed to load MFA factors.");
+          setLoading(false);
+          return;
+        }
+
+        const factor = factorsData.totp[0];
+        if (!factor) {
+          setError("MFA is required but no authenticator is enrolled. Contact an administrator.");
+          setLoading(false);
+          return;
+        }
+
+        setMfaFactorId(factor.id);
+        return;
+      }
+
+      // No challenge needed (e.g. brand-new account with no factor enrolled
+      // yet) — proceed; the forced /mfa-setup gate catches this case.
+      await finishLogin(session);
+    } catch (err) {
+      console.error("Login failed:", err);
+      setAccessToken(null);
+      setError(getApiErrorMessage(err, "Login failed. Please try again."));
+      setLoading(false);
+    }
+  };
+
+  if (mfaFactorId) {
+    return (
+      <MFAChallenge
+        factorId={mfaFactorId}
+        onVerified={(session) => finishLogin(session)}
+        onCancel={() => {
+          setMfaFactorId(null);
+          setLoading(false);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="login-page">
