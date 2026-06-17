@@ -8,7 +8,7 @@ jest.mock("../../utils/auditLogger", () => ({ logAuditEvent: jest.fn().mockResol
 jest.mock("jose", () => ({
   createRemoteJWKSet: jest.fn(() => "mock-jwks"),
   jwtVerify: jest.fn().mockResolvedValue({
-    payload: { sub: "superadmin-uuid", email: "admin@example.com", role: "authenticated", aud: "authenticated" },
+    payload: { sub: "superadmin-uuid", email: "admin@example.com", role: "authenticated", aud: "authenticated", aal: "aal2" },
   }),
 }));
 
@@ -136,7 +136,7 @@ describe("DELETE /api/webapp/users/profiles/:id — deleteUser", () => {
   test("self-deletion returns 403", async () => {
     const { jwtVerify } = require("jose");
     jwtVerify.mockResolvedValueOnce({
-      payload: { sub: TARGET_UUID, email: "self@test.com", role: "authenticated", aud: "authenticated" },
+      payload: { sub: TARGET_UUID, email: "self@test.com", role: "authenticated", aud: "authenticated", aal: "aal2" },
     });
     mockAdminClient.from.mockReturnValue(buildChain({ status: "active", role: "superadmin" }));
     const res = await request(app)
