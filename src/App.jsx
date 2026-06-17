@@ -18,6 +18,7 @@ const Login = lazy(() => import("./pages/Login/Login"));
 const ForgotPassword = lazy(() => import("./pages/Auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/Auth/ResetPassword"));
 const ForceResetPassword = lazy(() => import("./pages/Auth/ForceResetPassword"));
+const MFASetup = lazy(() => import("./pages/Auth/MFASetup"));
 
 import api, { setAccessToken, getAccessToken } from "./api/axios";
 import { NetworkProvider } from "./context/NetworkContext";
@@ -34,6 +35,9 @@ const TestAuth = import.meta.env.DEV
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
+  // null = not yet known (still loading or unauthenticated) — only an
+  // explicit false should ever trigger the forced /mfa-setup redirect.
+  const [mfaEnrolled, setMfaEnrolled] = useState(null);
 
   // Bootstrap: try to restore session from HttpOnly refresh cookie.
   // Skip on public pages — no cookie exists before login, so the call
@@ -47,8 +51,21 @@ function App() {
 
     api
       .post("auth/refresh")
-      .then((res) => {
+      .then(async (res) => {
         setAccessToken(res.data.access_token);
+
+        // GET profiles/me stays AAL2-exempt server-side so this read works
+        // at aal1 — needed to know whether to force /mfa-setup. A failure
+        // here is fail-open on the UI gate (don't force-redirect on a
+        // transient fetch error) — real enforcement is the server-side
+        // AAL2 check on every other route, this gate is UX routing only.
+        try {
+          const profileRes = await api.get("webapp/users/profiles/me");
+          const profile = profileRes?.data ?? null;
+          setMfaEnrolled(profile?.mfa_enrolled ?? true);
+        } catch {
+          setMfaEnrolled(true);
+        }
       })
       .catch(() => {
         setAccessToken(null); // no valid session — must log in
@@ -89,11 +106,25 @@ function App() {
             }
           />
 
+          {/* Forced MFA enrollment: accessible only when authenticated, no sidebar */}
+          <Route
+            path="/mfa-setup"
+            element={
+              isAuthenticated ? (
+                <MFASetup mode="forced" />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+
           {/* Protected routes — redirect to /login if no access token */}
           <Route
             path="/*"
             element={
-              isAuthenticated ? (
+              isAuthenticated && mfaEnrolled === false ? (
+                <Navigate to="/mfa-setup" replace />
+              ) : isAuthenticated ? (
                 <ThreatDetectionProvider>
                   <div className="app">
                     <Sidebar />
