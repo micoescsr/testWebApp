@@ -12,6 +12,7 @@ function mapRowToProfile(row) {
     role: row.role,
     status: row.status || "active",
     must_change_password: row.must_change_password || false,
+    mfa_enrolled: row.mfa_enrolled || false,
     temp_expires_at: row.temp_expires_at || null,
   };
 }
