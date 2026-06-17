@@ -33,12 +33,18 @@ function createTestApp() {
   // Simple protected endpoint for auth testing
   const { authJWT } = require("../../middleware/authMiddleware");
   const { requireActiveProfile } = require("../../middleware/statusMiddleware");
+  const { requireAAL2 } = require("../../middleware/mfaMiddleware");
 
   app.get("/api/protected", authJWT, (req, res) => {
     res.json({ ok: true, user: req.user });
   });
 
   app.get("/api/protected/active", authJWT, requireActiveProfile, (req, res) => {
+    res.json({ ok: true, user: req.user });
+  });
+
+  // AAL2-gated endpoint for MFA enforcement tests
+  app.get("/api/protected/aal2", authJWT, requireAAL2, (req, res) => {
     res.json({ ok: true, user: req.user });
   });
 
