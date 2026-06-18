@@ -30,7 +30,7 @@ function MFAChallenge({ factorId, onVerified, onCancel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleVerify = async (currentChallengeId) => {
+  const handleVerify = async (currentChallengeId, currentCode) => {
     if (!currentChallengeId || verifying) return;
     setVerifying(true);
     setError("");
@@ -38,7 +38,7 @@ function MFAChallenge({ factorId, onVerified, onCancel }) {
     const { data, error: verifyError } = await supabase.auth.mfa.verify({
       factorId,
       challengeId: currentChallengeId,
-      code,
+      code: currentCode,
     });
 
     if (verifyError) {
@@ -59,12 +59,14 @@ function MFAChallenge({ factorId, onVerified, onCancel }) {
       return;
     }
 
-    onVerified(data.session);
+    // verify()'s data is already a flat session object (access_token,
+    // refresh_token, etc.) — no `.session` wrapper, unlike signInWithPassword.
+    onVerified(data);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    handleVerify(challengeId);
+    handleVerify(challengeId, code);
   };
 
   const handleCodeChange = (e) => {
@@ -73,7 +75,11 @@ function MFAChallenge({ factorId, onVerified, onCancel }) {
 
     if (value.length === 6 && !autoSubmitted.current) {
       autoSubmitted.current = true;
-      handleVerify(challengeId);
+      // Pass `value` directly instead of relying on the `code` state — setCode()
+      // above hasn't committed yet, so the `code` closure here is still one
+      // keystroke behind (5 chars), which made Supabase reject it with
+      // "Input length unexpected" instead of actually checking the TOTP code.
+      handleVerify(challengeId, value);
     } else if (value.length < 6) {
       autoSubmitted.current = false;
     }

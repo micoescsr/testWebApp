@@ -27,6 +27,19 @@ const Login = () => {
         refresh_token: session.refresh_token,
       });
 
+      // 3.5) Re-derive mfa_enrolled from Supabase's real factor list. It can
+      // drift (e.g. an admin deletes a factor directly in the Supabase
+      // dashboard instead of via our admin-unenroll endpoint) and a stale
+      // "true" would skip the /mfa-setup gate entirely, landing the user on
+      // the dashboard at aal1 where the first AAL2 action just 403s.
+      // Best-effort: failure here shouldn't block login since requireAAL2
+      // on the backend always checks the real aal claim, not this flag.
+      try {
+        await api.post("auth/mfa/sync-status", {});
+      } catch (syncErr) {
+        console.error("mfa sync-status failed:", syncErr);
+      }
+
       // 4) Check profile status (Bearer from memory now)
       const res = await api.get("webapp/users/profiles/me");
       const profile = res?.data ?? null;

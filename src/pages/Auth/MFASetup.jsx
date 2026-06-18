@@ -13,7 +13,7 @@ import api, { getAccessToken, setAccessToken } from "../../api/axios";
 import TotpQrDisplay from "../../components/auth/TotpQrDisplay";
 import "./Auth.css";
 
-function MFASetup({ mode = "forced", onSuccess }) {
+function MFASetup({ mode = "forced", onClose }) {
   const [factor, setFactor] = useState(null); // { id, totp: { qr_code, secret } }
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -36,9 +36,15 @@ function MFASetup({ mode = "forced", onSuccess }) {
   };
 
   const enroll = async () => {
+    // friendlyName must be unique per user (DB constraint
+    // mfa_factors_user_friendly_name_unique) and is never shown in our UI —
+    // suffix with a timestamp so a leftover factor from an abandoned attempt
+    // (one our listFactors/unenroll cleanup above failed to catch, e.g. a
+    // verified factor that requires an aal2 session to remove) can never
+    // collide with a fresh enrollment.
     const { data, error: enrollError } = await supabase.auth.mfa.enroll({
       factorType: "totp",
-      friendlyName: "Authenticator App",
+      friendlyName: `Authenticator App ${Date.now()}`,
     });
     if (enrollError) {
       throw new Error(enrollError.message || "Failed to start MFA enrollment.");
@@ -52,18 +58,23 @@ function MFASetup({ mode = "forced", onSuccess }) {
     try {
       await primeSession();
 
-      if (mode === "self-service") {
-        // Replace any existing verified factor before enrolling a new one.
-        const { data: factorsData, error: listError } = await supabase.auth.mfa.listFactors();
-        if (listError) {
-          throw new Error(listError.message || "Failed to load existing MFA factors.");
-        }
-        const existing = factorsData.totp[0];
-        if (existing) {
-          const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: existing.id });
-          if (unenrollError) {
-            throw new Error(unenrollError.message || "Failed to remove the existing authenticator.");
-          }
+      // Clear any existing factor(s) before enrolling a new one. In
+      // self-service mode this replaces a verified factor on purpose; in
+      // forced mode it cleans up unverified factors left behind by a
+      // previous abandoned attempt (refresh/navigate-away) — Supabase
+      // rejects re-enrolling with the same friendlyName otherwise.
+      // NOTE: listFactors()'s `data.totp` only includes verified factors
+      // (see GoTrueClient _listFactors) — unverified leftovers only show
+      // up in `data.all`, so we must filter that instead.
+      const { data: factorsData, error: listError } = await supabase.auth.mfa.listFactors();
+      if (listError) {
+        throw new Error(listError.message || "Failed to load existing MFA factors.");
+      }
+      const existingTotp = factorsData.all.filter((f) => f.factor_type === "totp");
+      for (const existing of existingTotp) {
+        const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: existing.id });
+        if (unenrollError) {
+          throw new Error(unenrollError.message || "Failed to remove the existing authenticator.");
         }
       }
 
@@ -120,10 +131,11 @@ function MFASetup({ mode = "forced", onSuccess }) {
         throw new Error(verifyError.message || "Invalid code. Please try again.");
       }
 
-      // verify() returns a new session with aal: "aal2" — apply it to the
-      // current app session immediately so the very next backend call
-      // isn't bounced by requireAAL2.
-      const newSession = verifyData.session;
+      // verify()'s data is already a flat session object (access_token,
+      // refresh_token, etc., aal: "aal2") — no `.session` wrapper. Apply
+      // it to the current app session immediately so the very next
+      // backend call isn't bounced by requireAAL2.
+      const newSession = verifyData;
       setAccessToken(newSession.access_token);
       await api.post("auth/set-refresh", { refresh_token: newSession.refresh_token });
       await api.post("auth/mfa/sync-status", { enrolled: true });
@@ -136,7 +148,11 @@ function MFASetup({ mode = "forced", onSuccess }) {
       setSuccessMessage("Two-factor authentication is now enabled on this device.");
       setFactor(null);
       setCode("");
-      onSuccess?.();
+      // Don't refetch the profile here — Profile.jsx's profileLoading guard
+      // unmounts this whole component (and its success state) while the
+      // fetch is in flight, then remounts it fresh once done, re-triggering
+      // startEnrollment() and silently generating a brand-new factor. Defer
+      // the refetch until the user dismisses (Done button → onClose).
     } catch (err) {
       setCode("");
       setError(err.message || "Verification failed. Please try again.");
@@ -174,13 +190,24 @@ function MFASetup({ mode = "forced", onSuccess }) {
 
   return (
     <Wrapper>
-      <h1 className="auth-title">Set up two-factor authentication</h1>
-      <p className="auth-subtitle">
-        Scan this QR code with your authenticator app, then enter the
-        6-digit code it generates.
-      </p>
+      {!successMessage && (
+        <>
+          <h1 className="auth-title">Set up two-factor authentication</h1>
+          <p className="auth-subtitle">
+            Scan this QR code with your authenticator app, then enter the
+            6-digit code it generates.
+          </p>
+        </>
+      )}
 
-      {successMessage && <p className="success-text">{successMessage}</p>}
+      {successMessage && (
+        <>
+          <p className="success-text">{successMessage}</p>
+          <button className="auth-button" type="button" onClick={onClose}>
+            Done
+          </button>
+        </>
+      )}
 
       {/* enroll() failed (possibly after unenrolling an old factor in
           self-service mode, or after "Start over") — no factor to show
