@@ -76,6 +76,20 @@ function buildHistoricalScansTable(rows) {
 }
 
 /**
+ * rows: [{ finished_at, risk_score }]
+ * Returns the per-network report's "Risk Trend" table shape (date/time split
+ * from finished_at, level derived via riskLabelForReport).
+ */
+function buildRiskTrendTable(rows) {
+  return (rows || []).map((r) => {
+    const score = r.risk_score ?? 0;
+    const [date, timeWithZone] = (r.finished_at || "").split("T");
+    const time = (timeWithZone || "").replace(/Z$|[+-]\d{2}:?\d{2}$/, "");
+    return { date, time, score, level: riskLabelForReport(score) };
+  });
+}
+
+/**
  * findings: [{ vt_code, vt_name, vt_kind, vt_severity_rating, vt_cvss_base_score, occurrences }]
  * Returns the per-network report's `vulnerabilities` / `threats` list shape.
  */
@@ -197,6 +211,7 @@ module.exports = {
   buildNetworkRiskTable,
   buildDetailedFindings,
   buildHistoricalScansTable,
+  buildRiskTrendTable,
   buildFindingsLists,
   buildRemediationPlan,
 };

@@ -4,6 +4,29 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## SAM Export — Fix `undefined` Risk Trend in Per-Network Report — June 18, 2026
+
+### Problem
+
+`PER-NETWORK-SCAN-REPORT.md` (a generated per-network export, reviewed against the printed PDF) showed `undefined` for every cell of the "Risk Trend for This Network" table (Scan Date / Scan Time / Risk Score / Risk Level) across all historical scans, and the trend-analysis sentence read "Risk score increased from undefined to undefined." The Plotly risk-trend line chart was also empty.
+
+### Cause
+
+`src/utils/reportDataAdapter.js`'s `buildPerNetworkReportData()` mapped `riskTrend: data.clientsRiskTrendData`. That field is shaped `{ scan, clients, risk }` — built for the Dashboard page's clients-vs-risk chart, not the export report. `src/utils/reportTemplates.js`'s per-network template (`generatePerNetworkReportHTML`) reads `{ date, time, score, level }` per trend row. The field names never matched, so every interpolation (`t.date`, `t.time`, `t.score`, `t.level`) resolved to `undefined`.
+
+### Fix
+
+- `backend/utils/reportAggregations.js`: added `buildRiskTrendTable(rows)` — maps `{ finished_at, risk_score }` rows to `{ date, time, score, level }`, splitting `finished_at` into date/time and deriving `level` via the existing `riskLabelForReport`.
+- `backend/services/dashboardService.js`: `shapeNetworkResponse()` now also returns `riskTrend` (built from the same `history` rows already fetched for `clientsRiskTrendData`/`historicalScans` — no new query).
+- `src/utils/reportDataAdapter.js`: `buildPerNetworkReportData()` now reads `data.riskTrend` instead of `data.clientsRiskTrendData`.
+
+### Tests
+
+- `backend/__tests__/unit/reportAggregations.test.js`: added `describe("buildRiskTrendTable", ...)` (4 new tests, written and watched fail before implementing — TDD). Full backend suite: 451/451 passing.
+- `src/utils/reportDataAdapter.test.js`: updated the per-network fixture/test to assert `riskTrend` is passed through in the corrected shape instead of asserting the old (broken) `clientsRiskTrendData` mapping. `npx vitest run src/utils/reportDataAdapter.test.js`: 10/10 passing.
+
+---
+
 ## SAM Export — Live Data Wiring — June 17, 2026
 
 ### Problem

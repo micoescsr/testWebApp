@@ -84,7 +84,7 @@ export async function buildPerNetworkReportData(networkId, scanId) {
     riskLabel: data.riskLabel,
     vulnerabilities: findings.vulnerabilities,
     threats: findings.threats,
-    riskTrend: data.clientsRiskTrendData || [],
+    riskTrend: data.riskTrend || [],
     historicalScans: data.historicalScans || [],
   };
 }

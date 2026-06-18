@@ -97,7 +97,7 @@ describe("buildPerNetworkReportData", () => {
         vulnerabilities: [{ id: "WFVT-001", name: "Lack of Encryption", severity: "Critical", cvss: 9.1, presence: "Detected" }],
         threats: [{ id: "WFVT-008", name: "Deauthentication Attack", severity: "High", cvss: 7.2, occurrences: 5 }],
       },
-      clientsRiskTrendData: [{ scan: "Jan 10", clients: 22, risk: 14 }],
+      riskTrend: [{ date: "2026-01-10", time: "08:59:55", score: 14, level: "Low" }],
       historicalScans: [{ scanId: "s1", ssid: "Nacho_WiFi", bssid: "AA:BB:CC:DD:EE:01", start: "2026-01-10T08:59:55Z", end: "2026-01-10T08:59:55Z", risk: 14 }],
     },
   };
@@ -129,10 +129,10 @@ describe("buildPerNetworkReportData", () => {
     });
   });
 
-  test("maps riskTrend from clientsRiskTrendData and passes through historicalScans", async () => {
+  test("passes through riskTrend and historicalScans", async () => {
     getDashboardForNetwork.mockResolvedValue(networkResponse);
     const result = await buildPerNetworkReportData("net-1");
-    expect(result.riskTrend).toHaveLength(1);
+    expect(result.riskTrend).toEqual(networkResponse.data.riskTrend);
     expect(result.historicalScans).toEqual(networkResponse.data.historicalScans);
   });
 });

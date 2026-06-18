@@ -14,6 +14,7 @@ const {
   buildNetworkRiskTable,
   buildDetailedFindings,
   buildHistoricalScansTable,
+  buildRiskTrendTable,
   buildFindingsLists,
   buildRemediationPlan,
   riskLabelForReport,
@@ -592,6 +593,14 @@ function shapeNetworkResponse(
     }))
   );
 
+  // Export report: risk trend table (date/time/score/level) for this network
+  const riskTrend = buildRiskTrendTable(
+    (history || []).map((h) => ({
+      finished_at: h.finished_at,
+      risk_score: h.scan_risk_score ?? 0,
+    }))
+  );
+
   return {
     lastScan,
     riskScoreData,
@@ -610,6 +619,7 @@ function shapeNetworkResponse(
     scanList: scanList || [],
     reportFindings,
     historicalScans,
+    riskTrend,
   };
 }
 

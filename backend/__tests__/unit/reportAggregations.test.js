@@ -4,6 +4,7 @@ const {
   buildNetworkRiskTable,
   buildDetailedFindings,
   buildHistoricalScansTable,
+  buildRiskTrendTable,
   buildFindingsLists,
   buildRemediationPlan,
 } = require("../../utils/reportAggregations");
@@ -219,6 +220,34 @@ describe("buildRemediationPlan", () => {
       keyBusinessImpacts: [],
       topActions: [],
     });
+  });
+});
+
+describe("buildRiskTrendTable", () => {
+  const rows = [
+    { finished_at: "2026-01-10T08:59:55Z", risk_score: 14 },
+    { finished_at: "2026-02-05T16:30:00Z", risk_score: 95 },
+  ];
+
+  test("maps DB rows to report risk-trend shape with date/time/score/level", () => {
+    const result = buildRiskTrendTable(rows);
+    expect(result).toEqual([
+      { date: "2026-01-10", time: "08:59:55", score: 14, level: "Low" },
+      { date: "2026-02-05", time: "16:30:00", score: 95, level: "Critical" },
+    ]);
+  });
+
+  test("empty input returns empty array", () => {
+    expect(buildRiskTrendTable([])).toEqual([]);
+  });
+
+  test("undefined input returns empty array", () => {
+    expect(buildRiskTrendTable(undefined)).toEqual([]);
+  });
+
+  test("missing risk_score defaults to 0", () => {
+    const [row] = buildRiskTrendTable([{ finished_at: "2026-01-10T08:59:55Z" }]);
+    expect(row).toMatchObject({ score: 0, level: "None" });
   });
 });
 
