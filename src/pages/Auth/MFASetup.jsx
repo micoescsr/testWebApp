@@ -173,6 +173,24 @@ function MFASetup({ mode = "forced", onSuccess }) {
 
         {successMessage && <p className="success-text">{successMessage}</p>}
 
+        {/* enroll() failed (possibly after unenrolling an old factor in
+            self-service mode, or after "Start over") — no factor to show
+            a form for, so surface the error here with a way to retry
+            instead of leaving the user on a dead-end screen. */}
+        {!factor && error && (
+          <>
+            <p className="error-text">{error}</p>
+            <button className="auth-button" type="button" onClick={startEnrollment}>
+              Retry
+            </button>
+            {mode === "forced" && (
+              <button className="auth-button-secondary" type="button" onClick={handleCancel}>
+                Cancel and log out
+              </button>
+            )}
+          </>
+        )}
+
         {factor && (
           <>
             <TotpQrDisplay qrCodeSvg={factor.totp.qr_code} secret={factor.totp.secret} />
