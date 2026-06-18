@@ -31,3 +31,9 @@ export const reactivateUser = (id, { targetStatus, issueTempPassword, profileUpd
   });
 };
 
+// Superadmin recovery: remove all MFA factors for a user who lost their
+// device — forces re-enrollment on their next login.
+export const adminUnenrollMfa = (id) => {
+  return api.post(`auth/mfa/admin-unenroll/${id}`);
+};
+

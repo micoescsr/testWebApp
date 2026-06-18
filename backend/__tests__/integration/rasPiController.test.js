@@ -21,7 +21,7 @@ jest.mock("../../utils/riskPipeline", () => ({
 jest.mock("jose", () => ({
   createRemoteJWKSet: jest.fn(() => "mock-jwks"),
   jwtVerify: jest.fn().mockResolvedValue({
-    payload: { sub: "user-uuid-1111", email: "test@example.com", role: "authenticated", aud: "authenticated" },
+    payload: { sub: "user-uuid-1111", email: "test@example.com", role: "authenticated", aud: "authenticated", aal: "aal2" },
   }),
 }));
 

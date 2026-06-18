@@ -14,7 +14,7 @@ jest.mock("../../services/dashboardService", () => mockDashboardService);
 jest.mock("jose", () => ({
   createRemoteJWKSet: jest.fn(() => "mock-jwks"),
   jwtVerify: jest.fn().mockResolvedValue({
-    payload: { sub: "user-uuid", email: "test@example.com", role: "authenticated", aud: "authenticated" },
+    payload: { sub: "user-uuid", email: "test@example.com", role: "authenticated", aud: "authenticated", aal: "aal2" },
   }),
 }));
 

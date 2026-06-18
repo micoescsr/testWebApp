@@ -37,6 +37,7 @@ jest.mock("jose", () => ({
       email: "test@example.com",
       role: "authenticated",
       aud: "authenticated",
+      aal: "aal2",
     },
   }),
 }));

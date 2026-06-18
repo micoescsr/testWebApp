@@ -25,6 +25,7 @@ const detectRoutes = require('./routes/detectRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const piProxyRoutes = require('./routes/piProxyRoutes');
+const mfaRoutes = require('./routes/mfaRoutes');
 const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
@@ -142,6 +143,9 @@ app.use('/api/dashboard', dashboardRoutes);
 
 // 1) Public auth routes (no JWT / status)
 app.use("/api/auth", authRoutes); // /api/auth/login
+
+// 1b) MFA enrollment/recovery routes
+app.use("/api/auth/mfa", mfaRoutes);
 
 // 2) Audit routes (superadmin only, JWT + role enforced per-route)
 app.use("/api/audit", auditRoutes);

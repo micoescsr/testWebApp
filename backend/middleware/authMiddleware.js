@@ -35,12 +35,13 @@ exports.authJWT = async (req, res, next) => {
       audience: "authenticated",
     });
 
-    // payload contains: sub (user id), email, role, exp, iat, aud, etc.
+    // payload contains: sub (user id), email, role, exp, iat, aud, aal, etc.
     req.user = {
       id: payload.sub,
       email: payload.email,
       role: payload.role,
       aud: payload.aud,
+      aal: payload.aal || "aal1",
     };
 
     // ── Account-status enforcement (C8) ─────────────────────────
@@ -94,6 +95,7 @@ exports.optionalAuthJWT = async (req, _res, next) => {
       email: payload.email,
       role: payload.role,
       aud: payload.aud,
+      aal: payload.aal || "aal1",
     };
   } catch (_err) {
     // Token invalid/expired — ignore, req.user stays undefined

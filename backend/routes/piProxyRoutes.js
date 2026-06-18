@@ -16,12 +16,13 @@ const router = express.Router();
 const piProxy = require("../controllers/piProxyController");
 const { authJWT } = require("../middleware/authMiddleware");
 const { requireActiveProfile } = require("../middleware/statusMiddleware");
+const { requireAAL2 } = require("../middleware/mfaMiddleware");
 
-router.get("/device/status", authJWT, requireActiveProfile, piProxy.deviceStatus);
-router.get("/networks", authJWT, requireActiveProfile, piProxy.networks);
-router.post("/scan", authJWT, requireActiveProfile, piProxy.scan);
-router.get("/detect/poll", authJWT, requireActiveProfile, piProxy.detectPoll);
-router.post("/orchestrate/apply", authJWT, requireActiveProfile, piProxy.orchestrateApply);
-router.post("/portal/patch", authJWT, requireActiveProfile, piProxy.portalPatch);
+router.get("/device/status", authJWT, requireActiveProfile, requireAAL2, piProxy.deviceStatus);
+router.get("/networks", authJWT, requireActiveProfile, requireAAL2, piProxy.networks);
+router.post("/scan", authJWT, requireActiveProfile, requireAAL2, piProxy.scan);
+router.get("/detect/poll", authJWT, requireActiveProfile, requireAAL2, piProxy.detectPoll);
+router.post("/orchestrate/apply", authJWT, requireActiveProfile, requireAAL2, piProxy.orchestrateApply);
+router.post("/portal/patch", authJWT, requireActiveProfile, requireAAL2, piProxy.portalPatch);
 
 module.exports = router;

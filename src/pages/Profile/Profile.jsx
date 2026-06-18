@@ -1,16 +1,21 @@
 // pages/Profile/Profile.jsx
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import "./Profile.css";
 import ProfileModal from "../../components/profile/ProfileModal";
+import BaseModal from "../../components/common/Modal/BaseModal";
+import MFASetup from "../Auth/MFASetup";
 import { useProfile } from "../../hooks/useProfile";
 
 const Profile = () => {
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showMfaModal, setShowMfaModal] = useState(false);
 
   const {
     profile,
     profileLoading,
     profileError,
+    refetchProfile,
   } = useProfile();
 
   if (profileLoading) {
@@ -75,11 +80,57 @@ const Profile = () => {
         </div>
       </div>
 
+      <div className="profile-card profile-mfa-card">
+        <div className="profile-mfa-row">
+          <div className="profile-mfa-status">
+            <label>Two-Factor Authentication</label>
+            {profile.mfaEnrolled ? (
+              <span className="profile-mfa-badge enabled">Enabled</span>
+            ) : (
+              <span className="profile-mfa-badge disabled">Not set up</span>
+            )}
+          </div>
+
+          {profile.mfaEnrolled ? (
+            <span className="reset-link" onClick={() => setShowMfaModal(true)}>
+              Re-enroll (new device)
+            </span>
+          ) : (
+            <Link className="reset-link" to="/mfa-setup">
+              Complete setup
+            </Link>
+          )}
+        </div>
+
+        {!profile.mfaEnrolled && (
+          <p className="profile-mfa-helper">
+            Two-factor authentication is required on this account. Finish
+            setup to continue accessing protected actions.
+          </p>
+        )}
+      </div>
+
       {showResetModal && (
         <ProfileModal
           isOpen={showResetModal}
           onClose={() => setShowResetModal(false)}
         />
+      )}
+
+      {showMfaModal && (
+        <BaseModal
+          isOpen={showMfaModal}
+          onClose={() => setShowMfaModal(false)}
+          header={<h3 className="profile-mfa-modal-title">Re-enroll two-factor authentication</h3>}
+        >
+          <MFASetup
+            mode="self-service"
+            onClose={() => {
+              setShowMfaModal(false);
+              refetchProfile();
+            }}
+          />
+        </BaseModal>
       )}
 
     </div>

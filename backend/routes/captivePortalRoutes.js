@@ -4,6 +4,7 @@ const router = express.Router();
 const ctrl = require('../controllers/captivePortalController');
 const { authJWT } = require('../middleware/authMiddleware');
 const { requireActiveProfile } = require('../middleware/statusMiddleware');
+const { requireAAL2 } = require('../middleware/mfaMiddleware');
 const { validate, portalAnnouncement, portalTips, portalSync } = require('../validators/routeValidators');
 
 // ─── Phase 2-A: All captive-portal routes require JWT ───────────
@@ -11,19 +12,19 @@ const { validate, portalAnnouncement, portalTips, portalSync } = require('../val
 // and risk classifications without authenticating.
 
 // ─── Announcement ────────────────────────────────────────────────
-router.get('/announcement', authJWT, requireActiveProfile, ctrl.getAnnouncement);
-router.get('/announcement/history', authJWT, requireActiveProfile, ctrl.getAnnouncementHistory);
-router.post('/announcement', authJWT, requireActiveProfile, portalAnnouncement, validate, ctrl.publishAnnouncement);
+router.get('/announcement', authJWT, requireActiveProfile, requireAAL2, ctrl.getAnnouncement);
+router.get('/announcement/history', authJWT, requireActiveProfile, requireAAL2, ctrl.getAnnouncementHistory);
+router.post('/announcement', authJWT, requireActiveProfile, requireAAL2, portalAnnouncement, validate, ctrl.publishAnnouncement);
 
 // ─── Tips ────────────────────────────────────────────────────────
-router.get('/tips', authJWT, requireActiveProfile, ctrl.getTips);
-router.post('/tips', authJWT, requireActiveProfile, portalTips, validate, ctrl.upsertTips);
+router.get('/tips', authJWT, requireActiveProfile, requireAAL2, ctrl.getTips);
+router.post('/tips', authJWT, requireActiveProfile, requireAAL2, portalTips, validate, ctrl.upsertTips);
 
 // ─── Risk Classification ─────────────────────────────────────────
-router.get('/risk-classifications', authJWT, requireActiveProfile, ctrl.getRiskClassifications);
+router.get('/risk-classifications', authJWT, requireActiveProfile, requireAAL2, ctrl.getRiskClassifications);
 
 // ─── Portal (preview + sync to FastAPI) ──────────────────────────
-router.get('/summary', authJWT, requireActiveProfile, ctrl.getPortalSummary);
-router.post('/sync', authJWT, requireActiveProfile, portalSync, validate, ctrl.syncPortal);
+router.get('/summary', authJWT, requireActiveProfile, requireAAL2, ctrl.getPortalSummary);
+router.post('/sync', authJWT, requireActiveProfile, requireAAL2, portalSync, validate, ctrl.syncPortal);
 
 module.exports = router;

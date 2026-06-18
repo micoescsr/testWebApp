@@ -138,6 +138,7 @@ CREATE TABLE public.profiles (
   last_login timestamp without time zone DEFAULT now(),
   status USER-DEFINED NOT NULL DEFAULT 'active'::status,
   must_change_password boolean NOT NULL DEFAULT false,
+  mfa_enrolled boolean NOT NULL DEFAULT false,
   temp_expires_at timestamp with time zone,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)

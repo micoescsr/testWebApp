@@ -4,6 +4,53 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Mandatory TOTP MFA — June 18, 2026
+
+### Problem
+
+Why-PII?'s own admin/superadmin accounts were the highest-value target in
+the system — compromising one exposes audit logs, device controls, and
+user management — yet protected only by a password. Every other part of
+the stack (Helmet, CSP, JWKS verification, HttpOnly refresh cookies,
+in-memory access tokens) was already hardened; password-only auth was the
+weakest remaining link.
+
+### Cause
+
+No second factor existed for any account, admin or superadmin.
+
+### Fix
+
+TOTP MFA via Supabase Auth's native MFA API, mandatory for every account,
+enforced server-side via the JWT `aal` claim — see
+`docs/AUTHENTICATION_AND_AUTHORIZATION.md` §11 for the full architecture.
+
+- **New:** `backend/migrations/005_add_mfa_enrolled.sql` — `profiles.mfa_enrolled boolean NOT NULL DEFAULT false`.
+- **New:** `backend/middleware/mfaMiddleware.js` — `requireAAL2`, 403s `{ error, code: "MFA_REQUIRED" }` unless `req.user.aal === "aal2"`, audit-logs `AUTHORIZATION.DENIED`.
+- **New:** `backend/controllers/mfaController.js` + `backend/routes/mfaRoutes.js` — `POST /api/auth/mfa/sync-status` (re-derives `mfa_enrolled` from Supabase's own factor list) and `POST /api/auth/mfa/admin-unenroll/:id` (superadmin + AAL2, removes all TOTP factors via the Admin API).
+- **Updated:** `backend/middleware/authMiddleware.js` — `authJWT`/`optionalAuthJWT` now surface `payload.aal` (default `"aal1"`) onto `req.user.aal`.
+- **Updated:** `backend/routes/userRoutes.js`, `auditRoutes.js`, `samRoutes.js`, `captivePortalRoutes.js`, `dashboardRoutes.js`, `detectRoutes.js`, `historyRoutes.js`, `rasPiRoutes.js`, `deviceMgmtRoutes.js`, `piProxyRoutes.js`, `webAppRoutes.js` — `requireAAL2` added after `authJWT, requireActiveProfile` on every authJWT route that mutates data or exposes sensitive info (exceptions: `GET /profiles/me`, the unauthenticated `/scan-completed` machine webhook, and the pre-MFA `/api/auth/*` steps).
+- **Updated:** `backend/repositories/userRepository.js` — `mapRowToProfile` now includes `mfa_enrolled`.
+- **Updated:** `backend/middleware/rateLimiter.js` — added `mfaLimiter` (20/15min) on `sync-status`.
+- **New:** `src/pages/Auth/MFAChallenge.jsx` — login-time 6-digit challenge (auto-submit, auto-retry on expired challenge).
+- **New:** `src/pages/Auth/MFASetup.jsx` + `src/components/auth/TotpQrDisplay.jsx` — enrollment flow (QR + manual-entry secret), `mode="forced"` (standalone `/mfa-setup` route) and `mode="self-service"` (Profile-page modal, replaces existing factor).
+- **Updated:** `src/pages/Login/Login.jsx` — checks `getAuthenticatorAssuranceLevel()` after password sign-in, renders `MFAChallenge` when the account needs `aal2`.
+- **Updated:** `src/App.jsx` — bootstrap fetches `mfa_enrolled`, persistent gate redirects any authenticated user without it to `/mfa-setup`.
+- **Updated:** `src/hooks/useProfile.js` — maps `mfa_enrolled` → `mfaEnrolled`, exposes `refetchProfile`.
+- **Updated:** `src/pages/Profile/Profile.jsx` — "Two-Factor Authentication" card (Enabled badge + re-enroll; no disable option).
+- **Updated:** `src/api/userApi.js`, `src/components/accounts/AccountsTable.jsx`, `src/pages/AccountsAudit/AccountsAudit.jsx` — superadmin "Reset MFA" per-row action (confirmation required) for lost-device recovery.
+- **Not done:** Playwright E2E specs (`mfa-enrollment.spec.js`, `mfa-login-challenge.spec.js`) — scoped out of this pass per explicit decision; backend Jest + the manual checklist below cover this release. Revisit if E2E coverage becomes a requirement.
+
+### Tests
+
+- New: `backend/__tests__/unit/mfaMiddleware.test.js` (5 cases), `backend/__tests__/integration/mfaController.test.js` (7 cases), 3 new AAL2 cases in `backend/__tests__/integration/authorization.test.js`.
+- Updated 8 existing integration suites' mocked JWT payloads to include `aal: "aal2"` so they keep exercising their intended (now AAL2-gated) success paths.
+- Full backend suite: 462/462 passing. Frontend: `npm run build` succeeds, `npm test` (vitest) 10/10 passing (no component test infra exists in this repo for the new pages — confirmed pre-existing gap, not introduced by this work).
+- Manual QA checklist (`docs/TESTING_AND_QUALITY_ASSURANCE.md` §8) run end-to-end against a live Supabase project: fresh enroll → dashboard, re-login → challenge → dashboard, wrong code ×3 (no lockout), `aal1` token rejected on an AAL2 route (`403 MFA_REQUIRED`, verified via curl), superadmin Reset MFA, self-service re-enroll — all passing.
+- Manual testing surfaced 5 real bugs, fixed in a follow-up commit: (1) enroll-cleanup only checked `listFactors().totp` (verified-only), missing unverified leftovers — now filters `.all`; (2) `friendlyName` collisions from leftover factors — now uniquified per attempt; (3) `verify()`'s response is a flat session object, not `{session: {...}}` — fixed in both `MFASetup.jsx` and `MFAChallenge.jsx`; (4) `MFAChallenge`'s auto-submit read `code` from a stale closure, sending a 5-digit code; (5) `mfa_enrolled` going stale when a factor was removed directly via the Supabase dashboard instead of `admin-unenroll` — `Login.jsx` now re-syncs it from Supabase's real factor list on every login; (6) self-service re-enroll's immediate profile refetch unmounted/remounted `MFASetup` mid-success via `Profile.jsx`'s loading guard, silently generating a new factor every time — refetch deferred to the Done button.
+
+---
+
 ## SAM Export — Fix `undefined` Risk Trend in Per-Network Report — June 18, 2026
 
 ### Problem

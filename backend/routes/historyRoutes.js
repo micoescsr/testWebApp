@@ -9,9 +9,10 @@ const express = require("express");
 const router = express.Router();
 const { authJWT } = require("../middleware/authMiddleware");
 const { requireActiveProfile } = require("../middleware/statusMiddleware");
+const { requireAAL2 } = require("../middleware/mfaMiddleware");
 const historyController = require("../controllers/historyController");
 
-router.get("/vulnerabilities", authJWT, requireActiveProfile, historyController.getVulnerabilityHistory);
-router.get("/threats", authJWT, requireActiveProfile, historyController.getThreatHistory);
+router.get("/vulnerabilities", authJWT, requireActiveProfile, requireAAL2, historyController.getVulnerabilityHistory);
+router.get("/threats", authJWT, requireActiveProfile, requireAAL2, historyController.getThreatHistory);
 
 module.exports = router;

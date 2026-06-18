@@ -200,3 +200,67 @@ describe("Authorization — active profile middleware", () => {
     expect(res.status).toBe(403);
   });
 });
+
+// ─── D. AAL2 (MFA) enforcement ──────────────────────────────────────────────
+
+describe("Authorization — AAL2 (MFA) enforcement", () => {
+  function mockUserTokenWithAal(aal) {
+    mockJoseModule.jwtVerify.mockResolvedValue({
+      payload: {
+        sub: "user-123",
+        email: "user@example.com",
+        role: "authenticated",
+        aud: "authenticated",
+        aal,
+      },
+    });
+  }
+
+  // A prior describe block's test ("inactive user receives 403") leaves
+  // mockSupabaseAdmin.from returning an inactive-status chain — mockReturnValue
+  // persists across afterEach's clearAllMocks(). Reset to active so authJWT's
+  // own inline status check (and requireActiveProfile, if a route adds it)
+  // don't 403 before requireAAL2 ever runs.
+  beforeEach(() => {
+    mockSupabaseAdmin.from.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { status: "active" }, error: null }),
+    });
+  });
+
+  test("aal1 token on AAL2-gated route → 403 MFA_REQUIRED", async () => {
+    mockUserTokenWithAal("aal1");
+
+    const res = await request(app)
+      .get("/api/protected/aal2")
+      .set("Authorization", "Bearer aal1-token");
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("MFA_REQUIRED");
+  });
+
+  test("missing aal claim on AAL2-gated route → 403 MFA_REQUIRED", async () => {
+    mockJoseModule.jwtVerify.mockResolvedValue({
+      payload: { sub: "user-123", email: "user@example.com", role: "authenticated", aud: "authenticated" },
+    });
+
+    const res = await request(app)
+      .get("/api/protected/aal2")
+      .set("Authorization", "Bearer no-aal-token");
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("MFA_REQUIRED");
+  });
+
+  test("aal2 token on AAL2-gated route → 200", async () => {
+    mockUserTokenWithAal("aal2");
+
+    const res = await request(app)
+      .get("/api/protected/aal2")
+      .set("Authorization", "Bearer aal2-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+});

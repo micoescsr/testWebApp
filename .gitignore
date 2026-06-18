@@ -30,3 +30,6 @@ dist-ssr
 .env.*
 !.env.example
 !.env.production.example
+
+# subagent-driven-development scratch (task briefs/reports/diffs)
+/sdd/

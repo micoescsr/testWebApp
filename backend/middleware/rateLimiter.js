@@ -29,4 +29,12 @@ const globalLimiter = rateLimit({
   message: { error: 'Too many requests' },
 });
 
-module.exports = { loginLimiter, refreshLimiter, globalLimiter };
+const mfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // 20 MFA sync-status calls per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many MFA requests, please try again later' },
+});
+
+module.exports = { loginLimiter, refreshLimiter, globalLimiter, mfaLimiter };
