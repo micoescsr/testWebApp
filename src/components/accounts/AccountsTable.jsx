@@ -1,6 +1,6 @@
 // components/accounts/AccountsTable.jsx
 
-const AccountsTable = ({ users, onEdit }) => {
+const AccountsTable = ({ users, onEdit, onResetMfa }) => {
   // Helper to style status badges
   const getStatusBadge = (status) => {
     const s = status ? status.toLowerCase() : "active"; // default to active if undefined
@@ -30,11 +30,15 @@ const AccountsTable = ({ users, onEdit }) => {
               <td>{user.email}</td>
               <td>{user.role}</td>
               <td>{getStatusBadge(user.status)}</td>
-              <td
-                className="edit-action"
-                onClick={() => onEdit(user)}
-              >
-                Edit Details
+              <td className="actions-cell">
+                <span className="edit-action" onClick={() => onEdit(user)}>
+                  Edit Details
+                </span>
+                {user.username !== "Unknown" && (
+                  <span className="edit-action" onClick={() => onResetMfa(user)}>
+                    Reset MFA
+                  </span>
+                )}
               </td>
             </tr>
           ))}

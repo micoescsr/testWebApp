@@ -11,7 +11,7 @@ import useAuditLogs from "../../hooks/useAuditLogs";
 //import { updateUser } from "../../api/userApi";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
-import { updateUser, activateUserWithTemp, deactivateUser, reactivateUser } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
+import { updateUser, activateUserWithTemp, deactivateUser, reactivateUser, adminUnenrollMfa } from "../../api/userApi"; // ADDED 3:34 PMFEB 11
 import { useSessionState } from "../../hooks/useSessionState";
 import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
@@ -166,6 +166,17 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
       actionSucceeded = true;
     }
 
+    // Handle MFA reset (superadmin recovery for a lost device)
+    if (modalMode === "reset-mfa" && selectedUser?.id) {
+      await adminUnenrollMfa(selectedUser.id);
+      await fetchUsers();
+      showToast(
+        "MFA has been reset for this user. They will be prompted to re-enroll on next login.",
+        "success"
+      );
+      actionSucceeded = true;
+    }
+
     // Handle reactivation — temp password is always issued for security
     if (modalMode === "reactivate" && selectedUser?.id) {
       const profilePayload = pendingUser ? {
@@ -277,6 +288,19 @@ const handleDeactivate = (userToDeactivate) => {
   setShowConfirmModal(true);
 };
 
+// Reset MFA handler — called directly from the accounts table row
+const handleResetMfa = (user) => {
+  if (!user?.id) {
+    console.error("handleResetMfa: No valid user with id found");
+    return;
+  }
+  setSelectedUser(user);
+  setModalMode("reset-mfa");
+  setReturnToUserModal(false);
+  setShowUserModal(false);
+  setShowConfirmModal(true);
+};
+
 // Reactivate account handler — called from UserForm with edited form data
 const handleReactivate = (formData) => {
   // formData contains { id, firstName, lastName, username, email, role, name }
@@ -350,6 +374,7 @@ const handleReactivate = (formData) => {
             <AccountsTable
               users={users}
               onEdit={openEditUser}
+              onResetMfa={handleResetMfa}
             />
           )}
 
@@ -426,9 +451,9 @@ const handleReactivate = (formData) => {
               disabled={isProcessing}
               onClick={cancelConfirm}> Cancel </button>
             
-            <button className={ (modalMode === "delete" || modalMode === "deactivate") ? "tertiary-btn" : "confirm-btn" } 
+            <button className={ (modalMode === "delete" || modalMode === "deactivate" || modalMode === "reset-mfa") ? "tertiary-btn" : "confirm-btn" }
               disabled={isProcessing}
-              onClick={confirmAction}> {isProcessing ? "Processing..." : (modalMode === "deactivate" ? "Deactivate" : modalMode === "reactivate" ? "Reactivate" : "Confirm")} </button>
+              onClick={confirmAction}> {isProcessing ? "Processing..." : (modalMode === "deactivate" ? "Deactivate" : modalMode === "reactivate" ? "Reactivate" : modalMode === "reset-mfa" ? "Reset MFA" : "Confirm")} </button>
           </>
         }
       >
@@ -444,7 +469,26 @@ const handleReactivate = (formData) => {
             ""}
           {modalMode === "reactivate" &&
             ""}
+          {modalMode === "reset-mfa" &&
+            ""}
         </p>
+
+        {/* Reset MFA details panel */}
+        {modalMode === "reset-mfa" && selectedUser && (
+          <div style={{ padding: '12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fca5a5' }}>
+            <p style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem', color: '#991b1b' }}>
+              Reset MFA
+            </p>
+            <p style={{ fontSize: '0.85rem', color: '#333', marginBottom: '8px' }}>
+              This will remove all authenticator factors for <strong>{selectedUser.email || selectedUser.username || 'this user'}</strong>. This cannot be undone — there are no recovery codes.
+            </p>
+            <ul style={{ fontSize: '0.8rem', color: '#666', margin: '0', paddingLeft: '18px', lineHeight: '1.6' }}>
+              <li>All authenticator app factors are removed immediately</li>
+              <li>The user will be forced through MFA setup again on their next login</li>
+              <li>A <strong>USER.MFA_RESET</strong> audit event will be logged</li>
+            </ul>
+          </div>
+        )}
 
         {/* Deactivation details panel */}
         {modalMode === "deactivate" && selectedUser && (

@@ -51,7 +51,12 @@
   background-color: #fff;
 }
 
-/* Edit action link */
+/* Edit/action links */
+.actions-cell {
+  display: flex;
+  gap: 14px;
+}
+
 .edit-action {
   color: #2563eb;
   cursor: pointer;
