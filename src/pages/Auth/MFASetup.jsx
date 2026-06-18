@@ -151,96 +151,104 @@ function MFASetup({ mode = "forced", onSuccess }) {
     window.location.replace("/login");
   };
 
+  // "forced" renders as the full standalone /mfa-setup page (own
+  // background/card chrome, matching ForgotPassword/ForceResetPassword).
+  // "self-service" renders just the inner content — the Profile page
+  // hosts it inside its own modal, which already provides page chrome.
+  const Wrapper = mode === "forced"
+    ? ({ children }) => (
+        <div className="auth-page">
+          <div className="auth-card">{children}</div>
+        </div>
+      )
+    : ({ children }) => <>{children}</>;
+
   if (initializing) {
     return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <p className="auth-subtitle">Setting up two-factor authentication...</p>
-          {error && <p className="error-text">{error}</p>}
-        </div>
-      </div>
+      <Wrapper>
+        <p className="auth-subtitle">Setting up two-factor authentication...</p>
+        {error && <p className="error-text">{error}</p>}
+      </Wrapper>
     );
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1 className="auth-title">Set up two-factor authentication</h1>
-        <p className="auth-subtitle">
-          Scan this QR code with your authenticator app, then enter the
-          6-digit code it generates.
-        </p>
+    <Wrapper>
+      <h1 className="auth-title">Set up two-factor authentication</h1>
+      <p className="auth-subtitle">
+        Scan this QR code with your authenticator app, then enter the
+        6-digit code it generates.
+      </p>
 
-        {successMessage && <p className="success-text">{successMessage}</p>}
+      {successMessage && <p className="success-text">{successMessage}</p>}
 
-        {/* enroll() failed (possibly after unenrolling an old factor in
-            self-service mode, or after "Start over") — no factor to show
-            a form for, so surface the error here with a way to retry
-            instead of leaving the user on a dead-end screen. */}
-        {!factor && error && (
-          <>
-            <p className="error-text">{error}</p>
-            <button className="auth-button" type="button" onClick={startEnrollment}>
-              Retry
+      {/* enroll() failed (possibly after unenrolling an old factor in
+          self-service mode, or after "Start over") — no factor to show
+          a form for, so surface the error here with a way to retry
+          instead of leaving the user on a dead-end screen. */}
+      {!factor && error && (
+        <>
+          <p className="error-text">{error}</p>
+          <button className="auth-button" type="button" onClick={startEnrollment}>
+            Retry
+          </button>
+          {mode === "forced" && (
+            <button className="auth-button-secondary" type="button" onClick={handleCancel}>
+              Cancel and log out
             </button>
+          )}
+        </>
+      )}
+
+      {factor && (
+        <>
+          <TotpQrDisplay qrCodeSvg={factor.totp.qr_code} secret={factor.totp.secret} />
+
+          <form className="auth-form" onSubmit={handleVerify}>
+            <div className="form-group">
+              <label htmlFor="totp-code">Authentication code</label>
+              <input
+                id="totp-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                disabled={verifying}
+                maxLength={6}
+              />
+            </div>
+
+            {error && <p className="error-text">{error}</p>}
+
+            <button className="auth-button" type="submit" disabled={verifying || code.length !== 6}>
+              {verifying ? "Verifying..." : "Verify and enable"}
+            </button>
+
+            <button
+              className="auth-button-secondary"
+              type="button"
+              onClick={handleStartOver}
+              disabled={verifying}
+            >
+              Start over
+            </button>
+
             {mode === "forced" && (
-              <button className="auth-button-secondary" type="button" onClick={handleCancel}>
-                Cancel and log out
-              </button>
-            )}
-          </>
-        )}
-
-        {factor && (
-          <>
-            <TotpQrDisplay qrCodeSvg={factor.totp.qr_code} secret={factor.totp.secret} />
-
-            <form className="auth-form" onSubmit={handleVerify}>
-              <div className="form-group">
-                <label htmlFor="totp-code">Authentication code</label>
-                <input
-                  id="totp-code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="123456"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  disabled={verifying}
-                  maxLength={6}
-                />
-              </div>
-
-              {error && <p className="error-text">{error}</p>}
-
-              <button className="auth-button" type="submit" disabled={verifying || code.length !== 6}>
-                {verifying ? "Verifying..." : "Verify and enable"}
-              </button>
-
               <button
                 className="auth-button-secondary"
                 type="button"
-                onClick={handleStartOver}
+                onClick={handleCancel}
                 disabled={verifying}
               >
-                Start over
+                Cancel and log out
               </button>
-
-              {mode === "forced" && (
-                <button
-                  className="auth-button-secondary"
-                  type="button"
-                  onClick={handleCancel}
-                  disabled={verifying}
-                >
-                  Cancel and log out
-                </button>
-              )}
-            </form>
-          </>
-        )}
-      </div>
-    </div>
+            )}
+          </form>
+        </>
+      )}
+    </Wrapper>
   );
 }
 

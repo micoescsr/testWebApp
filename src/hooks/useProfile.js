@@ -11,33 +11,34 @@ export const useProfile = () => {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
 
+  const loadProfile = async () => {
+    try {
+      setProfileLoading(true);
+      setProfileError(null);
+
+      // Get profile data from backend (Bearer token attached by axios interceptor)
+      const res = await api.get("webapp/users/profiles/me");
+      const p = res.data;
+
+      setProfile({
+        id: p.id,
+        email: p.email,
+        firstName: p.first_name,
+        lastName: p.last_name,
+        username: p.username,
+        role: p.role,
+        status: p.status,
+        mfaEnrolled: p.mfa_enrolled,
+      });
+    } catch (err) {
+      console.error("loadProfile error:", err);
+      setProfileError("Failed to load profile");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        setProfileLoading(true);
-        setProfileError(null);
-
-        // Get profile data from backend (Bearer token attached by axios interceptor)
-        const res = await api.get("webapp/users/profiles/me");
-        const p = res.data;
-
-        setProfile({
-          id: p.id,
-          email: p.email,
-          firstName: p.first_name,
-          lastName: p.last_name,
-          username: p.username,
-          role: p.role,
-          status: p.status,
-        });
-      } catch (err) {
-        console.error("loadProfile error:", err);
-        setProfileError("Failed to load profile");
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-
     loadProfile();
   }, []);
 
@@ -92,6 +93,7 @@ export const useProfile = () => {
     profile,
     profileLoading,
     profileError,
+    refetchProfile: loadProfile,
     resetPassword,
     passwordLoading,
     passwordError,

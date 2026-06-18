@@ -198,6 +198,51 @@
   }
 }
 
+/* ---------- MFA section ---------- */
+.profile-mfa-card {
+  margin-top: 24px;
+}
+
+.profile-mfa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profile-mfa-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-mfa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.profile-mfa-badge.enabled {
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.profile-mfa-badge.disabled {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.profile-mfa-helper {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
 /* ---------- Password validation ---------- */
 .password-errors {
   margin: 4px 0 0;
