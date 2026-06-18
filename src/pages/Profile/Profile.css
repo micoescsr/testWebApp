@@ -198,6 +198,14 @@
   }
 }
 
+/* ---------- MFA modal header ---------- */
+.profile-mfa-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
 /* ---------- MFA section ---------- */
 .profile-mfa-card {
   margin-top: 24px;

@@ -121,7 +121,7 @@ const Profile = () => {
         <BaseModal
           isOpen={showMfaModal}
           onClose={() => setShowMfaModal(false)}
-          header={<h3 className="accounts-modal-title">Re-enroll two-factor authentication</h3>}
+          header={<h3 className="profile-mfa-modal-title">Re-enroll two-factor authentication</h3>}
         >
           <MFASetup mode="self-service" onSuccess={refetchProfile} />
         </BaseModal>
