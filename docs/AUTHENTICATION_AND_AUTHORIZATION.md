@@ -203,20 +203,32 @@ sequenceDiagram
 
 ### Route-Level Protection Map
 
-| Backend Route Group | Auth Required | Role Required |
-|---------------------|:---:|:---:|
-| `/api/auth` (login, set-refresh) | ✗ | — |
-| `/api/auth` (logout, refresh, clear-force-reset) | ✓ | — |
-| `/api/webapp` | ✓ | — |
-| `/api/rasPi` | ✓ | — |
-| `/api/sam` | ✓ | — |
-| `/api/dashboard` | ✓ | — |
-| `/api/device` | ✓ | — |
-| `/api/captivePortal` | ✓ | — |
-| `/api/detect` | ✓ | — |
-| `/api/history` | ✓ | — |
-| `/api/audit` | ✓ | superadmin |
-| `/health` | ✗ | — |
+| Backend Route Group | Auth Required | AAL2 Required | Role Required |
+|---------------------|:---:|:---:|:---:|
+| `/api/auth` (login, set-refresh, refresh, logout, clear-force-reset) | ✗/✓* | ✗ | — |
+| `/api/auth/mfa/sync-status` | ✓ | ✗ | — |
+| `/api/auth/mfa/admin-unenroll/:id` | ✓ | ✓ | superadmin |
+| `/api/webapp/users/profiles/me` (GET) | ✓ | ✗ | — |
+| `/api/webapp` (all other routes, incl. `/users/*`) | ✓ | ✓ | varies |
+| `/api/rasPi` | ✓ | ✓ | — |
+| `/api/sam` | ✓ | ✓ | — |
+| `/api/dashboard` | ✓ | ✓ | — |
+| `/api/device` | ✓ | ✓ | — |
+| `/api/device/scan-completed` | ✗ (shared-secret token) | ✗ | — |
+| `/api/captivePortal` | ✓ | ✓ | — |
+| `/api/detect` | ✓ | ✓ | — |
+| `/api/history` | ✓ | ✓ | — |
+| `/api/pi` | ✓ | ✓ | — |
+| `/api/audit` | ✓ | ✓ | superadmin |
+| `/health` | ✗ | ✗ | — |
+
+\* `login`/`set-refresh`/`refresh` don't need a prior token; `logout`/
+`clear-force-reset` do — see `routes/authRoutes.js`.
+
+AAL2-exempt routes are the pre-MFA auth steps above, plus the MFA
+enrollment endpoints themselves (`mfa/sync-status`) and `GET
+/users/profiles/me` — the frontend needs to read `mfa_enrolled` at `aal1`
+to know whether to redirect to `/mfa-setup` (see §11).
 
 ---
 
@@ -310,9 +322,96 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 ---
 
+## 11. Multi-Factor Authentication (TOTP)
+
+MFA is **mandatory for every account** (admin and superadmin alike) —
+password-only auth was the weakest link in an otherwise hardened stack.
+There is no opt-out and no "disable MFA" surface anywhere in the app.
+
+### Architecture
+
+MFA is implemented entirely via **Supabase Auth's native MFA API**
+(`supabase.auth.mfa.*`) on the frontend. Supabase manages TOTP factors in
+its own `auth.mfa_factors` table — the backend never generates, stores, or
+verifies a TOTP secret/code itself. The enforcement signal is the JWT
+**`aal` claim** (`aal1` = password only, `aal2` = password + verified MFA),
+which Supabase adds to the access token once a verified factor exists for
+a user.
+
+```mermaid
+graph TD
+    SPA["React SPA<br/>supabase.auth.mfa.*"]
+    SB_AUTH["Supabase Auth<br/>(manages TOTP factors + aal claim)"]
+    JWT["JWT payload.aal"]
+    AUTH_MW["authJWT / optionalAuthJWT<br/>req.user.aal = payload.aal || aal1"]
+    AAL_MW["requireAAL2 middleware"]
+    ROUTE["Protected route handler"]
+
+    SPA -->|"enroll/challenge/verify"| SB_AUTH
+    SB_AUTH -->|"issues JWT with aal2"| JWT
+    JWT --> AUTH_MW
+    AUTH_MW --> AAL_MW
+    AAL_MW -->|"req.user.aal === aal2"| ROUTE
+    AAL_MW -->|"else"| DENY["403 MFA_REQUIRED<br/>+ AUTHORIZATION.DENIED audit log"]
+```
+
+### Backend enforcement
+
+| Component | File | Role |
+|-----------|------|------|
+| `authJWT` / `optionalAuthJWT` | `middleware/authMiddleware.js` | Surfaces `payload.aal` (default `"aal1"`) onto `req.user.aal` |
+| `requireAAL2` | `middleware/mfaMiddleware.js` | 403s with `{ error, code: "MFA_REQUIRED" }` unless `req.user.aal === "aal2"`; audit-logs `AUTHORIZATION.DENIED` (`reason: "aal_insufficient"`) on denial, mirroring `requireSuperadmin`'s pattern |
+| `mfaController.syncStatus` | `controllers/mfaController.js` | `POST /api/auth/mfa/sync-status` — re-derives `profiles.mfa_enrolled` from `supabaseAdmin.auth.admin.mfa.listFactors()` (never trusts the client body alone); audit-logs `USER.MFA_ENROLLED`/`USER.MFA_UNENROLLED` |
+| `mfaController.adminUnenroll` | `controllers/mfaController.js` | `POST /api/auth/mfa/admin-unenroll/:id` (superadmin + AAL2 only) — removes all TOTP factors via `supabaseAdmin.auth.admin.mfa.deleteFactor()`, sets `mfa_enrolled = false`, audit-logs `USER.MFA_RESET` |
+
+`profiles.mfa_enrolled` (boolean, default `false`) is an **advisory** flag
+only, used for fast UI checks (the forced-enrollment gate, the Profile
+page badge, the Accounts table). It's kept in sync by the backend on
+enroll/unenroll, but a stale flag can't bypass security — actual
+enforcement is always the JWT `aal` claim, checked fresh on every request.
+
+### Frontend flow
+
+| Step | File | Behavior |
+|------|------|----------|
+| Login challenge | `pages/Login/Login.jsx`, `pages/Auth/MFAChallenge.jsx` | After password sign-in, checks `getAuthenticatorAssuranceLevel()`. If the account needs `aal2`, renders `MFAChallenge` (6-digit code, auto-submit, auto-retry on expired challenge) before continuing to the dashboard |
+| Forced enrollment gate | `src/App.jsx` | During bootstrap, fetches `mfa_enrolled` (via the AAL2-exempt `GET /users/profiles/me`) and redirects any authenticated user without it to `/mfa-setup` — a persistent gate re-checked on every render, not just at login |
+| Enrollment | `pages/Auth/MFASetup.jsx`, `components/auth/TotpQrDisplay.jsx` | QR code + manual-entry secret, 6-digit verify, "Start over"/"Retry" recovery. `mode="forced"` (standalone `/mfa-setup` page) and `mode="self-service"` (embedded in a Profile modal, replaces the existing factor) |
+| Profile management | `pages/Profile/Profile.jsx` | "Two-Factor Authentication" card — Enabled badge + "Re-enroll (new device)", or a setup prompt if somehow not enrolled. No disable option |
+| Superadmin recovery | `pages/AccountsAudit/AccountsAudit.jsx` | Per-row "Reset MFA" action (confirmation required) for any account — calls `admin-unenroll/:id` |
+
+On every successful `verify()` (login challenge or enrollment), the
+frontend immediately applies the new `aal2` session
+(`setAccessToken` + `POST auth/set-refresh`) **before** making any other
+backend call, so the very next request isn't bounced by `requireAAL2`.
+
+### Recovery — always admin-assisted
+
+Supabase TOTP has **no recovery codes**. If a user loses their
+authenticator device, a superadmin must reset their MFA via the Accounts
+table ("Reset MFA" action → `POST /api/auth/mfa/admin-unenroll/:id`),
+which removes all factors and forces re-enrollment on the user's next
+login.
+
+**Break-glass procedure** (sole superadmin loses their device, no other
+superadmin available to reset them): there is no UI for this case. The
+factor must be removed manually via **Supabase Dashboard → Authentication
+→ Users → select user → remove MFA factor**. Document-only, by design —
+this is the one case where the Admin API path doesn't apply.
+
+### Migration note for existing accounts
+
+On first deploy, every existing account has `mfa_enrolled = false` and
+gets forced through `/mfa-setup` on next login — there's no grace period,
+since MFA is mandatory for everyone from day one of this feature.
+
+---
+
 ## ⚠️ Needs Verification
 
 - **Supabase JWT expiry**: Default Supabase access token expiry is ~1 hour; verify if custom expiry is configured
 - **Cookie attributes**: Verify `SameSite`, `Secure`, `HttpOnly`, `Path`, and `Max-Age` attributes on the refresh cookie
 - **CORS + cookies in production**: `CROSS_ORIGIN_COOKIES=true` must be set on Railway backend for cross-origin cookie flow
 - **Multi-tab behavior**: Each tab has its own in-memory access token; verify that refresh cookie sharing across tabs works correctly
+- **Supabase project MFA settings**: confirm TOTP MFA is enabled in Supabase Dashboard → Authentication → Providers → Multi-Factor Authentication ("Authenticator App" toggle ON) — `mfa.enroll()` fails at runtime regardless of code if this is off
+- **`aal` claim presence**: confirm the issued JWT actually includes `aal` for this project (enroll a test factor, decode the resulting access token, check for `aal: "aal2"` after `mfa.verify()`) — Supabase only emits `aal` once any factor exists for the project/user

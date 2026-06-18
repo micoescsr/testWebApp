@@ -237,6 +237,15 @@ npm run lint
 - [ ] Session refresh on page reload (protected routes)
 - [ ] Auto-logout on refresh token expiry
 
+### Multi-Factor Authentication (MFA)
+
+- [ ] Fresh account login → forced to `/mfa-setup` → scan QR → verify → reaches dashboard
+- [ ] Logout/login again → MFA challenge appears → correct code → dashboard
+- [ ] Wrong code 3x → error shown, no account lockout (only challenge retry)
+- [ ] `aal1` token directly against an AAL2-gated route (curl) → 403 `MFA_REQUIRED`
+- [ ] Superadmin resets another user's MFA → that user forced through `/mfa-setup` again on next login
+- [ ] Re-enroll (new device) via Profile → old factor replaced, AAL2 still enforced
+
 ### Dashboard
 
 - [ ] Summary view loads with charts
