@@ -1,4 +1,5 @@
 import { useState } from "react";
+import SeverityBadge from "../../components/common/SeverityBadge/SeverityBadge";
 import { buildPerNetworkReportData } from "../../utils/reportDataAdapter";
 import { generatePerNetworkReportHTML } from "../../utils/reportTemplates";
 import { exportReport } from "../../utils/exportReport";
@@ -37,7 +38,7 @@ const ThreatDetail = ({ threat, onBack }) => {
 
       <div className="detail-card">
         <div className="detail-header">
-          <span className="severity critical">{threat.severity}</span>
+          <SeverityBadge level={threat.severity} size="lg" />
           <h3>{threat.name}</h3>
         </div>
 

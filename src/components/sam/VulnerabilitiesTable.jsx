@@ -1,6 +1,7 @@
 // components/sam/VulnerabilitiesTable.jsx
 import { useState, useMemo, Fragment } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
+import SeverityBadge from "../../components/common/SeverityBadge/SeverityBadge";
 import Pagination from "../../components/common/Pagination/Pagination";
 import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
@@ -255,13 +256,7 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
                           className="group-child-row"
                         >
                           <td>
-                            <span
-                              className={`severity ${String(
-                                vuln.severity || ""
-                              ).toLowerCase()}`}
-                            >
-                              {vuln.severity ?? "N/A"}
-                            </span>
+                            <SeverityBadge level={vuln.severity} />
                           </td>
                           <td>{vuln.name}</td>
                           <td>{vuln.score ?? "N/A"}</td>

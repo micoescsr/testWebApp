@@ -434,30 +434,8 @@
   text-align: right;
 }
 
-.severity {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.severity.critical {
-  background-color: #b91c1c;
-}
-
-.severity.high {
-  background-color: #f97316;
-}
-
-.severity.medium {
-  background-color: #eab308;
-}
-
-.severity.low {
-  background-color: #16a34a;
-}
+/* Orphaned .severity classes removed — History tables use .risk-score-chip,
+   and severity badges now use the shared <SeverityBadge> component. */
 
 .view-link {
   color: #2563eb;

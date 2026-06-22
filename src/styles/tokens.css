@@ -1,0 +1,148 @@
+/* ============================================================================
+ * Why-PII? Design Tokens — single source of truth for color, severity,
+ * typography, spacing, radius, and elevation.
+ *
+ * Strategy: CSS custom properties (no utility framework in this project).
+ * Theme is selected via [data-theme="dark"] / [data-theme="light"] on <html>.
+ * Dark is the default SOC-console theme; light is the toggle alternative.
+ *
+ * Consume with var(--token). Do NOT hardcode raw hex/px in new or touched CSS.
+ * Severity scale is the product's core signal — change values HERE only.
+ * ========================================================================== */
+
+:root {
+  /* --- Typography scale (collapses 60+ ad-hoc sizes) --- */
+  --font-sans: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "Consolas", "Monaco", monospace;
+
+  --text-xs: 0.75rem;   /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base: 0.875rem;/* 14px */
+  --text-md: 1rem;      /* 16px */
+  --text-lg: 1.125rem;  /* 18px */
+  --text-xl: 1.375rem;  /* 22px */
+  --text-2xl: 1.75rem;  /* 28px */
+  --text-3xl: 2.25rem;  /* 36px */
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* --- Spacing scale (4px base, compact SOC density) --- */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem;  /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem;    /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem;  /* 24px */
+  --space-7: 2rem;    /* 32px */
+  --space-8: 3rem;    /* 48px */
+
+  /* Compact table-row vertical padding (SOC console density) */
+  --row-pad-y: 0.4375rem; /* 7px */
+  --row-pad-x: 1rem;
+
+  /* --- Radius scale (one system, skill §4.4 shape lock) --- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+}
+
+/* ============================================================================
+ * DARK THEME (default SOC console)
+ * ========================================================================== */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces — off-black ramp (never pure #000) */
+  --surface-0: #0b0e14; /* app background */
+  --surface-1: #131722; /* panels / cards */
+  --surface-2: #1b2130; /* elevated / table rows / hover */
+  --surface-3: #232b3b; /* popovers / strong elevation */
+  --border: #2a3242;
+  --border-strong: #3a4458;
+
+  --text-primary: #e6e9ef;
+  --text-secondary: #aab2c0;
+  --text-muted: #7a8494;
+  --text-on-accent: #04121a;
+
+  /* Non-severity interactive accent — cyan/teal (distinct from severity + info) */
+  --accent: #06b6d4;
+  --accent-hover: #22c9e0;
+  --accent-soft: rgba(6, 182, 212, 0.14);
+  --focus-ring: #06b6d4;
+
+  /* --- Severity scale (Direction A, Classic SOC) ---
+   * -fg = text/icon color, -bg = tinted fill behind it. */
+  --sev-critical-fg: #ff4d4f;
+  --sev-critical-bg: rgba(255, 77, 79, 0.16);
+  --sev-high-fg: #ff8c1a;
+  --sev-high-bg: rgba(255, 140, 26, 0.16);
+  --sev-medium-fg: #facc15;
+  --sev-medium-bg: rgba(250, 204, 21, 0.16);
+  --sev-low-fg: #22c55e;
+  --sev-low-bg: rgba(34, 197, 94, 0.16);
+  --sev-info-fg: #3b82f6;
+  --sev-info-bg: rgba(59, 130, 246, 0.16);
+  --sev-none-fg: #9aa4b2;
+  --sev-none-bg: rgba(154, 164, 178, 0.14);
+
+  /* Status (non-severity semantic) */
+  --success: #22c55e;
+  --warning: #facc15;
+  --danger: #ff4d4f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================================
+ * LIGHT THEME (toggle alternative)
+ * Severity -fg darkened for AA on light bg; -bg lightened.
+ * ========================================================================== */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-0: #f5f6f8;
+  --surface-1: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #ffffff;
+  --border: #e1e5eb;
+  --border-strong: #c9d0da;
+
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+  --text-on-accent: #ffffff;
+
+  --accent: #0891b2;
+  --accent-hover: #06b6d4;
+  --accent-soft: rgba(8, 145, 178, 0.10);
+  --focus-ring: #0891b2;
+
+  --sev-critical-fg: #c81e1e;
+  --sev-critical-bg: #fde8e8;
+  --sev-high-fg: #c2570c;
+  --sev-high-bg: #fdf0e3;
+  --sev-medium-fg: #92710a;
+  --sev-medium-bg: #fef6d6;
+  --sev-low-fg: #15803d;
+  --sev-low-bg: #e4f7ea;
+  --sev-info-fg: #1d4ed8;
+  --sev-info-bg: #e6edfd;
+  --sev-none-fg: #6b7280;
+  --sev-none-bg: #eef1f5;
+
+  --success: #15803d;
+  --warning: #92710a;
+  --danger: #c81e1e;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.10);
+  --shadow-lg: 0 12px 40px rgba(16, 24, 40, 0.14);
+}

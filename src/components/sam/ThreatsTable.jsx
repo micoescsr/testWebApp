@@ -1,6 +1,7 @@
 // components/sam/ThreatsTable.jsx
 import React, { useState } from "react";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
+import SeverityBadge from "../../components/common/SeverityBadge/SeverityBadge";
 import Pagination from "../../components/common/Pagination/Pagination";
 import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
@@ -178,13 +179,7 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
                   <React.Fragment key={t.id}>
                     <tr>
                       <td>
-                        <span
-                          className={`severity ${
-                            typeof t.severity === "string" ? t.severity.toLowerCase() : "unknown"
-                          }`}
-                        >
-                          {t.severity || "UNKNOWN"}
-                        </span>
+                        <SeverityBadge level={t.severity} />
                       </td>
                       <td>
                         <div style={{ display: "flex", flexDirection: "column" }}>

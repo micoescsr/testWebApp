@@ -1,6 +1,7 @@
 // components/modals/FindingDetailModal/FindingDetailModal.jsx
 import { useState } from "react";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import SeverityBadge from "../../common/SeverityBadge/SeverityBadge";
 import "./FindingDetailModal.css";
 
 const FindingDetailModal = ({ onClose, vulnerability, loading }) => {
@@ -48,11 +49,7 @@ const FindingDetailModal = ({ onClose, vulnerability, loading }) => {
       >
         <div className="modal-header">
           <div className="modal-title-row">
-            <span
-              className={`severity ${vulnerability.severity.toLowerCase()}`}
-            >
-              {vulnerability.severity}
-            </span>
+            <SeverityBadge level={vulnerability.severity} />
             <h2>{vulnerability.name}</h2>
             <button className="modal-info-btn">ⓘ</button>
           </div>

@@ -130,22 +130,9 @@
   background: #f5f5f5;
 }
 
-.severity {
-  display: inline-block;
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.severity.critical {
-  background-color: #c1121f;
-}
-
-.severity.high {
-  background-color: #f97316;
-}
+/* Severity rendering moved to the shared <SeverityBadge> component
+   (components/common/SeverityBadge). The old .severity classes were
+   removed to eliminate duplicated/conflicting severity colors. */
 
 /* Reset button chrome so semantic <button>s inherit table-cell/header look */
 .cell-action-btn {
