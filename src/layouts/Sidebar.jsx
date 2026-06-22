@@ -12,6 +12,17 @@ import { logout as apiLogout } from "../api/authApi";
 import { setAccessToken } from "../api/axios";
 import { clearSessionState } from "../hooks/useSessionState";
 import LogoutConfirmModal from "../components/modals/LogoutConfirmModal/LogoutConfirmModal";
+import {
+  SquaresFour,
+  ShieldCheck,
+  DeviceMobile,
+  FolderUser,
+  ClockCounterClockwise,
+  UserCircle,
+  SignOut,
+  List,
+  X,
+} from "@phosphor-icons/react";
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -85,27 +96,27 @@ const Sidebar = () => {
   };
 
   const menuItems = [
-    { path: "/dashboard", icon: "☷", label: "Dashboard" },
+    { path: "/dashboard", icon: <SquaresFour size={20} weight="duotone" />, label: "Dashboard" },
     {
       path: "/security-assessment",
-      icon: "⚡",
+      icon: <ShieldCheck size={20} weight="duotone" />,
       label: "Security Assessment Management",
     },
     {
       path: networkId
         ? `/device-management?network_id=${networkId}${scanId ? `&scan_id=${scanId}` : ""}`
         : "/device-management",
-      icon: "📱",
+      icon: <DeviceMobile size={20} weight="duotone" />,
       label: "Device Management",
     },
     {
       path: "/accounts-audit",
-      icon: "📁",
+      icon: <FolderUser size={20} weight="duotone" />,
       label: "Accounts & Audit",
       superadminOnly: true,
     },
-    { path: "/history", icon: "📊", label: "Scan History" },
-    { path: "/profile", icon: "👤", label: "Profile" },
+    { path: "/history", icon: <ClockCounterClockwise size={20} weight="duotone" />, label: "Scan History" },
+    { path: "/profile", icon: <UserCircle size={20} weight="duotone" />, label: "Profile" },
   ];
 
   /* // While profile is loading, render nothing or a skeleton
@@ -152,7 +163,7 @@ const Sidebar = () => {
 
         <div className="sidebar-footer">
           <button className="logout-btn" onClick={requestLogout}>
-            <span className="nav-icon">🚪</span>
+            <span className="nav-icon"><SignOut size={20} weight="duotone" /></span>
             <span className="nav-label">Logout</span>
           </button>
         </div>
@@ -166,7 +177,7 @@ const Sidebar = () => {
             type="button"
             onClick={toggleMenu}
           >
-            {isOpen ? "✕" : "☰"}
+            {isOpen ? <X size={22} /> : <List size={22} />}
           </button>
           <div className="mobile-logo">Why-PII?</div>
         </div>
@@ -195,7 +206,7 @@ const Sidebar = () => {
         </nav>
 
         <button className="logout-btn mobile-logout" onClick={requestLogout}>
-          <span className="nav-icon">🚪</span>
+          <span className="nav-icon"><SignOut size={20} weight="duotone" /></span>
           <span className="nav-label">Logout</span>
         </button>
       </div>
