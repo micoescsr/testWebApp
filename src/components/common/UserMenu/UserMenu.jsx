@@ -2,12 +2,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfile } from "../../../hooks/useProfile";
+import { useTheme } from "../../../context/ThemeContext";
 import './UserMenu.css';
 
 const UserMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { profile } = useProfile();
+  const { theme, toggleTheme } = useTheme();
   const menuRef = useRef(null);
 
   const toggleDropdown = () => setIsOpen(!isOpen);
@@ -62,6 +64,19 @@ const UserMenu = () => {
       
       {isOpen && (
         <ul className="dropdown-menu">
+          <li
+            className="theme-toggle-item"
+            onClick={(e) => {
+              // Keep the menu open so the user sees the theme switch happen.
+              e.stopPropagation();
+              toggleTheme();
+            }}
+            role="switch"
+            aria-checked={theme === "light"}
+          >
+            <span className="menu-icon">{theme === "dark" ? "☾" : "☀"}</span>
+            {theme === "dark" ? "Switch to light" : "Switch to dark"}
+          </li>
           <li onClick={handleProfile}>
             <span className="menu-icon">👤</span>
             Profile

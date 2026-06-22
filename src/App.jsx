@@ -24,6 +24,7 @@ import api, { setAccessToken, getAccessToken } from "./api/axios";
 import { NetworkProvider } from "./context/NetworkContext";
 import { ThreatDetectionProvider } from "./context/ThreatDetectionContext";
 import { ToastProvider } from "./context/ToastContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import "./App.css";
 import UserMenu from "./components/common/UserMenu/UserMenu";
 import Spinner from "./components/common/Spinner/Spinner";
@@ -82,6 +83,7 @@ function App() {
   const isAuthenticated = !!getAccessToken();
 
   return (
+    <ThemeProvider>
     <ToastProvider>
     <NetworkProvider>
       <Router>
@@ -167,6 +169,7 @@ function App() {
       </Router>
     </NetworkProvider>
     </ToastProvider>
+    </ThemeProvider>
   );
 }
 
