@@ -2,7 +2,7 @@
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import "./BaseModal.css";
 
-const BaseModal = ({ isOpen, onClose, header, children, footer, disableOverlayClose = false }) => {
+const BaseModal = ({ isOpen, onClose, header, children, footer, disableOverlayClose = false, className = "", ariaLabel }) => {
   const handleEscape = () => {
     if (!disableOverlayClose) onClose();
   };
@@ -19,9 +19,10 @@ const BaseModal = ({ isOpen, onClose, header, children, footer, disableOverlayCl
   return (
     <div className="base-modal-overlay" onClick={handleOverlayClick}>
       <div
-        className="base-modal-container"
+        className={`base-modal-container${className ? ` ${className}` : ""}`}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
         tabIndex={-1}
         ref={containerRef}
         onClick={(e) => e.stopPropagation()}

@@ -1,36 +1,30 @@
-/* RawEvidenceModal.css */
+/* RawEvidenceModal — container sizing + BaseModal slot overrides */
 
-.raw-evidence-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  z-index: 1100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.raw-evidence-modal {
-  background-color: var(--surface-1);
-  border-radius: var(--radius-lg);
+.raw-evidence-container {
   width: 560px;
   max-width: 92vw;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg);
 }
 
-.raw-evidence-header {
-  display: flex;
-  justify-content: space-between;
+.raw-evidence-container .base-modal-header {
   align-items: flex-start;
   padding: var(--space-5) var(--space-6) var(--space-3);
   border-bottom: 1px solid var(--border);
 }
+
+.raw-evidence-container .base-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.raw-evidence-container .base-modal-footer {
+  justify-content: center;
+}
+
+/* Header content */
 
 .raw-evidence-header-left {
   flex: 1;
@@ -94,10 +88,8 @@
   border-color: var(--accent);
 }
 
-/* Body */
-.raw-evidence-body {
-  flex: 1;
-  overflow-y: auto;
+/* Body content */
+.raw-evidence-content {
   padding: var(--space-4) var(--space-6);
 }
 
@@ -144,15 +136,7 @@
   overflow-y: auto;
 }
 
-/* Footer */
-.raw-evidence-footer {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-6);
-  border-top: 1px solid var(--border);
-}
-
+/* Footer buttons */
 .raw-evidence-btn {
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
@@ -190,7 +174,7 @@
 
 /* Responsive */
 @media (max-width: 640px) {
-  .raw-evidence-modal {
+  .raw-evidence-container {
     width: 96vw;
     max-height: 90vh;
   }
@@ -199,15 +183,15 @@
     grid-template-columns: 1fr;
   }
 
-  .raw-evidence-header {
+  .raw-evidence-container .base-modal-header {
     padding: var(--space-4) var(--space-4) var(--space-3);
   }
 
-  .raw-evidence-body {
+  .raw-evidence-content {
     padding: var(--space-3) var(--space-4);
   }
 
-  .raw-evidence-footer {
+  .raw-evidence-container .base-modal-footer {
     padding: var(--space-3) var(--space-4);
   }
 }

@@ -1,6 +1,6 @@
 // components/modals/RawEvidenceModal/RawEvidenceModal.jsx
 import { useState, useEffect } from "react";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import BaseModal from "../../common/Modal/BaseModal";
 import "./RawEvidenceModal.css";
 
 // Mapping helper: WFVT ID → source key path for Formatted View
@@ -146,7 +146,6 @@ const RawEvidenceModal = ({
 }) => {
   const [activeTab, setActiveTab] = useState("formatted");
   const [copySuccess, setCopySuccess] = useState(false);
-  const containerRef = useFocusTrap(open, onClose);
 
   // Reset tab and copy state when modal opens with a new finding
   useEffect(() => {
@@ -189,18 +188,13 @@ const RawEvidenceModal = ({
   };
 
   return (
-    <div className="raw-evidence-overlay" onClick={onClose}>
-      <div
-        className="raw-evidence-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        ref={containerRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="raw-evidence-header">
+    <BaseModal
+      isOpen={open}
+      onClose={onClose}
+      className="raw-evidence-container"
+      ariaLabel={title}
+      header={
+        <>
           <div className="raw-evidence-header-left">
             <h2 className="raw-evidence-title">{title}</h2>
             <p className="raw-evidence-subtitle">{subtitle}</p>
@@ -208,42 +202,10 @@ const RawEvidenceModal = ({
           <button className="raw-evidence-close" onClick={onClose}>
             ✕
           </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="raw-evidence-tabs">
-          <button
-            className={`raw-evidence-tab ${activeTab === "formatted" ? "active" : ""}`}
-            onClick={() => setActiveTab("formatted")}
-          >
-            Formatted View
-          </button>
-          <button
-            className={`raw-evidence-tab ${activeTab === "json" ? "active" : ""}`}
-            onClick={() => setActiveTab("json")}
-          >
-            JSON View
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="raw-evidence-body">
-          {activeTab === "formatted" ? (
-            <div className="formatted-grid">
-              {formattedFields.map((field, idx) => (
-                <div className="formatted-field" key={idx}>
-                  <div className="formatted-field-label">{field.label}</div>
-                  <div className="formatted-field-value">{field.value}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="json-view-container">{jsonString}</div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="raw-evidence-footer">
+        </>
+      }
+      footer={
+        <>
           <button
             className={`raw-evidence-btn raw-evidence-btn-secondary ${copySuccess ? "copy-success" : ""}`}
             onClick={handleCopy}
@@ -256,9 +218,41 @@ const RawEvidenceModal = ({
           >
             Done
           </button>
-        </div>
+        </>
+      }
+    >
+      {/* Tabs */}
+      <div className="raw-evidence-tabs">
+        <button
+          className={`raw-evidence-tab ${activeTab === "formatted" ? "active" : ""}`}
+          onClick={() => setActiveTab("formatted")}
+        >
+          Formatted View
+        </button>
+        <button
+          className={`raw-evidence-tab ${activeTab === "json" ? "active" : ""}`}
+          onClick={() => setActiveTab("json")}
+        >
+          JSON View
+        </button>
       </div>
-    </div>
+
+      {/* Content */}
+      <div className="raw-evidence-content">
+        {activeTab === "formatted" ? (
+          <div className="formatted-grid">
+            {formattedFields.map((field, idx) => (
+              <div className="formatted-field" key={idx}>
+                <div className="formatted-field-label">{field.label}</div>
+                <div className="formatted-field-value">{field.value}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="json-view-container">{jsonString}</div>
+        )}
+      </div>
+    </BaseModal>
   );
 };
 
