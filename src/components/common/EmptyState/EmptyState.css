@@ -3,12 +3,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 80px 20px;
+  gap: var(--space-2);
+  padding: 80px var(--space-5);
   text-align: center;
-  font-size: 14px;
-  color: #777;
-  background: #f9f9f9;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  background: var(--surface-2);
   flex: 1;
 }
 

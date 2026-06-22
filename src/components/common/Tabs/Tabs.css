@@ -1,19 +1,20 @@
 .tabs {
   display: flex;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .tab {
-  padding: 8px 20px;
-  border-radius: 20px;
-  border: 1px solid #ccc;
-  background-color: #f5f5f5;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
 }
 
 .tab.active {
-  background-color: #000;
-  color: #fff;
+  background-color: var(--accent);
+  color: var(--text-on-accent);
   border: none;
 }
