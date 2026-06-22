@@ -13,6 +13,9 @@ dist-ssr
 .vite-cache
 *.local
 
+# Test coverage output (regenerated per run)
+backend/coverage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
