@@ -12,57 +12,53 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 16px;
-/*   width: 95%;
-  max-width: 1300px;
-  min-width: 700px; */
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
   width: 95%;
   max-width: 800px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-body {
   padding: 40px;
 }
 
-
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 24px 32px;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #000000;
+  padding: var(--space-6) var(--space-7);
+  border-bottom: 1px solid var(--border);
+  background-color: var(--surface-0);
 }
 
 .modal-title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .modal-title-row h2 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #ffffff;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 .modal-info-btn {
   background: none;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border);
   border-radius: 50%;
   width: 24px;
   height: 24px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-base);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .modal-close {
@@ -70,18 +66,18 @@
   border: none;
   font-size: 28px;
   cursor: pointer;
-  color: #ffffff;
+  color: var(--text-primary);
   padding: 0;
   width: 36px;
   height: 36px;
 }
 
 .modal-close:hover {
-  color: #d1d5db;
+  color: var(--text-muted);
 }
 
 .modal-section {
-  margin-bottom: 32px;
+  margin-bottom: var(--space-7);
 }
 
 .modal-section:last-child {
@@ -89,10 +85,10 @@
 }
 
 .modal-section h3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: #111827;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  margin-bottom: var(--space-3);
+  color: var(--text-primary);
 }
 
 /* Description header with CVSS on the right */
@@ -100,8 +96,8 @@
   display: flex;
   justify-content: right;
   align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 32px;
+  margin-bottom: var(--space-4);
+  gap: var(--space-7);
 }
 
 .cvss-info {
@@ -112,55 +108,52 @@
 
 .cvss-score {
   font-size: 22px !important;
-  font-weight: 700;
-  color: #111827;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
   margin: 0 0 6px 0;
   white-space: nowrap;
 }
 
 .cvss-vector {
   font-size: 10px !important;
-  color: #6b7280;
-  font-family: monospace;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
   margin: 0;
   line-height: 1.5;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
 
-
-
 .description-text {
-  font-size: 14px;
+  font-size: var(--text-base);
   line-height: 1.7;
-  color: #374151;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .recommendation-tabs {
   display: flex;
   gap: 0;
-  margin-bottom: 20px;
-  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: var(--space-5);
+  border-bottom: 2px solid var(--border);
 }
 
 .rec-tab {
-  padding: 10px 24px;
+  padding: var(--space-3) var(--space-6);
   border: none;
   background: none;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
-  color: #6b7280;
+  color: var(--text-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
   transition: all 0.2s;
 }
 
 .rec-tab.active {
-  color: #111827;
-  background-color: #000000;
-  color: #ffffff;
+  color: var(--text-on-accent);
+  background-color: var(--accent);
 }
 
 .recommendation-content ul {
@@ -173,9 +166,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 0;
-  border-bottom: 1px solid #f3f4f6;
-  font-size: 14px;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
@@ -185,59 +178,59 @@
 
 .rec-text {
   flex: 1;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .rec-expand {
   background: none;
   border: none;
   cursor: pointer;
-  color: #9ca3af;
-  font-size: 14px;
-  padding: 4px 8px;
-  margin-left: 16px;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  padding: var(--space-1) var(--space-2);
+  margin-left: var(--space-4);
 }
 
 .rec-expand:hover {
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 /* Phone: make modal full-width and compact */
 @media (max-width: 768px) {
   .modal-overlay {
-    align-items: flex-start;          /* start from top */
+    align-items: flex-start;
   }
 
   .modal-content {
     width: 100%;
     max-width: 100%;
-    min-width: 0;                     /* allow shrink */
+    min-width: 0;
     height: auto;
     max-height: 100vh;
-    border-radius: 0;                 /* edge-to-edge if you prefer */
+    border-radius: 0;
   }
 
   .modal-header {
-    padding: 14px 16px;
+    padding: var(--space-4);
   }
 
   .modal-title-row h2 {
-    font-size: 16px;
+    font-size: var(--text-md);
   }
 
   .modal-body {
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .modal-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   /* Stack CVSS text and description nicely */
   .description-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .cvss-info {
@@ -259,41 +252,41 @@
   }
 
   .rec-tab {
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
   }
 
   .recommendation-content li {
-    padding: 10px 0;
-    font-size: 13px;
+    padding: var(--space-3) 0;
+    font-size: var(--text-sm);
   }
 
   .rec-text {
-    margin-right: 8px;
+    margin-right: var(--space-2);
   }
 }
 
 @media (max-width: 768px) {
   .modal-overlay {
     align-items: flex-start;
-    padding: 16px 0;            /* top/bottom breathing room */
+    padding: var(--space-4) 0;
   }
 
   .modal-content {
-    width: 94%;                 /* leave side gutters */
+    width: 94%;
     max-width: 94%;
     min-width: 0;
-    margin: 16px auto;          /* center with top margin */
+    margin: var(--space-4) auto;
     height: auto;
     max-height: calc(100vh - 32px);
-    border-radius: 12px;        /* keep some rounding */
+    border-radius: var(--radius-lg);
   }
 
   .modal-header {
-    padding: 14px 16px;
+    padding: var(--space-4);
   }
 
   .modal-body {
-    padding: 16px;
+    padding: var(--space-4);
   }
 }

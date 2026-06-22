@@ -1,107 +1,34 @@
-/* .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: #fff;
-  width: 420px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  color: #fff;
-}
-
-.modal-header h2 {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid #e5e7eb;
-} */
-
-/* .form-group {
-  margin-bottom: 14px;
-}
-
-.form-group label {
-  display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  font-size: 14px;
-} */
 /* components/profile/ProfileModal.css */
 
 .btn-primary {
-  background: #000;
-  color: #fff;
-  padding: 8px 16px;
-  border-radius: 6px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
+  background: var(--surface-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
   cursor: pointer;
+  color: var(--text-secondary);
 }
 
 /* =========================
    MODAL BUTTONS (OVERRIDE)
 ========================= */
-/* 
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-} */
 
 .primary-btn {
-  background-color: #000;
-  color: #fff;
+  background-color: var(--accent);
+  color: var(--text-on-accent);
   border: none;
-  padding: 10px 18px;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -110,79 +37,81 @@
 }
 
 .secondary-btn {
-  background-color: #e5e7eb;
-  color: #111;
+  background-color: var(--surface-2);
+  color: var(--text-primary);
   border: none;
-  padding: 10px 18px;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
 .secondary-btn:hover {
-  background-color: #d1d5db;
+  background-color: var(--surface-3);
 }
 
 .profile-modal-body {
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
 }
 
 .form-group label {
   display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
-  font-weight: 500;
-  color: #374151;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
 }
 
 .form-group input {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  font-size: 14px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  font-size: var(--text-base);
   transition: border-color 0.2s ease;
+  background: var(--surface-1);
+  color: var(--text-primary);
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--focus-ring);
 }
 
 .form-group input.input-error {
-  border-color: #dc2626;
-  background-color: #fef2f2;
+  border-color: var(--danger);
+  background-color: var(--sev-critical-bg);
 }
 
 .form-group input.input-error:focus {
-  border-color: #dc2626;
+  border-color: var(--danger);
 }
 
 .error-text {
-  color: #dc2626;
-  font-size: 13px;
-  margin-top: 6px;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin-top: var(--space-2);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .error-text::before {
   content: "⚠";
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 
 .success-body {
-  padding: 20px;
+  padding: var(--space-5);
   text-align: center;
 }
 
 .success-body p {
-  font-size: 14px;
-  color: #16a34a;
+  font-size: var(--text-base);
+  color: var(--success);
   margin: 0;
 }

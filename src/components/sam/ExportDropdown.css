@@ -9,13 +9,13 @@
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
-  background: #fff;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   z-index: 100;
   min-width: 280px;
-  padding: 6px;
+  padding: var(--space-2);
   animation: exportDropIn 0.15s ease-out;
 }
 
@@ -33,19 +33,19 @@
 .export-dropdown-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--space-3);
   border: none;
   background: none;
   cursor: pointer;
   text-align: left;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   transition: background 0.15s;
 }
 
 .export-dropdown-item:hover {
-  background: #f3f4f6;
+  background: var(--surface-2);
 }
 
 .export-item-icon {
@@ -60,13 +60,13 @@
 }
 
 .export-item-title {
-  font-size: 0.9em;
-  font-weight: 600;
-  color: #111827;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 .export-item-desc {
-  font-size: 0.78em;
-  color: #6b7280;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
   margin-top: 2px;
 }

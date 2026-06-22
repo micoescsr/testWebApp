@@ -1,40 +1,43 @@
 /* components/modals/AccountsAuditModal/AccountsAuditModal.css */
 
 .accounts-modal-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 .accounts-modal-close {
   background: none;
   border: none;
-  font-size: 18px;
+  font-size: var(--text-lg);
   cursor: pointer;
+  color: var(--text-muted);
 }
 
 /* Reuse existing button styles */
 .confirm-btn {
-  background: #000;
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-on-accent);
   border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .cancel-btn {
-  background: #fff;
-  border: 1px solid #ccc;
-  padding: 8px 14px;
-  border-radius: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  color: var(--text-secondary);
 }
 
 .tertiary-btn {
   background: transparent;
   border: none;
-  color: #d32f2f;
-  font-size: 13px;
+  color: var(--danger);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -42,9 +45,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid #e5e7eb;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
 }
 
 /* =========================================
@@ -52,18 +55,18 @@
 ========================================= */
 @media (max-width: 640px) {
   .accounts-modal-title {
-    font-size: 14px;
+    font-size: var(--text-base);
   }
 
   .accounts-modal-close {
-    font-size: 16px;
+    font-size: var(--text-md);
   }
 
   .modal-footer {
     flex-direction: column;
     align-items: stretch;
-    gap: 8px;
-    padding: 10px 14px;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
   }
 
   .modal-footer .cancel-btn,
@@ -76,16 +79,15 @@
 
 .user-form-footer {
   display: flex;
-  justify-content: space-between; /* Delete on left, others on right */
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid #e5e7eb;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
 }
 
 .user-form-footer .cancel-btn,
 .user-form-footer .confirm-btn,
 .user-form-footer .tertiary-btn {
-  /* optional: make them consistent sizes */
   white-space: nowrap;
 }
