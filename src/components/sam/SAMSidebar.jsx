@@ -1,5 +1,6 @@
 // components/sam/SAMSidebar.jsx
 import { useState, useMemo } from "react";
+import { ArrowClockwise, MagnifyingGlass, X } from "@phosphor-icons/react";
 
 const SAMSidebar = ({
   selectedNetwork,
@@ -90,23 +91,10 @@ const SAMSidebar = ({
             title="Refresh network list"
             type="button"
           >
-            <svg
+            <ArrowClockwise
               className={`refresh-icon${networksLoading ? " spinning" : ""}`}
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21.5 2v6h-6" />
-              <path d="M2.5 22v-6h6" />
-              <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8" />
-              <path d="M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
-            </svg>
+              size={16}
+            />
           </button>
         </div>
 
@@ -115,21 +103,7 @@ const SAMSidebar = ({
         {!networksLoading && !networksError && (
           <>
             <div className="network-search-wrapper">
-              <svg
-                className="search-icon"
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
+              <MagnifyingGlass className="search-icon" size={16} />
               <input
                 type="text"
                 className="network-search"
@@ -144,20 +118,7 @@ const SAMSidebar = ({
                   type="button"
                   aria-label="Clear search"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
+                  <X size={14} />
                 </button>
               )}
             </div>

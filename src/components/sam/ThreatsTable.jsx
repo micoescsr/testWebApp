@@ -6,6 +6,7 @@ import Pagination from "../../components/common/Pagination/Pagination";
 import EmptyState from "../../components/common/EmptyState/EmptyState";
 import ExportDropdown from "./ExportDropdown";
 import { useNetworkContext } from "../../context/NetworkContext";
+import { MagnifyingGlass, X } from "@phosphor-icons/react";
 
 const allSeverities = ["none", "low", "medium", "high", "critical"];
 
@@ -74,21 +75,7 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
         </h3>
         <div className="sam-header-controls">
           <div className="vuln-search-wrapper">
-            <svg
-              className="search-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
+            <MagnifyingGlass className="search-icon" size={16} />
             <input
               className="search-input"
               placeholder="Search threats..."
@@ -102,20 +89,7 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
                 type="button"
                 aria-label="Clear search"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 6 6 18" />
-                  <path d="m6 6 12 12" />
-                </svg>
+                <X size={14} />
               </button>
             )}
           </div>
