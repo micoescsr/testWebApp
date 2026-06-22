@@ -2,7 +2,12 @@
 
 > **Router:** React Router DOM v7 (`BrowserRouter`)  
 > **Route Definition:** `src/App.jsx`  
-> **Auth Gate:** In-memory access token check (`getAccessToken()`)
+> **Auth Gate:** In-memory access token check (`getAccessToken()`)  
+> **Last Updated:** 2026-06-22
+
+> MFA enrollment/challenge mechanics (TOTP, AAL2) are documented in
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+> This file covers route inventory and navigation only.
 
 ---
 
@@ -15,6 +20,7 @@
 | `/forgot-password` | `ForgotPassword` | ✗ | Public | Request password reset email |
 | `/reset-password` | `ResetPassword` | ✗ | Public | Set new password via email link |
 | `/force-reset-password` | `ForceResetPassword` | ✓ | Authenticated (no sidebar) | Forced password change after temp password |
+| `/mfa-setup` | `MFASetup mode="forced"` | ✓ | Authenticated (no sidebar) | Mandatory TOTP enrollment gate — any authenticated user without a verified MFA factor is redirected here |
 | `/dashboard` | `Dashboard` | ✓ | Protected | Network security overview with charts |
 | `/security-assessment` | `SAM` | ✓ | Protected | Vulnerability/threat assessment & detection |
 | `/device-management` | `DeviceManagement` | ✓ | Protected | Raspberry Pi & AP control |
@@ -39,6 +45,7 @@ graph TD
 
     subgraph "Auth-Only (No Sidebar)"
         FORCE["/force-reset-password"]
+        MFASETUP["/mfa-setup"]
     end
 
     subgraph "Protected Routes (Sidebar Layout)"
@@ -51,9 +58,13 @@ graph TD
         TEST["/test-auth"]
     end
 
-    LOGIN -->|"Login success"| DASH
+    LOGIN -->|"Login success, MFA enrolled"| DASH
     LOGIN -->|"must_change_password"| FORCE
+    LOGIN -->|"aal2 challenge"| MFACHAL["MFAChallenge<br/>(in-place, login page)"]
+    MFACHAL -->|"Verified"| DASH
     FORCE -->|"Password updated"| DASH
+    DASH -->|"mfa_enrolled === false<br/>(forced gate, every render)"| MFASETUP
+    MFASETUP -->|"Enrolled"| DASH
 ```
 
 ### Route Protection Mechanism
@@ -95,6 +106,8 @@ const isAuthenticated = !!getAccessToken();
 |-----------|---------------|-------|
 | **Authentication** | `!!getAccessToken()` check in `App.jsx` | All `/*` routes |
 | **Force Reset** | Separate `isAuthenticated` check without sidebar | `/force-reset-password` |
+| **Forced MFA enrollment** | `mfaEnrolled === false` redirects to `/mfa-setup`, re-checked on every render (`src/App.jsx`) | All protected `/*` routes |
+| **AAL2 (backend)** | `requireAAL2` middleware 403s mutating/sensitive routes unless `req.user.aal === "aal2"` — see `AUTHENTICATION_AND_AUTHORIZATION.md` §11 | Most authenticated backend routes |
 | **Role-based (UI)** | `profile.role === "superadmin"` in Sidebar | `/accounts-audit` hidden for non-superadmin |
 | **Role-based (API)** | `requireSuperadmin` middleware on backend | Audit log endpoints |
 | **Status-based** | Login checks `profile.status !== "active"` | Blocks on_hold/inactive users |
@@ -118,14 +131,17 @@ const isAuthenticated = !!getAccessToken();
 
 **Login Flow:**
 1. `supabase.auth.signInWithPassword()` — client-side auth
-2. `setAccessToken(session.access_token)` — store in memory
-3. `api.post("auth/set-refresh", { refresh_token })` — send to backend for HttpOnly cookie
-4. `api.get("webapp/users/profiles/me")` — check profile status
-5. Status validation: `active` → dashboard; `on_hold`/`inactive` → error message; `null` → logout
-6. Force-reset check: if `must_change_password && temp_expires_at > now` → `/force-reset-password`
-7. Success: `window.location.replace("/dashboard")` (full page navigation for auth bootstrap)
+2. Checks `getAuthenticatorAssuranceLevel()` — if the account requires `aal2` and isn't already there, renders `MFAChallenge` (6-digit TOTP code, auto-submit) in place before continuing
+3. `setAccessToken(session.access_token)` — store in memory
+4. `api.post("auth/set-refresh", { refresh_token })` — send to backend for HttpOnly cookie
+5. `api.get("webapp/users/profiles/me")` — check profile status
+6. Status validation: `active` → dashboard; `on_hold`/`inactive` → error message; `null` → logout
+7. Force-reset check: if `must_change_password && temp_expires_at > now` → `/force-reset-password`
+8. Success: `window.location.replace("/dashboard")` (full page navigation for auth bootstrap)
 
-**APIs Used:** `supabase.auth.signInWithPassword`, `auth/set-refresh`, `webapp/users/profiles/me`, `auth/logout`
+**APIs Used:** `supabase.auth.signInWithPassword`, `supabase.auth.mfa.*` (challenge/verify), `auth/set-refresh`, `webapp/users/profiles/me`, `auth/logout`
+
+> Full MFA login-challenge mechanics: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ---
 
@@ -169,6 +185,23 @@ const isAuthenticated = !!getAccessToken();
 5. Success → redirect to `/login` after 2 seconds
 
 **APIs Used:** `supabase.auth.onAuthStateChange`, `supabase.auth.getSession`, `supabase.auth.updateUser`
+
+---
+
+### 4.3a MFA Setup (`/mfa-setup`)
+
+**File:** `src/pages/Auth/MFASetup.jsx` + `src/components/auth/TotpQrDisplay.jsx`
+
+**Purpose:** Mandatory TOTP enrollment. `mode="forced"` renders this as the standalone route (no sidebar) for any authenticated user without a verified factor; `mode="self-service"` is reused embedded in a Profile modal for re-enrollment.
+
+**User Actions:**
+1. Scan QR code (or copy manual-entry secret) into an authenticator app
+2. Enter 6-digit verification code
+3. "Start over"/"Retry" on enrollment errors
+
+**APIs Used:** `supabase.auth.mfa.enroll/challenge/verify`
+
+> Full enrollment/recovery details: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ---
 
@@ -277,7 +310,7 @@ const isAuthenticated = !!getAccessToken();
 
 **User Actions:**
 1. Switch between "Accounts" and "Audit Logs" tabs
-2. **Accounts tab:** View user list, edit roles/status, activate with temp password, deactivate/reactivate
+2. **Accounts tab:** View user list, edit roles/status, activate with temp password, deactivate/reactivate, **Reset MFA** (per-row action, confirmation required — removes all TOTP factors for lost-device recovery; see `AUTHENTICATION_AND_AUTHORIZATION.md` §11)
 3. **Audit tab:** Search, filter by status/date, paginate, export CSV
 
 **Sub-components:**

@@ -1,5 +1,13 @@
 # MFA (TOTP) Authentication — Design & Implementation Plan
 
+> **⚠️ SUPERSEDED — preserved for historical reference only.**
+> This is the pre-implementation design/planning document written before
+> the MFA feature was built. The authoritative as-built architecture is
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+> Some details below (file paths, exact endpoint names, phased rollout)
+> changed during implementation — do not treat this file as current.
+> **Last Updated:** 2026-06-22 (banner only; body unchanged)
+
 ## Context
 
 Why-PII? is a security-assessment tool for public Wi-Fi risk (rogue APs, evil

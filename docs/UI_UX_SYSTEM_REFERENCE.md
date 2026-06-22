@@ -3,7 +3,11 @@
 > **Styling:** Vanilla CSS (co-located per component)  
 > **Charts:** Recharts 3.6.0 (React) + Plotly.js (PDF reports)  
 > **Icons:** Emoji-based (no icon library)  
-> **Typography:** System font stack
+> **Typography:** System font stack  
+> **Last Updated:** 2026-06-22
+
+> MFA mechanics are documented in [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+> This file covers only the current implemented UI patterns for MFA screens.
 
 ---
 
@@ -337,6 +341,57 @@ clearHoverContext();
 │ Status      │ └──────────────────┘ │
 └─────────────┴──────────────────────┘
 ```
+
+---
+
+## 8a. MFA UI Patterns
+
+### MFA Setup Page (`/mfa-setup`, `MFASetup.jsx` + `TotpQrDisplay.jsx`)
+
+```
+┌────────────────────────────────┐
+│ Fullscreen card (no sidebar)   │
+│  Set up Two-Factor Auth        │
+│                                │
+│  ┌──────────────┐              │
+│  │  [QR Code]   │              │
+│  └──────────────┘              │
+│  Can't scan? Reveal secret ▾   │
+│  [manual-entry secret + Copy]  │
+│                                │
+│  [6-digit code input]          │
+│  [Verify]                      │
+│  (Start over / Retry on error) │
+└────────────────────────────────┘
+```
+
+- Reuses the fullscreen auth-card visual style (same as Login/ForgotPassword/ResetPassword)
+- `mode="forced"`: standalone route, no sidebar, non-dismissible
+- `mode="self-service"`: embedded in a Profile-page modal (`onClose` prop), replaces the existing factor on re-enroll
+
+### MFA Challenge (login-time, `MFAChallenge.jsx`)
+
+Rendered in-place on the Login page (not a separate route) when `getAuthenticatorAssuranceLevel()` indicates the account needs `aal2`:
+
+```
+┌────────────────────────────────┐
+│ Enter your authenticator code  │
+│  [6-digit code input]          │
+│  (auto-submits at 6 digits)    │
+│  Error → auto-retry on expired │
+│          challenge              │
+└────────────────────────────────┘
+```
+
+### Profile Page — Two-Factor Authentication Card
+
+A dedicated card on `/profile` (`Profile.jsx`) showing an "Enabled" badge with a "Re-enroll (new device)" action (opens `MFASetup mode="self-service"` modal), or a setup prompt if somehow not enrolled. No disable option exists anywhere in the UI.
+
+### Accounts Table — Reset MFA Action
+
+Per-row "Reset MFA" action (superadmin only) on `/accounts-audit`, alongside "Edit Details." Opens a confirmation modal before calling the admin-unenroll endpoint.
+
+> Full mechanics: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ---
 

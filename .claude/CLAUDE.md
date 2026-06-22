@@ -88,3 +88,30 @@ For testing strategy and what's expected when adding new code, see `rules.md` �
 ---
 
 See `.claude/rules.md` for engineering philosophy, workflow, coding conventions, and the pre-completion checklist.
+
+---
+
+## Documentation Navigation
+
+`docs/` holds detailed docs; this file stays repo-facts-only. Full categorized index with status/last-verified: **[`docs/DOCUMENTATION_INDEX.md`](../docs/DOCUMENTATION_INDEX.md)** — check it first when unsure which doc is canonical.
+
+Load docs by task, not exhaustively:
+
+- **Core project understanding** — `docs/PROJECT_CONTEXT_AND_PRD.md` (tech stack, repo map, reading order).
+- **Frontend dev / UI-UX redesign** — `docs/FRONTEND_ARCHITECTURE.md`, `docs/COMPONENT_REFERENCE.md`, `docs/PAGES_ROUTES_AND_USER_FLOWS.md`, `docs/STATE_MANAGEMENT.md`, `docs/UI_UX_SYSTEM_REFERENCE.md`. Read all five before touching frontend structure — they cover folder layout, component inventory, routing/nav flows, state/contexts, and the implemented design system respectively. **Before any redesign work**, review these to preserve existing routing, component hierarchy, state contracts, and backend contracts (`docs/API_INTEGRATION_CONTEXT.md`); redesign should change presentation, not business logic.
+- **Backend dev** — relevant `docs/feature-notes/*_README.md` for the feature being touched (e.g. `DASHBOARD_README.md`, `DEVICE_MANAGEMENT_README.md`, `AP_ENABLE_PORTAL_README.md` + `ASYNC_AP_README.md` for AP/captive-portal work).
+- **API dev** — `docs/API_INTEGRATION_CONTEXT.md` (frontend API modules, backend endpoints, refresh/MFA flows).
+- **Authentication & Authorization** — `docs/AUTHENTICATION_AND_AUTHORIZATION.md` (canonical, §11 = mandatory TOTP MFA/AAL2). `docs/MFA_AUTHENTICATION_PLAN.md` is superseded by §11 — historical only.
+- **Security** — `docs/SECURITY_AND_RISKS.md` (canonical posture) + `docs/feature-notes/SECURITY_HARDENING_PLAN.md` for in-progress hardening work.
+- **Raspberry Pi / FastAPI / hardware comms** — `docs/feature-notes/PI_SIGNING_README.md` (HMAC scheme) and `docs/feature-notes/API_PY_AND_PUBLIC_PROXY_CONTEXT.md` (Pi-side FastAPI + proxy).
+- **Deployment** — `docs/BUILD_DEPLOYMENT_RUNTIME.md` + `docs/feature-notes/RAILWAY_DEPLOY_GUIDE.md`.
+- **Feature implementation** — check `docs/feature-notes/CHANGES_README.md` first for recent cross-file history, then the feature's own `*_README.md` if one exists.
+- **Large features / architecture / security changes / major frontend redesign** — don't stop at one doc; pull every doc listed under the relevant category above plus `docs/DOCUMENTATION_INDEX.md`'s "Related" column for that doc.
+
+Documentation maintenance:
+
+- Docs are part of the codebase — update them when implementation changes, in the same change, not as separate cleanup.
+- Source code is the ultimate source of truth; if a doc and the code disagree, trust the code and fix the doc.
+- Mark superseded planning/implementation docs as **superseded** (banner + pointer to the replacement) rather than deleting them — see `MFA_AUTHENTICATION_PLAN.md` for the pattern.
+- Cross-reference related docs instead of duplicating their content.
+- New docs get added to `docs/DOCUMENTATION_INDEX.md`'s table, not just dropped in `docs/`.

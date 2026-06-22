@@ -1,6 +1,11 @@
 # Accounts & Audit — End-to-End Flow
 
-> Last updated: March 8, 2026
+> Last updated: 2026-06-22
+
+> MFA mechanics (TOTP enroll/challenge, AAL2 enforcement) are documented in
+> [`../AUTHENTICATION_AND_AUTHORIZATION.md` §11](../AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp) —
+> this file only covers the Reset MFA action as it appears in the Accounts page flow.
+> See also [`CHANGES_README.md`](./CHANGES_README.md) for the MFA merge changelog entry.
 
 ---
 
@@ -43,6 +48,7 @@
 │   authMiddleware.js ─────┼──► JWKS JWT verification (Supabase P-256)
 │   roleMiddleware.js ─────┼──► Superadmin role check
 │   statusMiddleware.js ───┼──► Active profile check
+│   mfaMiddleware.js ──────┼──► requireAAL2 (TOTP MFA enforcement)
 │         │                │
 │  Controllers:            │
 │   authController.js      │
@@ -104,11 +110,13 @@
 
 ## Roles & Permissions
 
-| Role         | Can access dashboard | Can manage users | Can view audit logs | Can deactivate accounts |
-|--------------|---------------------|------------------|---------------------|------------------------|
-| `superadmin` | ✅                  | ✅               | ✅                  | ✅                     |
-| `admin`      | ✅                  | ❌               | ❌                  | ❌                     |
-| `user`       | ✅                  | ❌               | ❌                  | ❌                     |
+| Role         | Can access dashboard | Can manage users | Can view audit logs | Can deactivate accounts | Can reset others' MFA |
+|--------------|---------------------|------------------|---------------------|------------------------|------------------------|
+| `superadmin` | ✅                  | ✅               | ✅                  | ✅                     | ✅                     |
+| `admin`      | ✅                  | ❌               | ❌                  | ❌                     | ❌                     |
+| `user`       | ✅                  | ❌               | ❌                  | ❌                     | ❌                     |
+
+> All roles require mandatory TOTP MFA — there is no role exempt from enrollment. Only superadmin can reset *another* user's MFA factors; self-service re-enrollment (own device lost/replaced) is available to any role via the Profile page.
 
 > **Legacy note:** The `staff` role was removed from the UI. Any existing profiles with `role = 'staff'` are displayed as `user` in the frontend, but a DB migration should be run to clean them up (see [TODO](#whats-still-missing--todo)).
 
@@ -322,6 +330,31 @@ Login.jsx
 
 ---
 
+## Reset MFA Flow (Superadmin)
+
+> Added with the mandatory TOTP MFA feature (June 18, 2026). Full architecture: [`../AUTHENTICATION_AND_AUTHORIZATION.md` §11](../AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+
+Since Supabase TOTP has no recovery codes, a lost/replaced authenticator device can only be recovered by a superadmin removing the user's MFA factors, forcing re-enrollment on their next login.
+
+```
+1. Superadmin opens Accounts tab → clicks "Reset MFA" on the target user's row
+   (AccountsTable.jsx — hidden for empty/"Unknown" slot rows)
+2. Confirmation modal appears (AccountsAudit.jsx handleResetMfa)
+3. Superadmin confirms
+4. Frontend: adminUnenrollMfa(user.id) → POST /api/auth/mfa/admin-unenroll/:id
+   (src/api/userApi.js)
+5. Backend (mfaController.adminUnenroll):
+   - Requires authJWT + requireActiveProfile + requireAAL2 + requireSuperadmin
+   - Removes all TOTP factors via supabaseAdmin.auth.admin.mfa.deleteFactor()
+   - Sets profiles.mfa_enrolled = false
+   - Logs USER.MFA_RESET audit event
+6. Target user is forced through /mfa-setup on their next login
+```
+
+**Break-glass exception:** if the sole superadmin loses their own device and no other superadmin exists to reset them, there is no UI path — the factor must be removed manually via Supabase Dashboard → Authentication → Users. Document-only, by design.
+
+---
+
 ## Deactivation & Archival Flow
 
 ```
@@ -456,13 +489,14 @@ The active tab (Accounts vs Audit Logs) is persisted across page refreshes using
 
 | Method | Path                          | Auth | Role       | Description                        |
 |--------|-------------------------------|------|------------|------------------------------------|
-| GET    | `/profiles/me`                | JWT  | Any        | Get current user's profile         |
-| GET    | `/profiles`                   | JWT  | Superadmin | List all profiles                  |
-| PUT    | `/profiles/:id`               | JWT  | Superadmin | Update user profile                |
-| DELETE | `/profiles/:id`               | JWT  | Superadmin | Hard-delete user                   |
-| POST   | `/profiles/:id/activate-with-temp` | JWT | Superadmin | Activate + issue temp PW     |
-| POST   | `/profiles/:id/deactivate`    | JWT  | Superadmin | Deactivate + archive profile       |
-| POST   | `/profiles/:id/reactivate`    | JWT  | Superadmin | Reactivate inactive account + always issues temp PW when status is `active` |
+| GET    | `/profiles/me`                | JWT (aal1 ok) | Any | Get current user's profile (AAL2-exempt — needed for the forced-MFA UI gate) |
+| GET    | `/profiles`                   | JWT + AAL2 | Superadmin | List all profiles                  |
+| PUT    | `/profiles/:id`               | JWT + AAL2 | Superadmin | Update user profile                |
+| DELETE | `/profiles/:id`               | JWT + AAL2 | Superadmin | Hard-delete user                   |
+| POST   | `/profiles/:id/activate-with-temp` | JWT + AAL2 | Superadmin | Activate + issue temp PW     |
+| POST   | `/profiles/:id/deactivate`    | JWT + AAL2 | Superadmin | Deactivate + archive profile       |
+| POST   | `/profiles/:id/reactivate`    | JWT + AAL2 | Superadmin | Reactivate inactive account + always issues temp PW when status is `active` |
+| POST   | `/auth/mfa/admin-unenroll/:id` | JWT + AAL2 | Superadmin | Reset MFA — removes all TOTP factors for the target user (see [`../AUTHENTICATION_AND_AUTHORIZATION.md` §11](../AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp)) |
 
 ---
 
@@ -662,6 +696,6 @@ Frontend
 │   └── common/
 │       └── Modal/BaseModal.jsx ← Base modal component
 └── api/
-    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser, reactivateUser
+    ├── userApi.js              ← updateUser, activateUserWithTemp, deactivateUser, reactivateUser, adminUnenrollMfa
     └── authApi.js              ← login, refresh, logout
 ```

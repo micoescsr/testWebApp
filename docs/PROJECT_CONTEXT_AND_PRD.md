@@ -1,8 +1,13 @@
 # Why-PII? — Project Context & Product Requirements Document
 
-> **Generated:** 2026-06-02 | **Last Updated:** 2026-06-17  
+> **Generated:** 2026-06-02 | **Last Updated:** 2026-06-22  
 > **Codebase Version:** 0.0.0 (package.json)  
 > **Status:** Documentation-only analysis — no source code was modified.
+
+> This is a high-level overview only. For implementation detail, see the
+> linked documents in the index below — in particular
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp)
+> for the mandatory TOTP MFA architecture (merged June 18, 2026), not detailed further here.
 
 ---
 
@@ -22,6 +27,9 @@
 | 10 | [UI_UX_SYSTEM_REFERENCE.md](./UI_UX_SYSTEM_REFERENCE.md) | Design system, layout, typography, accessibility, UX flows |
 | 11 | [TESTING_AND_QUALITY_ASSURANCE.md](./TESTING_AND_QUALITY_ASSURANCE.md) | Test architecture, coverage, QA considerations |
 | 12 | [CAPSTONE_DOCUMENTATION.md](./CAPSTONE_DOCUMENTATION.md) | Formal academic documentation of the entire system |
+| 13 | [DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md) | Full categorized index of every file in `docs/`, canonical status, last-verified dates |
+
+> See also `feature-notes/ACCOUNTS_FLOW_README.md` (accounts/audit deep-dive, includes Reset MFA) and `feature-notes/CHANGES_README.md` (file-level changelog, includes the MFA merge and risk-trend reporting).
 
 ---
 
@@ -37,7 +45,7 @@ The system enables network administrators and security professionals to:
 2. **Deploy a captive portal** on a controlled access point to demonstrate credential interception risks
 3. **Detect threats in real-time** — rogue APs, deauth floods, evil twin attacks, MAC spoofing
 4. **Score and track** each network's risk over time with CVSS-based scoring
-5. **Manage users and audit trails** — role-based access with full audit logging
+5. **Manage users and audit trails** — role-based access with full audit logging, mandatory TOTP MFA on every account
 
 ### Key Principle
 
@@ -144,8 +152,9 @@ whypii/
 ├── src/                          # React frontend (Vite)
 │   ├── api/                      # Axios instance + API service modules (10 files)
 │   ├── assets/                   # Static assets (react.svg)
-│   ├── components/               # Reusable UI components (8 subdirs)
+│   ├── components/               # Reusable UI components (9 subdirs)
 │   │   ├── accounts/             # AccountsTable, AuditLogsTable, UserForm
+│   │   ├── auth/                 # TotpQrDisplay (MFA enrollment QR/secret)
 │   │   ├── common/               # EmptyState, ErrorBoundary, Modal, Pagination, Spinner, Tabs, Toast, UserMenu
 │   │   ├── dashboard/            # DashboardHeader, LegendForScore, NetworkSection, SummarySection
 │   │   ├── device/               # AccessPointPanel
@@ -160,7 +169,7 @@ whypii/
 │   ├── lib/                      # Supabase client configuration
 │   ├── pages/                    # Route-level page components (9 subdirs)
 │   │   ├── AccountsAudit/        # Accounts & Audit page (superadmin only)
-│   │   ├── Auth/                 # ForgotPassword, ResetPassword, ForceResetPassword, PasswordChecklist
+│   │   ├── Auth/                 # ForgotPassword, ResetPassword, ForceResetPassword, MFASetup, MFAChallenge, PasswordChecklist
 │   │   ├── Dashboard/            # Dashboard page
 │   │   ├── DeviceManagement/     # Device Management page
 │   │   ├── History/              # Scan History page
@@ -251,6 +260,7 @@ The frontend relies on these backend API groups:
 |------|---------------|
 | Authentication | Supabase Auth → JWT access token (in-memory) + HttpOnly refresh cookie |
 | Authorization | Role-based (admin/superadmin) with `requireSuperadmin` middleware; `profiles.status === 'active'` enforced on all authenticated routes |
+| Multi-Factor Auth | Mandatory TOTP for every account, enforced server-side via JWT `aal` claim (`requireAAL2`); no opt-out — see [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp) |
 | API Security | Helmet, CSP, CORS whitelist, rate limiting (login: 10/window, refresh: 30/window, global: 300/window), request ID tracking |
 | Frontend Security Headers | CSP, `X-Frame-Options`, `X-Content-Type-Options` set in both `vite.config.js` (dev/preview) and `backend/server.js` (Helmet) — must stay in sync |
 | Pi Communication | HMAC-signed requests via Tailscale Funnel |
@@ -308,3 +318,4 @@ The frontend relies on these backend API groups:
 - **Pi endpoint URL**: Tailscale Funnel URL is configured via backend env vars
 - **CI/CD pipeline**: No CI/CD configuration files (e.g., GitHub Actions, Railway build settings) were found in the repository root
 - **User registration**: No self-registration flow exists in the frontend; account creation appears to be superadmin-only
+- **Supabase project MFA toggle**: confirm TOTP MFA is enabled in Supabase Dashboard → Authentication → Providers for the live project (see `AUTHENTICATION_AND_AUTHORIZATION.md` §11 for why this matters)

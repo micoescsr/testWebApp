@@ -2,7 +2,13 @@
 
 > **HTTP Client:** Axios 1.13.3  
 > **Client Config:** `src/api/axios.js`  
-> **Base URL:** `VITE_API_BASE_URL` (production) or `/api` (dev, via Vite proxy)
+> **Base URL:** `VITE_API_BASE_URL` (production) or `/api` (dev, via Vite proxy)  
+> **Last Updated:** 2026-06-22
+
+> MFA enroll/challenge/verify calls go directly through `supabase.auth.mfa.*`
+> (Supabase JS SDK), not a backend REST endpoint — see
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp)
+> for the full mechanics. Only the two backend MFA endpoints are listed below.
 
 ---
 
@@ -104,6 +110,18 @@ sequenceDiagram
 
 ---
 
+### MFA Endpoints (backend, called from `src/api/userApi.js` and inline in `MFASetup.jsx`/`Login.jsx`)
+
+| Function / Call Site | Method | Endpoint | Auth | Request | Response |
+|----------|--------|----------|------|---------|----------|
+| `MFASetup.jsx` (inline, post-verify) | POST | `/auth/set-refresh` | No (sets cookie) | `{ refresh_token }` | Sets HttpOnly cookie with new aal2 session |
+| `MFASetup.jsx` / `Login.jsx` (inline, post-verify) | POST | `/auth/mfa/sync-status` | JWT (aal1 ok) | — | Re-derives `mfa_enrolled` from Supabase's real factor list; audit-logs `USER.MFA_ENROLLED`/`USER.MFA_UNENROLLED` |
+| `adminUnenrollMfa(id)` (`src/api/userApi.js`) | POST | `/auth/mfa/admin-unenroll/:id` | JWT + AAL2 + superadmin | — | Removes all TOTP factors for the target user, sets `mfa_enrolled=false`, audit-logs `USER.MFA_RESET` |
+
+> Enrollment/challenge/verify themselves (`supabase.auth.mfa.enroll/challenge/verify/listFactors`) are Supabase Auth SDK calls — no backend route exists for them. Full reference: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+
+---
+
 ### Dashboard API (`src/api/dashboardApi.js`)
 
 | Function | Method | Endpoint | Request | Response |
@@ -193,6 +211,7 @@ sequenceDiagram
 | `activateUserWithTemp` | POST | `/webapp/users/profiles/{id}/activate-with-temp` | User data | Activation result |
 | `deactivateUser` | POST | `/webapp/users/profiles/{id}/deactivate` | `{ anonymize }` | — |
 | `reactivateUser` | POST | `/webapp/users/profiles/{id}/reactivate` | `{ targetStatus, issueTempPassword, profileUpdates }` | — |
+| `adminUnenrollMfa` | POST | `/auth/mfa/admin-unenroll/{id}` | — | Removes all TOTP factors for the user (superadmin + AAL2 only) |
 
 ---
 

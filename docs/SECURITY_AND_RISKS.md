@@ -1,7 +1,12 @@
 # Security & Risks
 
 > **Security Hardening Phase:** Partially complete (8/10 current posture per README)  
-> **Reference:** `SECURITY_HARDENING_PLAN.md` in project root
+> **Reference:** `SECURITY_HARDENING_PLAN.md` in project root  
+> **Last Updated:** 2026-06-22
+
+> Full MFA/AAL2 architecture, mechanics, and recovery procedure live in
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp) —
+> this section only covers the security posture summary.
 
 ---
 
@@ -106,6 +111,28 @@ cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 })
 ```
+
+---
+
+## 3a. Multi-Factor Authentication (TOTP / AAL2)
+
+MFA is **mandatory for every account** (admin and superadmin alike) — no
+opt-out exists. This closes the previous single-factor (password-only) gap
+on the system's highest-value accounts (audit logs, device controls, user
+management).
+
+| Aspect | Implementation |
+|--------|---------------|
+| **Mechanism** | TOTP via Supabase Auth's native MFA API (`supabase.auth.mfa.*`); backend never generates/stores/verifies a TOTP secret |
+| **Enforcement signal** | JWT `aal` claim (`aal1`/`aal2`), surfaced onto `req.user.aal` by `authJWT`/`optionalAuthJWT`, checked fresh on every request by `requireAAL2` middleware |
+| **Scope** | `requireAAL2` applied to nearly all authenticated routes that mutate data or expose sensitive info; exceptions: `GET /profiles/me`, the unauthenticated scan-completed webhook, pre-MFA `/api/auth/*` steps |
+| **Denial behavior** | 403 `{error, code: "MFA_REQUIRED"}`, audit-logs `AUTHORIZATION.DENIED` (mirrors `requireSuperadmin`'s pattern) |
+| **Recovery** | No recovery codes (Supabase TOTP limitation) — always admin-assisted via superadmin "Reset MFA" action (`POST /api/auth/mfa/admin-unenroll/:id`); break-glass for a sole-superadmin lockout requires manual removal via Supabase Dashboard |
+| **Advisory flag** | `profiles.mfa_enrolled` (boolean) is a fast UI-check only — never the actual enforcement boundary |
+
+**Risk note:** the forced-enrollment client-side gate (`mfaEnrolled === false` → redirect to `/mfa-setup`) is UX routing only and fails open on a transient fetch error (defaults to `true`/enrolled) — real enforcement is always the server-side `aal` claim check, not this gate.
+
+Full architecture, sequence diagrams, and migration notes: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ---
 

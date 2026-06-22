@@ -2,7 +2,12 @@
 
 > **Primary Pattern:** React Context API + Custom Hooks  
 > **Persistence:** `sessionStorage` via `useSessionState` hook  
-> **No external state library** (no Redux, Zustand, MobX, etc.)
+> **No external state library** (no Redux, Zustand, MobX, etc.)  
+> **Last Updated:** 2026-06-22
+
+> MFA enforcement mechanics (AAL2, TOTP) are documented in
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+> This file covers only where MFA-related state lives.
 
 ---
 
@@ -33,6 +38,11 @@ graph TD
 
     subgraph "Module-Level"
         AT["accessToken<br/>(in-memory variable)"]
+    end
+
+    subgraph "Auth/MFA State (App.jsx + useProfile)"
+        MFAE["mfaEnrolled<br/>(App.jsx useState, null/true/false)"]
+        PROFMFA["profile.mfaEnrolled<br/>(useProfile, from mfa_enrolled)"]
     end
 
     NC --> SS
@@ -95,6 +105,17 @@ graph TD
 - `activeNetwork` resolves from: backend state SSID → sessionStorage cache → null
 - `lastUpdated` bumps whenever `detectionStatus` or `detectionResults` change
 - Provides `timeAgo()` utility for human-readable timestamps
+
+---
+
+## 2a. Auth / MFA State
+
+| State | Owner | Type | Description |
+|-------|-------|------|-------------|
+| `mfaEnrolled` | `src/App.jsx` (`useState`) | `null \| boolean` | `null` = not yet known; `false` triggers a persistent redirect to `/mfa-setup` on every render; bootstrapped from `GET webapp/users/profiles/me` (AAL2-exempt) and fails open (`true`) on fetch error |
+| `profile.mfaEnrolled` | `useProfile` hook (`src/hooks/useProfile.js:31`) | `boolean` | Maps backend `mfa_enrolled` column; drives the Profile page's "Two-Factor Authentication" card badge |
+
+> Enforcement is always server-side via the JWT `aal` claim (`requireAAL2` middleware) — this client-side state is UX routing only. Full mechanics: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ---
 

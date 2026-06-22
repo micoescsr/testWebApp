@@ -92,10 +92,11 @@ src/
 │   ├── rasPiApi.js               # Network listing, scan triggers, AP signal
 │   ├── samApi.js                 # Threats, vulnerabilities, details
 │   ├── samHistoryApi.js          # Vulnerability/threat history
-│   └── userApi.js                # User CRUD, activate, deactivate, reactivate
+│   └── userApi.js                # User CRUD, activate, deactivate, reactivate, adminUnenrollMfa
 │
 ├── components/                   # Reusable UI Components
 │   ├── accounts/                 # AccountsTable, AuditLogsTable, UserForm
+│   ├── auth/                     # TotpQrDisplay (MFA enrollment QR + manual-entry secret)
 │   ├── common/                   # ErrorBoundary, BaseModal, Pagination, Tabs, UserMenu
 │   ├── dashboard/                # DashboardHeader, LegendForScore, NetworkSection, SummarySection
 │   ├── device/                   # AccessPointPanel
@@ -134,7 +135,7 @@ src/
 │
 ├── pages/                        # Route-Level Page Components
 │   ├── AccountsAudit/            # Tabbed view: Accounts + Audit Logs (superadmin)
-│   ├── Auth/                     # ForgotPassword, ResetPassword, ForceResetPassword
+│   ├── Auth/                     # ForgotPassword, ResetPassword, ForceResetPassword, MFASetup, MFAChallenge
 │   ├── Dashboard/                # Network overview with charts
 │   ├── DeviceManagement/         # AP management, captive portal, scanning
 │   ├── History/                  # Historical scan data browser
@@ -206,7 +207,7 @@ sequenceDiagram
 | **Type** | Client-Side SPA (CSR) |
 | **SSR/SSG** | Not used |
 | **Bundler** | Vite 7 with `@vitejs/plugin-react` |
-| **Code Splitting** | No explicit lazy loading; all routes eagerly imported |
+| **Code Splitting** | `lazy()`/`Suspense` route-level splitting — every page (`Dashboard`, `SAM`, `DeviceManagement`, `AccountsAudit`, `History`, `Profile`, `Login`, `ForgotPassword`, `ResetPassword`, `ForceResetPassword`, `MFASetup`, dev-only `TestAuth`) is dynamically imported in `src/App.jsx:11-34` |
 | **Dev Server** | Vite dev server on `:5173` with proxy to backend `:3000` |
 | **Production** | `vite build` → `dist/` → `serve -s dist` on Railway |
 
@@ -358,6 +359,5 @@ graph TD
 
 ## ⚠️ Needs Verification
 
-- **Lazy loading**: No `React.lazy()` or `Suspense` boundaries are currently used; all routes are eagerly imported — verify if this is intentional for the application's scale
 - **Error boundaries**: Only one `ErrorBoundary` exists (for device panel) — other pages may lack render-error protection
 - **SSR consideration**: The app assumes CSR-only; `useSessionState` guards against missing `window` for build-time safety

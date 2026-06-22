@@ -2,6 +2,12 @@
 
 This document describes the specific and explicit changes made across chat sessions.
 
+> See also: [`../PROJECT_CONTEXT_AND_PRD.md`](../PROJECT_CONTEXT_AND_PRD.md) for the
+> current-state overview, [`../AUTHENTICATION_AND_AUTHORIZATION.md` §11](../AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp)
+> for the as-built MFA architecture (the entry below is a changelog record, not
+> the canonical reference), and [`ACCOUNTS_FLOW_README.md`](./ACCOUNTS_FLOW_README.md)
+> for the accounts/audit deep-dive (includes the Reset MFA action).
+
 ---
 
 ## Mandatory TOTP MFA — June 18, 2026

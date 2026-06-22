@@ -2,7 +2,12 @@
 
 > **Component Root:** `src/components/`  
 > **Naming Convention:** PascalCase directories and files  
-> **Styling:** Co-located CSS files per component
+> **Styling:** Co-located CSS files per component  
+> **Last Updated:** 2026-06-22
+
+> MFA mechanics (TOTP enroll/challenge, AAL2) are documented in
+> [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
+> Entries below cover props/location/dependencies only.
 
 ---
 
@@ -47,9 +52,19 @@
 
 | Component | Path | Purpose | Props | Used By |
 |-----------|------|---------|-------|---------|
-| `AccountsTable` | `components/accounts/AccountsTable.jsx` | User listing table | `users`, `onEdit` | `AccountsAudit` |
+| `AccountsTable` | `components/accounts/AccountsTable.jsx` | User listing table | `users`, `onEdit`, `onResetMfa` | `AccountsAudit` |
 | `AuditLogsTable` | `components/accounts/AuditLogsTable.jsx` | Paginated audit log viewer | Audit log data, filters, pagination, export | `AccountsAudit` |
 | `UserForm` | `components/accounts/UserForm.jsx` | User editing form | User data, save/cancel handlers | `AccountsAudit` |
+
+### Auth / MFA Components
+
+| Component | Path | Purpose | Props | State | Used By |
+|-----------|------|---------|-------|-------|---------|
+| `TotpQrDisplay` | `components/auth/TotpQrDisplay.jsx` | QR code + manual-entry secret for TOTP enrollment (presentational) | `qrCodeSvg`, `secret` | `revealed`, `copied` (local UI toggles) | `MFASetup` |
+| `MFASetup` | `pages/Auth/MFASetup.jsx` | Enrollment flow: QR display, 6-digit verify, "Start over"/retry | `mode` (`"forced"` \| `"self-service"`), `onClose` | `factor`, `code`, `error`, `initializing`, `verifying`, `successMessage` | `App.jsx` (`/mfa-setup`, forced), `Profile` (self-service modal) |
+| `MFAChallenge` | `pages/Auth/MFAChallenge.jsx` | Login-time 6-digit TOTP challenge, auto-submit | `factorId`, `onVerified`, `onCancel` | `code`, `challengeId`, `error`, `verifying` | `Login` |
+
+> Enroll/challenge mechanics, AAL2 enforcement, and recovery procedure: [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp).
 
 ### History Components
 
@@ -181,6 +196,15 @@ ComponentDir/
 - Portal update trigger
 
 **Size:** 13,066 bytes — the most complex single component.
+
+---
+
+### AccountsTable (`src/components/accounts/AccountsTable.jsx`)
+
+**Responsibilities:**
+- Renders user rows with name, username, email, role, status badge
+- Per-row "Edit Details" action (`onEdit`)
+- Per-row "Reset MFA" action (`onResetMfa`) — hidden for empty/"Unknown" slot rows; wired in `AccountsAudit.jsx` to open a confirm modal that calls `adminUnenrollMfa(user.id)` (`src/api/userApi.js`) on confirm
 
 ---
 
