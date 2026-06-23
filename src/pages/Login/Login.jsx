@@ -1,52 +1,44 @@
-// Login.jsx
 import "./Login.css";
 import { useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import api, { setAccessToken } from "../../api/axios";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { Link } from "react-router-dom";
-import MFAChallenge from "../Auth/MFAChallenge";
-import { GlobeHemisphereWest } from "@phosphor-icons/react";
+import TwoFactorForm from "./TwoFactorForm";
+import {
+  GlobeHemisphereWest,
+  EnvelopeSimple,
+  LockSimple,
+  Eye,
+  EyeSlash,
+  ArrowRight,
+} from "@phosphor-icons/react";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [mfaFactorId, setMfaFactorId] = useState(null);
 
-  // Steps that used to run unconditionally right after password sign-in.
-  // Now shared between "no MFA challenge needed" and "challenge verified"
-  // paths, since both end up with a session to finish logging in with.
   const finishLogin = async (session) => {
     try {
-      // 2) Store access token in memory for axios
       setAccessToken(session.access_token);
 
-      // 3) Send refresh token to backend → HttpOnly cookie
       await api.post("auth/set-refresh", {
         refresh_token: session.refresh_token,
       });
 
-      // 3.5) Re-derive mfa_enrolled from Supabase's real factor list. It can
-      // drift (e.g. an admin deletes a factor directly in the Supabase
-      // dashboard instead of via our admin-unenroll endpoint) and a stale
-      // "true" would skip the /mfa-setup gate entirely, landing the user on
-      // the dashboard at aal1 where the first AAL2 action just 403s.
-      // Best-effort: failure here shouldn't block login since requireAAL2
-      // on the backend always checks the real aal claim, not this flag.
       try {
         await api.post("auth/mfa/sync-status", {});
       } catch (syncErr) {
         console.error("mfa sync-status failed:", syncErr);
       }
 
-      // 4) Check profile status (Bearer from memory now)
       const res = await api.get("webapp/users/profiles/me");
       const profile = res?.data ?? null;
 
-      // Defensive: normalize possible response shapes and avoid reading
-      // properties from undefined (which caused the console error).
       const status = profile?.status ?? profile?.profile?.status ?? null;
       if (!status) {
         await api.post("auth/logout");
@@ -62,24 +54,24 @@ const Login = () => {
         setAccessToken(null);
 
         const statusMessages = {
-          on_hold: "Your account is currently on hold. Please contact the administrator to restore access.",
-          inactive: "Your account has been deactivated. Please contact the administrator.",
+          on_hold:
+            "Your account is currently on hold. Please contact the administrator to restore access.",
+          inactive:
+            "Your account has been deactivated. Please contact the administrator.",
         };
-        setError(statusMessages[status] || "Your account is not active. Please contact the administrator.");
+        setError(
+          statusMessages[status] ||
+            "Your account is not active. Please contact the administrator."
+        );
         setLoading(false);
         setMfaFactorId(null);
         return;
       }
 
-      // 5) Check if a forced password reset is required (temp password was issued)
-      // AUTH-009: must_change_password flag set by backend when a superadmin issues a temp password.
-      // Guard: only redirect if the flag is set AND temp_expires_at exists AND hasn't expired.
-      // Without the expiry check, an established user whose clear-force-reset call ever failed
-      // silently would be permanently trapped on the force-reset page.
       const mustReset = (() => {
         if (!profile?.must_change_password) return false;
-        if (!profile?.temp_expires_at) return false; // flag set but no expiry — treat as stale
-        return new Date(profile.temp_expires_at) > new Date(); // only redirect if still within window
+        if (!profile?.temp_expires_at) return false;
+        return new Date(profile.temp_expires_at) > new Date();
       })();
 
       if (mustReset) {
@@ -87,7 +79,6 @@ const Login = () => {
         return;
       }
 
-      // 6) All good — full navigation so App bootstraps from cookie
       window.location.replace("/dashboard");
     } catch (err) {
       console.error("Login failed:", err);
@@ -104,11 +95,8 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // 1) Sign in via Supabase JS (tokens NOT persisted — persistSession: false)
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data, error: authError } =
+        await supabase.auth.signInWithPassword({ email, password });
 
       if (authError) {
         setError(authError.message);
@@ -119,9 +107,6 @@ const Login = () => {
       const session = data.session;
       if (!session) throw new Error("No session returned");
 
-      // Prime the Supabase JS client session so supabase.auth.mfa.* calls
-      // below have something to attach to (persistSession: false means
-      // there's no session by default — same pattern as ForceResetPassword).
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: session.access_token,
         refresh_token: session.refresh_token,
@@ -151,7 +136,9 @@ const Login = () => {
 
         const factor = factorsData.totp[0];
         if (!factor) {
-          setError("MFA is required but no authenticator is enrolled. Contact an administrator.");
+          setError(
+            "MFA is required but no authenticator is enrolled. Contact an administrator."
+          );
           setLoading(false);
           return;
         }
@@ -160,8 +147,6 @@ const Login = () => {
         return;
       }
 
-      // No challenge needed (e.g. brand-new account with no factor enrolled
-      // yet) — proceed; the forced /mfa-setup gate catches this case.
       await finishLogin(session);
     } catch (err) {
       console.error("Login failed:", err);
@@ -173,8 +158,9 @@ const Login = () => {
 
   if (mfaFactorId) {
     return (
-      <MFAChallenge
+      <TwoFactorForm
         factorId={mfaFactorId}
+        email={email}
         onVerified={(session) => finishLogin(session)}
         onCancel={() => {
           setMfaFactorId(null);
@@ -186,46 +172,87 @@ const Login = () => {
 
   return (
     <div className="login-page">
+      <div className="login-backdrop">
+        <div className="login-glow login-glow--one" />
+        <div className="login-glow login-glow--two" />
+      </div>
+
       <div className="login-card">
-        <div className="login-logo">
-          <GlobeHemisphereWest size={48} weight="duotone" />
+        <div className="login-app-mark">
+          <GlobeHemisphereWest size={24} weight="duotone" />
         </div>
-        <h1 className="login-title">Login to your account</h1>
+        <div className="login-wordmark">WHY-PII?</div>
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+        <h1>Log in to your account</h1>
+        <p className="login-subhead">
+          Wi-Fi security console — analyst access only.
+        </p>
+
+        {error && <div className="login-error">{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className="login-field">
+            <label htmlFor="login-email">Email</label>
+            <div className="login-input-wrap">
+              <span className="login-input-icon">
+                <EnvelopeSimple size={16} />
+              </span>
+              <input
+                id="login-email"
+                type="email"
+                placeholder="analyst@company.com"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
           </div>
 
-          <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div className="login-field login-field--last">
+            <label htmlFor="login-password">Password</label>
+            <div className="login-input-wrap">
+              <span className="login-input-icon">
+                <LockSimple size={16} />
+              </span>
+              <input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                className={showPassword ? "has-toggle" : ""}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="login-toggle-visibility"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((v) => !v)}
+              >
+                {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
-          {/* ADDED Forgot password link here */}
-          <p className="forgot-password-text">
-            <Link to="/forgot-password">Forgot your password?</Link>
-          </p>
+          <div className="login-row-end">
+            <Link className="login-link" to="/forgot-password">
+              Forgot password?
+            </Link>
+          </div>
 
-          {error && <p className="error-text">{error}</p>}
-
-          <button type="submit" className="login-button" disabled={loading}>
-            {loading ? "Logging in..." : "Login now"}
+          <button
+            type="submit"
+            className="login-btn-primary"
+            disabled={loading}
+          >
+            {loading ? "Logging in…" : "Log in"}
+            <ArrowRight size={16} />
           </button>
         </form>
+
+        <div className="login-footer-meta">SECURE CONNECTION · TLS 1.3</div>
       </div>
     </div>
   );
