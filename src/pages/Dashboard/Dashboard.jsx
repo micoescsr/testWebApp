@@ -24,6 +24,7 @@ const Dashboard = () => {
     scanList,
     selectedScanId,
     setSelectedScanId,
+    piStatus,
   } = useDashboard();
 
   return (
@@ -36,6 +37,7 @@ const Dashboard = () => {
         scanList={scanList}
         selectedScanId={selectedScanId}
         onScanChange={setSelectedScanId}
+        piStatus={piStatus}
       />
 
       {loading && <Spinner label="Loading dashboard data..." />}

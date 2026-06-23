@@ -1,26 +1,21 @@
 // components/sam/SAMSidebar.jsx
 import { useState, useMemo } from "react";
-import { ArrowClockwise, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { ArrowClockwise, MagnifyingGlass, PencilSimple, Check, X } from "@phosphor-icons/react";
 
 const SAMSidebar = ({
   selectedNetwork,
-  lastScannedNetwork, // NEW for sidebar display
+  lastScannedNetwork,
   onSelectNetwork,
   availableNetworks,
   onScan,
   networksLoading,
   networksError,
   onRefreshNetworks,
-  lastScan, // NEW for scan display scan_end
+  lastScan,
   locationMeta,
   onChangeMeta,
 }) => {
 
-  /* const lastScanLabel = lastScan
-    ? lastScan.scan_end          // or format with new Date(...)
-    : "N/A"; */
-
-  // helper for formatting to Asia/Manila
   const formatLastScan = (scan) => {
     if (!scan?.scan_end) return null;
     const d = new Date(scan.scan_end);
@@ -40,6 +35,7 @@ const SAMSidebar = ({
   // --- Network search filter ---
   const [networkSearch, setNetworkSearch] = useState("");
   const [showAllNetworks, setShowAllNetworks] = useState(false);
+  const [metaEditing, setMetaEditing] = useState(true);
   const DEFAULT_VISIBLE = 5;
 
   const filteredNetworks = useMemo(() => {
@@ -58,20 +54,18 @@ const SAMSidebar = ({
     : filteredNetworks.slice(0, DEFAULT_VISIBLE);
   const hasMore = !networkSearch && filteredNetworks.length > DEFAULT_VISIBLE;
 
+  const hasMeta = locationMeta.city || locationMeta.province || locationMeta.notes;
+
   return (
     <div className="sam-sidebar">
       <div className="sidebar-section">
         <div className="info-row">
           <span className="info-label">Current Network</span>
           <span className="info-value">
-            {lastScannedNetwork 
+            {lastScannedNetwork
               ? lastScannedNetwork.ssid || "(hidden)"
               : "N/A"}
-              
-            {/* with bssid 
-            {selectedNetwork? `${selectedNetwork.ssid || "(hidden)"} (${selectedNetwork.bssid})`: "N/A"}  */}
           </span>
-          
         </div>
         <div className="info-row">
           <span className="info-label">Last Scan</span>
@@ -122,48 +116,44 @@ const SAMSidebar = ({
                 </button>
               )}
             </div>
-              <div className="network-list">
-          {visibleNetworks.length > 0 ? (
-            visibleNetworks.map((net, idx) => (
-              <div
-                key={`${net.bssid || net.ssid}-${idx}`}
-                className={`network-item cursor-pointer p-3 border-b border-gray-200 hover:bg-gray-50 transition-colors ${
-                  selectedNetwork && selectedNetwork.bssid === net.bssid ? "active" : ""
-                }`}
-                onClick={() => onSelectNetwork(net)}
-              >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{net.ssid || "(hidden)"}</div>
-                </div>
-                <div className="flex items-center gap-3 ml-4 flex-shrink-0">
-                  <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                    Ch: {net.channel}
+            <div className="network-list">
+              {visibleNetworks.length > 0 ? (
+                visibleNetworks.map((net, idx) => (
+                  <div
+                    key={`${net.bssid || net.ssid}-${idx}`}
+                    className={`network-item${
+                      selectedNetwork && selectedNetwork.bssid === net.bssid ? " active" : ""
+                    }`}
+                    onClick={() => onSelectNetwork(net)}
+                  >
+                    <div className="network-item-row">
+                      <div className="network-item-info">
+                        <div className="network-item-ssid">{net.ssid || "(hidden)"}</div>
+                      </div>
+                      <div className="network-item-chips">
+                        <span className="network-chip">Ch: {net.channel}</span>
+                        <span className="network-chip bssid">{net.bssid}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 font-mono bg-green-100 px-2 py-1 rounded truncate max-w-[120px]">
-                    {net.bssid}
-                  </div>
+                ))
+              ) : (
+                <div className="network-item">
+                  {networkSearch ? "No matching networks" : "No networks found. Please try again."}
                 </div>
-              </div>
+              )}
+              {hasMore && (
+                <button
+                  type="button"
+                  className="show-more-btn"
+                  onClick={() => setShowAllNetworks((prev) => !prev)}
+                >
+                  {showAllNetworks
+                    ? "Show Less"
+                    : `Show More (${filteredNetworks.length - DEFAULT_VISIBLE} more)`}
+                </button>
+              )}
             </div>
-          ))
-        ) : (
-          <div className="network-item py-4 text-center text-gray-500">
-            {networkSearch ? "No matching networks" : "No networks found. Please try again."}
-          </div>
-        )}
-        {hasMore && (
-          <button
-            type="button"
-            className="show-more-btn"
-            onClick={() => setShowAllNetworks((prev) => !prev)}
-          >
-            {showAllNetworks
-              ? "Show Less"
-              : `Show More (${filteredNetworks.length - DEFAULT_VISIBLE} more)`}
-          </button>
-        )}
-      </div>
           </>
         )}
       </div>
@@ -171,23 +161,47 @@ const SAMSidebar = ({
       <div className="sidebar-section">
         <div className="section-header">
           <h3 className="sidebar-title">Network Details</h3>
-          <button className="edit-btn">✏️</button>
+          <button
+            className="edit-toggle-btn"
+            type="button"
+            onClick={() => setMetaEditing((prev) => !prev)}
+            title={metaEditing ? "Done editing" : "Edit details"}
+          >
+            {metaEditing ? <Check size={16} /> : <PencilSimple size={16} />}
+          </button>
         </div>
-        <div className="network-form">
-          <input type="text" placeholder="City" className="form-input"
-            value={locationMeta.city}
-            onChange={(e) => onChangeMeta("city", e.target.value)} />
-          <input type="text" placeholder="Province" className="form-input" 
-            value={locationMeta.province}
-            onChange={(e) => onChangeMeta("province", e.target.value)} />
-          <textarea
-            placeholder="Notes (e.g. SM Mall)"
-            className="form-textarea"
-            rows="4"
-           value={locationMeta.notes}
-            onChange={(e) => onChangeMeta("notes", e.target.value)}
-          ></textarea>
-        </div>
+        {metaEditing ? (
+          <div className="network-form">
+            <input type="text" placeholder="City" className="form-input"
+              value={locationMeta.city}
+              onChange={(e) => onChangeMeta("city", e.target.value)} />
+            <input type="text" placeholder="Province" className="form-input"
+              value={locationMeta.province}
+              onChange={(e) => onChangeMeta("province", e.target.value)} />
+            <textarea
+              placeholder="Notes (e.g. SM Mall)"
+              className="form-textarea"
+              rows="4"
+              value={locationMeta.notes}
+              onChange={(e) => onChangeMeta("notes", e.target.value)}
+            ></textarea>
+          </div>
+        ) : (
+          <div className="meta-view">
+            <div className="meta-view-row">
+              <span className="meta-view-label">City</span>
+              <span className="meta-view-value">{locationMeta.city || "—"}</span>
+            </div>
+            <div className="meta-view-row">
+              <span className="meta-view-label">Province</span>
+              <span className="meta-view-value">{locationMeta.province || "—"}</span>
+            </div>
+            <div className="meta-view-row">
+              <span className="meta-view-label">Notes</span>
+              <span className="meta-view-value">{locationMeta.notes || "—"}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="sidebar-actions">

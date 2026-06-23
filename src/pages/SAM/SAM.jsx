@@ -52,6 +52,8 @@ const SAM = () => {
   const restoredRef = useRef(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [findingType, setFindingType] = useState(null); // 'threat' | 'vulnerability'
+  const [rawFinding, setRawFinding] = useState(null);
   const [lastScan, setLastScan] = useState(null);
   const [locationMeta, setLocationMeta] = useState({
     city: "",
@@ -224,24 +226,23 @@ const SAM = () => {
 
   const handleScan = async () => {
     if (!selectedNetwork) {
-      alert("Please select a network first");
+      showToast("Please select a network first", "error");
       return;
     }
 
-    // Basic validation
     if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
-      alert("Select a full network first");
+      showToast("Select a full network first", "error");
       return;
     }
 
     const channelNum = Number(selectedNetwork.channel);
     if (!Number.isFinite(channelNum)) {
-      alert("Invalid channel value");
+      showToast("Invalid channel value", "error");
       return;
     }
 
     if (!locationMeta.city || !locationMeta.province || !locationMeta.notes) {
-      alert("City, Province, and Notes are required");
+      showToast("City, Province, and Notes are required", "error");
       return;
     }
 
@@ -317,7 +318,7 @@ const SAM = () => {
 
   const saveSelectedNetwork = async () => {
     if (!selectedNetwork?.bssid || selectedNetwork?.channel === undefined) {
-      alert("Select a full network first");
+      showToast("Select a full network first", "error");
       return;
     }
 
@@ -339,21 +340,26 @@ const SAM = () => {
   const openThreatDetail = async (threat) => {
     const key =
       typeof threat?.id === "string" && threat.id.includes("-")
-        ? threat.id // vt_code-like, e.g. WFVT-006
+        ? threat.id
         : threat?.name;
 
+    setFindingType("threat");
+    setRawFinding(threat);
     await fetchThreatDetail(key);
     setIsModalOpen(true);
   };
 
-  const openVulnDetail = /* async  */ (vuln) => {
-    //await fetchVulnDetail(vuln.name);
+  const openVulnDetail = (vuln) => {
+    setFindingType("vulnerability");
+    setRawFinding(vuln);
     setIsModalOpen(true);
-    fetchVulnDetail(vuln); // pass whole row
+    fetchVulnDetail(vuln);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
+    setFindingType(null);
+    setRawFinding(null);
   };
 
   // ——— Stop Detection handler ———
@@ -372,9 +378,9 @@ const SAM = () => {
     }
   };
 
-  const currentDetail = activeTab === "threats" ? threatDetail : vulnDetail;
+  const currentDetail = findingType === "threat" ? threatDetail : vulnDetail;
   const detailLoading =
-    activeTab === "threats" ? threatDetailLoading : vulnDetailLoading;
+    findingType === "threat" ? threatDetailLoading : vulnDetailLoading;
 
   const tabs = [
     { label: "Threats", value: "threats" },
@@ -425,19 +431,8 @@ const SAM = () => {
       <div className="sam-main">
         <h1 className="page-title">Security Assessment Management</h1>
 
-        {/* FAILED BANNER */}
         {detectionStatus === "FAILED" && (
-          <div
-            className="status-banner failed"
-            style={{
-              background: "#fde8e8",
-              color: "#991b1b",
-              padding: "10px",
-              marginBottom: "10px",
-              borderRadius: "4px",
-              border: "1px solid #991b1b",
-            }}
-          >
+          <div className="status-banner failed">
             Detection failed: {failureReason || "Unknown error"}. Run a new scan
             to restart.
           </div>
@@ -543,7 +538,9 @@ const SAM = () => {
       {isModalOpen && (
         <FindingDetailModal
           onClose={closeModal}
-          vulnerability={currentDetail}
+          finding={currentDetail}
+          rawFinding={rawFinding}
+          findingType={findingType}
           loading={detailLoading || !currentDetail}
         />
       )}

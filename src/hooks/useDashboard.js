@@ -1,10 +1,11 @@
 ﻿// hooks/useDashboard.js
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getDashboardSummary,
   getDashboardForNetwork,
   getNetworks,
 } from "../api/dashboardApi";
+import api from "../api/axios";
 import { useApiResource } from "./useApiResource";
 
 export const useDashboard = () => {
@@ -20,6 +21,10 @@ export const useDashboard = () => {
 
   // ΓöÇΓöÇ Network list (for dropdown) ΓöÇΓöÇ
   const [networks, setNetworks] = useState([]);
+
+  // ΓöÇΓöÇ Pi device status (online/offline) ΓöÇΓöÇ
+  const [piStatus, setPiStatus] = useState({ online: null, data: null });
+  const piPollRef = useRef(null);
 
   // ΓöÇΓöÇ Date filter: selected scan ΓöÇΓöÇ
   const [selectedScanId, setSelectedScanId] = useState(null);
@@ -44,6 +49,25 @@ export const useDashboard = () => {
     };
     fetchNetworks();
     return () => { cancelled = true; };
+  }, []);
+
+  // ΓöÇΓöÇ Poll Pi device status every 30s ΓöÇΓöÇ
+  useEffect(() => {
+    let cancelled = false;
+    const fetchPiStatus = async () => {
+      try {
+        const res = await api.get("/pi/device/status");
+        if (!cancelled) setPiStatus({ online: true, data: res.data });
+      } catch {
+        if (!cancelled) setPiStatus({ online: false, data: null });
+      }
+    };
+    fetchPiStatus();
+    piPollRef.current = setInterval(fetchPiStatus, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(piPollRef.current);
+    };
   }, []);
 
   // ΓöÇΓöÇ Reset selectedScanId when network changes ΓöÇΓöÇ
@@ -102,10 +126,10 @@ export const useDashboard = () => {
     hoverContext,
     setHoverContext,
     clearHoverContext,
-    // New: for dropdowns
     networks,
     scanList,
     selectedScanId,
     setSelectedScanId,
+    piStatus,
   };
 };

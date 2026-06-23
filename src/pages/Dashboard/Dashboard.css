@@ -66,6 +66,14 @@
   color: var(--success);
 }
 
+.status-offline {
+  color: var(--danger);
+}
+
+.status-checking {
+  color: var(--text-muted);
+}
+
 /* Stat cards */
 .dash-stats-row {
   display: grid;

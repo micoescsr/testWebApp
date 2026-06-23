@@ -1,4 +1,4 @@
-﻿// components/dashboard/DashboardHeader.jsx
+// components/dashboard/DashboardHeader.jsx
 const DashboardHeader = ({
   viewMode,
   setViewMode,
@@ -7,8 +7,8 @@ const DashboardHeader = ({
   scanList,
   selectedScanId,
   onScanChange,
+  piStatus,
 }) => {
-  // Format ISO date for display in dropdown
   const formatDate = (iso) => {
     if (!iso) return "Unknown";
     try {
@@ -21,6 +21,10 @@ const DashboardHeader = ({
       return "Unknown";
     }
   };
+
+  const isOnline = piStatus?.online === true;
+  const isLoading = piStatus?.online === null;
+  const deviceModel = piStatus?.data?.model || "Raspberry Pi";
 
   return (
     <div className={isSummary ? "dash-header-summary" : "dash-header"}>
@@ -64,10 +68,17 @@ const DashboardHeader = ({
       <div className="device-status">
         <p className="status-label">Device Status:</p>
         <p className="status-line">
-          Model: <span>Raspberry Pi 5</span>
+          Model: <span>{deviceModel}</span>
         </p>
         <p className="status-line">
-          Status: <span className="status-online">Online ✓</span>
+          Status:{" "}
+          {isLoading ? (
+            <span className="status-checking">Checking…</span>
+          ) : isOnline ? (
+            <span className="status-online">Online</span>
+          ) : (
+            <span className="status-offline">Offline</span>
+          )}
         </p>
       </div>
     </div>

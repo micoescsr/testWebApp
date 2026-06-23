@@ -4,6 +4,7 @@
 // Replaces the browser alert() with a styled modal.
 
 import BaseModal from "../../common/Modal/BaseModal";
+import { CheckCircle } from "@phosphor-icons/react";
 import "./ScanConfirmModal.css";
 
 const ScanConfirmModal = ({ isOpen, onClose, networkId, ssid }) => {
@@ -21,7 +22,7 @@ const ScanConfirmModal = ({ isOpen, onClose, networkId, ssid }) => {
       }
     >
       <div className="scm-body">
-        <div className="scm-success-icon">✓</div>
+        <div className="scm-success-icon"><CheckCircle size={28} /></div>
         <p className="scm-message">
           The scan has been saved successfully. Threat detection is now
           starting.

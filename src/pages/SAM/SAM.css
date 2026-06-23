@@ -206,6 +206,115 @@
   border: 1px solid var(--border);
 }
 
+/* ─── FAILED detection banner (token-based) ─── */
+.status-banner.failed {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--sev-critical-bg);
+  color: var(--sev-critical-fg);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--sev-critical-fg);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* ─── Network item row layout (replaces dead Tailwind utilities) ─── */
+.network-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.network-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.network-item-ssid {
+  font-weight: var(--weight-medium);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.network-item-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-left: var(--space-3);
+}
+
+.network-chip {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.network-chip.bssid {
+  font-family: var(--font-mono, monospace);
+  background: var(--sev-low-bg);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Sidebar edit toggle button ─── */
+.edit-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.edit-toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.meta-view-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.meta-view-row:last-child {
+  border-bottom: none;
+}
+
+.meta-view-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+  flex-shrink: 0;
+}
+
+.meta-view-value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-word;
+  max-width: 60%;
+}
+
 /* Sidebar Styles */
 .sam-sidebar {
   display: flex;

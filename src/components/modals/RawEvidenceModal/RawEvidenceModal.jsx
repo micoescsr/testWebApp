@@ -1,6 +1,7 @@
 // components/modals/RawEvidenceModal/RawEvidenceModal.jsx
 import { useState, useEffect } from "react";
 import BaseModal from "../../common/Modal/BaseModal";
+import { X } from "@phosphor-icons/react";
 import "./RawEvidenceModal.css";
 
 // Mapping helper: WFVT ID → source key path for Formatted View
@@ -199,8 +200,8 @@ const RawEvidenceModal = ({
             <h2 className="raw-evidence-title">{title}</h2>
             <p className="raw-evidence-subtitle">{subtitle}</p>
           </div>
-          <button className="raw-evidence-close" onClick={onClose}>
-            ✕
+          <button className="raw-evidence-close" onClick={onClose} aria-label="Close">
+            <X size={20} />
           </button>
         </>
       }
