@@ -30,6 +30,8 @@ const detectStateService = require('./services/detectStateService');
 const { requestIdMiddleware } = require('./middleware/requestIdMiddleware');
 
 const { authJWT } = require("./middleware/authMiddleware");
+const { requireActiveProfile } = require("./middleware/statusMiddleware");
+const { requireAAL2 } = require("./middleware/mfaMiddleware");
 const { supabaseClient } = require("./config/supabaseClient");
 
 const app = express();
@@ -165,7 +167,7 @@ app.use("/api/pi", piProxyRoutes);
 // it looked like blanket auth existed when it didn't.
 
 // Phase 2-D: Device status requires JWT (browser-called)
-app.get("/api/device/status", authJWT, async (req, res) => {
+app.get("/api/device/status", authJWT, requireActiveProfile, requireAAL2, async (req, res) => {
   try {
     const { status, data } = await piFetch("/device/status");
     return res.status(status).json(data);
@@ -200,9 +202,6 @@ app.get("/api/device/status", authJWT, async (req, res) => {
 //   GET  /api/captivePortal/announcement?network_id=
 //   GET  /api/captivePortal/announcement/history?network_id=
 //   POST /api/captivePortal/announcement            { content, network_id }
-//   GET  /api/captivePortal/terms?network_id=
-//   GET  /api/captivePortal/terms/history?network_id=
-//   POST /api/captivePortal/terms                   { content, version, network_id }
 //   GET  /api/captivePortal/tips?network_id=
 //   POST /api/captivePortal/tips                    { network_id, tips: [...] }
 //   GET  /api/captivePortal/risk-classifications

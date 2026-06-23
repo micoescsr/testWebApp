@@ -545,10 +545,33 @@ router.post('/enable-ap', authJWT, requireActiveProfile, requireAAL2, deviceEnab
 			const portalUrl = '/portal/patch';
 			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
 
-			const { ok: portalOk, status: portalStatus, data: portalData } = await piFetch('/portal/patch', {
-				method: 'POST',
-				jsonBody: patchPayload,
-			});
+			let portalOk, portalStatus, portalData;
+			try {
+				({ ok: portalOk, status: portalStatus, data: portalData } = await piFetch('/portal/patch', {
+					method: 'POST',
+					jsonBody: patchPayload,
+					timeoutMs: 15_000,
+				}));
+			} catch (portalFetchErr) {
+				// Portal seed failed (timeout or network error) BEFORE orchestrate/apply
+				// was ever called. Catch here so the outer catch's 502/503/504
+				// reconciliation branch doesn't misreport this as an AP-toggle timeout.
+				console.error('[enable-ap] portal/patch (INIT) fetch error:', portalFetchErr.message);
+				await logAuditEvent({
+					req, actorId, eventName: 'PORTAL_PATCH', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, reason: 'portal_init', error: portalFetchErr.message },
+				});
+				await logAuditEvent({
+					req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'FAILED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, scan_id, reason: 'portal_init_failed' },
+				});
+				return res.status(502).json({
+					error: 'PORTAL_PATCH_FAILED',
+					message: 'Failed to initialize captive portal. AP enable aborted.',
+				});
+			}
 
 			logFastApiCall('portal/patch RESPONSE (INIT)', portalUrl, patchPayload, {
 				status: portalStatus,
@@ -712,60 +735,17 @@ router.post('/enable-ap', authJWT, requireActiveProfile, requireAAL2, deviceEnab
 
 		console.log('AP enabled successfully for network:', network_id);
 
-		// Step 10: Always push current portal content after AP enable
-		// The Pi needs fresh content every time AP comes up (announcements, tips, risk, color).
-		// Step 7 only seeds+patches on first init; subsequent enables need this.
-		let portalPatched = false;
-		try {
-			const patchPayload = await buildPortalPayloadFromDB(
-				network_id, net.bssid, net.ssid
-			);
+		// Step 10: Push current portal content after AP enable (non-blocking).
+		// Step 7 already patched on first-time init — skip the duplicate call.
+		// For subsequent enables, fire-and-forget so the response isn't delayed
+		// by the Pi round-trip (portal patch is non-fatal).
+		const portalAlreadyPatched = !net.portal_initialized; // Step 7 just ran
 
-			logFastApiCall('portal/patch (POST-ENABLE)', '/portal/patch', patchPayload, null);
-
-			const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
-				method: 'POST',
-				jsonBody: patchPayload,
-			});
-
-			logFastApiCall('portal/patch RESPONSE (POST-ENABLE)', '/portal/patch', patchPayload, {
-				status: patchStatus,
-				body: patchData,
-			});
-
-			if (patchOk) {
-				portalPatched = true;
-				const nowIso = new Date().toISOString();
-				const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
-
-				// Re-read risk_score_version to avoid stamping a stale value
-				const { data: latestNet } = await supabaseClient
-					.from('networks')
-					.select('risk_score_version')
-					.eq('network_id', network_id)
-					.single();
-
-				await supabaseClient
-					.from('networks')
-					.update({
-						portal_last_patched_at: nowIso,
-						portal_last_patched_version: latestNet?.risk_score_version ?? net.risk_score_version,
-						portal_tipset_hash: tipsetHash,
-					})
-					.eq('network_id', network_id);
-				console.log('Portal content pushed after AP enable for network:', network_id);
-			} else {
-				console.warn('[enable-ap] portal/patch after enable failed (non-fatal):', patchStatus, patchData);
-			}
-		} catch (patchErr) {
-			console.error('[enable-ap] portal/patch after enable error (non-fatal):', patchErr.message);
-		}
-
-		// Audit: enable success
+		// Audit: enable success (send response immediately, don't wait for patch)
 		await logAuditEvent({
 			req, actorId, eventName: 'AP_ENABLE_REQUEST', eventStatus: 'SUCCESS',
 			entityType: 'NETWORK', entityIdUuid: network_id,
-			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus, portal_patched: portalPatched },
+			meta: { request_id: requestId, scan_id: scan.scan_id, fastapi_status: enableStatus, portal_patched: portalAlreadyPatched },
 		});
 
 		const responseBody = {
@@ -773,13 +753,53 @@ router.post('/enable-ap', authJWT, requireActiveProfile, requireAAL2, deviceEnab
 			network_id,
 			ap_enabled: true,
 			portal_initialized: true,
-			portal_patched: portalPatched,
+			portal_patched: portalAlreadyPatched,
 			scan: {
 				scan_id: scan.scan_id,
 				finished_at: scan.finished_at,
 			},
 			fastapi: fastapiData,
 		};
+
+		// Fire-and-forget portal patch for subsequent enables (not first-time).
+		// Runs after the response is sent so the user isn't blocked.
+		if (!portalAlreadyPatched) {
+			setImmediate(async () => {
+				try {
+					const patchPayload = await buildPortalPayloadFromDB(
+						network_id, net.bssid, net.ssid
+					);
+					const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
+						method: 'POST',
+						jsonBody: patchPayload,
+						timeoutMs: 15_000,
+					});
+					if (patchOk) {
+						const nowIso = new Date().toISOString();
+						const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+						const { data: latestNet } = await supabaseClient
+							.from('networks')
+							.select('risk_score_version')
+							.eq('network_id', network_id)
+							.single();
+						await supabaseClient
+							.from('networks')
+							.update({
+								portal_last_patched_at: nowIso,
+								portal_last_patched_version: latestNet?.risk_score_version ?? net.risk_score_version,
+								portal_tipset_hash: tipsetHash,
+							})
+							.eq('network_id', network_id);
+						console.log('Portal content pushed after AP enable for network:', network_id);
+					} else {
+						console.warn('[enable-ap] portal/patch after enable failed (non-fatal):', patchStatus, patchData);
+					}
+				} catch (patchErr) {
+					console.error('[enable-ap] portal/patch after enable error (non-fatal):', patchErr.message);
+				}
+			});
+		}
+
 		return res.json(responseBody);
 	} catch (err) {
 		console.error('deviceMgmt /enable-ap error:', err);
@@ -946,94 +966,218 @@ router.get('/network/:networkId/state', authJWT, requireActiveProfile, requireAA
 // ═══════════════════════════════════════════════════════════════════
 
 // ─── Idempotent job finalizer ────────────────────────────────────
-// Called when poll detects terminal state. Safe if called twice,
-// from multiple tabs, or on server restart. Checks both apJobStore
-// finalized flag AND DB ap_apply_in_progress before writing.
+// Called when poll detects terminal state. Uses an in-process lock
+// (apJobStore.tryAcquireFinalizing) to prevent concurrent polls from
+// triggering duplicate DB writes or duplicate Pi portal/patch calls.
+// Also safe across server restarts: checks DB ap_apply_in_progress
+// before writing, so a stale call after another path already finalized
+// is a no-op.
 async function finalizeJob(job, piResult) {
-	if (job.finalized) return; // already done
+	if (job.finalized) return;
 
-	const networkId = job.network_id;
-
-	// Guard: only finalize if DB lock is still held by this job
-	const { data: net } = await supabaseClient
-		.from('networks')
-		.select('ap_apply_in_progress')
-		.eq('network_id', networkId)
-		.maybeSingle();
-
-	if (!net || !net.ap_apply_in_progress) {
-		// Lock already released (another path finalized, or server restarted)
-		apJobStore.markFinalized(job.job_id);
-		return;
+	// Concurrency guard: only one in-flight finalization per job ID
+	if (!apJobStore.tryAcquireFinalizing(job.job_id)) {
+		return; // another concurrent poll is already finalizing this job
 	}
 
-	const isSuccess = job.status === 'DONE';
-	const nowIso = new Date().toISOString();
+	try {
+		const networkId = job.network_id;
 
-	if (isSuccess && job.target_ap_status === 'enable') {
-		await supabaseClient
+		// Guard: only finalize if DB lock is still held
+		const { data: net } = await supabaseClient
 			.from('networks')
-			.update({
-				ap_enabled: true,
-				ap_last_applied_at: nowIso,
-			})
-			.eq('network_id', networkId);
+			.select('ap_apply_in_progress')
+			.eq('network_id', networkId)
+			.maybeSingle();
 
-		// Post-enable portal patch (non-fatal)
-		try {
-			const { data: netConfig } = await supabaseClient
+		if (!net || !net.ap_apply_in_progress) {
+			apJobStore.markFinalized(job.job_id);
+			return;
+		}
+
+		const isSuccess = job.status === 'DONE';
+		const nowIso = new Date().toISOString();
+
+		if (isSuccess && job.target_ap_status === 'enable') {
+			await supabaseClient
 				.from('networks')
-				.select('bssid, ssid')
-				.eq('network_id', networkId)
-				.single();
+				.update({
+					ap_enabled: true,
+					ap_last_applied_at: nowIso,
+				})
+				.eq('network_id', networkId);
 
-			if (netConfig) {
-				const patchPayload = await buildPortalPayloadFromDB(
-					networkId, netConfig.bssid, netConfig.ssid
-				);
-				const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
-					method: 'POST',
-					jsonBody: patchPayload,
-				});
-				if (patchOk) {
-					const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
-					const { data: latestNet } = await supabaseClient
-						.from('networks')
-						.select('risk_score_version')
-						.eq('network_id', networkId)
-						.single();
+			// Post-enable portal patch (non-fatal)
+			try {
+				const { data: netConfig } = await supabaseClient
+					.from('networks')
+					.select('bssid, ssid')
+					.eq('network_id', networkId)
+					.single();
 
-					await supabaseClient
-						.from('networks')
-						.update({
-							portal_last_patched_at: nowIso,
-							portal_last_patched_version: Number(latestNet?.risk_score_version) || 0,
-							portal_tipset_hash: tipsetHash,
-						})
-						.eq('network_id', networkId);
-					console.log('[finalizeJob] Portal patched after async enable for', networkId);
-				} else {
-					console.warn('[finalizeJob] Portal patch failed (non-fatal):', patchStatus, patchData);
+				if (netConfig) {
+					const patchPayload = await buildPortalPayloadFromDB(
+						networkId, netConfig.bssid, netConfig.ssid
+					);
+					const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
+						method: 'POST',
+						jsonBody: patchPayload,
+						timeoutMs: 15_000,
+					});
+					if (patchOk) {
+						const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+						const { data: latestNet } = await supabaseClient
+							.from('networks')
+							.select('risk_score_version')
+							.eq('network_id', networkId)
+							.single();
+
+						await supabaseClient
+							.from('networks')
+							.update({
+								portal_last_patched_at: nowIso,
+								portal_last_patched_version: Number(latestNet?.risk_score_version) || 0,
+								portal_tipset_hash: tipsetHash,
+							})
+							.eq('network_id', networkId);
+						console.log('[finalizeJob] Portal patched after async enable for', networkId);
+					} else {
+						console.warn('[finalizeJob] Portal patch failed (non-fatal):', patchStatus, patchData);
+					}
+				}
+			} catch (patchErr) {
+				console.error('[finalizeJob] Portal patch error (non-fatal):', patchErr.message);
+			}
+		} else if (isSuccess && job.target_ap_status === 'disable') {
+			await supabaseClient
+				.from('networks')
+				.update({
+					ap_enabled: false,
+					ap_last_applied_at: nowIso,
+				})
+				.eq('network_id', networkId);
+		}
+		// On failure: don't change ap_enabled — leave in previous state
+
+		// Release the DB lock
+		await releaseApLock(networkId);
+		apJobStore.markFinalized(job.job_id);
+		console.log(`[finalizeJob] Job ${job.job_id} finalized (status=${job.status}) for ${networkId}`);
+	} catch (err) {
+		apJobStore.releaseFinalizingLock(job.job_id);
+		throw err;
+	}
+}
+
+// ─── Recovery finalizer for orphaned jobs ───────────────────────
+// When the in-memory job store has lost the job (server restart /
+// multi-instance), we can still reconcile the DB by querying Pi for
+// the authoritative live AP state. This avoids the silent data-
+// correctness gap where the frontend sees DONE but the DB never
+// updates ap_enabled or releases ap_apply_in_progress.
+async function recoverOrphanedJob(jobId, piTerminalStatus, piResult) {
+	if (!apJobStore.tryAcquireFinalizing(jobId)) {
+		return; // another call already handling this
+	}
+
+	try {
+		const isFailed = piTerminalStatus === 'FAILED';
+
+		// Find the network that holds the lock — this is the network the job belongs to.
+		// We cannot know network_id from the job store (it's gone), so we look for
+		// a network with ap_apply_in_progress=true. If multiple networks somehow have
+		// locks held (unlikely — UI drives one network at a time), we cannot safely
+		// guess which one this job belongs to, so we query Pi live state to reconcile.
+		const { data: lockedNets } = await supabaseClient
+			.from('networks')
+			.select('network_id, bssid, ssid, ap_enabled')
+			.eq('ap_apply_in_progress', true);
+
+		if (!lockedNets || lockedNets.length === 0) {
+			// Lock already released by another path (TTL expiry, manual intervention)
+			console.log(`[recoverOrphanedJob] No locked networks found for orphaned job ${jobId} — nothing to reconcile`);
+			apJobStore.releaseFinalizingLock(jobId);
+			return;
+		}
+
+		if (isFailed) {
+			// On failure: release all stale locks but don't change ap_enabled
+			for (const net of lockedNets) {
+				await releaseApLock(net.network_id);
+				console.log(`[recoverOrphanedJob] Released lock for ${net.network_id} after FAILED job ${jobId}`);
+			}
+			apJobStore.releaseFinalizingLock(jobId);
+			return;
+		}
+
+		// DONE + success: query Pi for authoritative AP state to determine what to write
+		let piApEnabled = null;
+		try {
+			const { ok: statusOk, data: statusData } = await piFetch('/device/status', { timeoutMs: 8_000 });
+			if (statusOk && statusData) {
+				piApEnabled = statusData.ap_enabled === true || statusData.ap_status === 'on';
+			}
+		} catch (statusErr) {
+			console.warn(`[recoverOrphanedJob] Could not reach Pi /device/status for job ${jobId}:`, statusErr.message);
+		}
+
+		const nowIso = new Date().toISOString();
+
+		for (const net of lockedNets) {
+			if (piApEnabled !== null) {
+				await supabaseClient
+					.from('networks')
+					.update({
+						ap_enabled: piApEnabled,
+						ap_last_applied_at: nowIso,
+					})
+					.eq('network_id', net.network_id);
+
+				// Post-enable portal patch when Pi confirms AP is on
+				if (piApEnabled) {
+					try {
+						const patchPayload = await buildPortalPayloadFromDB(
+							net.network_id, net.bssid, net.ssid
+						);
+						const { ok: patchOk, status: patchStatus, data: patchData } = await piFetch('/portal/patch', {
+							method: 'POST',
+							jsonBody: patchPayload,
+							timeoutMs: 15_000,
+						});
+						if (patchOk) {
+							const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+							const { data: latestNet } = await supabaseClient
+								.from('networks')
+								.select('risk_score_version')
+								.eq('network_id', net.network_id)
+								.single();
+							await supabaseClient
+								.from('networks')
+								.update({
+									portal_last_patched_at: nowIso,
+									portal_last_patched_version: Number(latestNet?.risk_score_version) || 0,
+									portal_tipset_hash: tipsetHash,
+								})
+								.eq('network_id', net.network_id);
+							console.log(`[recoverOrphanedJob] Portal patched for ${net.network_id}`);
+						} else {
+							console.warn(`[recoverOrphanedJob] Portal patch failed (non-fatal) for ${net.network_id}:`, patchStatus, patchData);
+						}
+					} catch (patchErr) {
+						console.error(`[recoverOrphanedJob] Portal patch error (non-fatal) for ${net.network_id}:`, patchErr.message);
+					}
 				}
 			}
-		} catch (patchErr) {
-			console.error('[finalizeJob] Portal patch error (non-fatal):', patchErr.message);
+			// Release lock regardless
+			await releaseApLock(net.network_id);
+			console.log(`[recoverOrphanedJob] Reconciled ${net.network_id} (ap_enabled=${piApEnabled}) for orphaned job ${jobId}`);
 		}
-	} else if (isSuccess && job.target_ap_status === 'disable') {
-		await supabaseClient
-			.from('networks')
-			.update({
-				ap_enabled: false,
-				ap_last_applied_at: nowIso,
-			})
-			.eq('network_id', networkId);
-	}
-	// On failure: don't change ap_enabled — leave in previous state
 
-	// Release the DB lock
-	await releaseApLock(networkId);
-	apJobStore.markFinalized(job.job_id);
-	console.log(`[finalizeJob] Job ${job.job_id} finalized (status=${job.status}) for ${networkId}`);
+		apJobStore.releaseFinalizingLock(jobId);
+	} catch (err) {
+		apJobStore.releaseFinalizingLock(jobId);
+		throw err;
+	}
 }
 
 // ─── GET /api/device/jobs/:jobId ─────────────────────────────────
@@ -1099,6 +1243,13 @@ router.get('/jobs/:jobId', authJWT, requireActiveProfile, requireAAL2, deviceJob
 						error_message: classified.user_message,
 					});
 					await finalizeJob(apJobStore.get(jobId), piResult);
+				} else {
+					// Job lost from memory (restart/deploy) — recover from Pi state
+					try {
+						await recoverOrphanedJob(jobId, 'FAILED', piResult);
+					} catch (recoverErr) {
+						console.error(`[jobs/${jobId}] orphan recovery (FAILED) error:`, recoverErr.message);
+					}
 				}
 
 				return res.json({
@@ -1115,6 +1266,13 @@ router.get('/jobs/:jobId', authJWT, requireActiveProfile, requireAAL2, deviceJob
 			if (storedJob) {
 				apJobStore.update(jobId, { status: 'DONE', result: piResult });
 				await finalizeJob(apJobStore.get(jobId), piResult);
+			} else {
+				// Job lost from memory (restart/deploy) — recover from Pi state
+				try {
+					await recoverOrphanedJob(jobId, 'DONE', piResult);
+				} catch (recoverErr) {
+					console.error(`[jobs/${jobId}] orphan recovery (DONE) error:`, recoverErr.message);
+				}
 			}
 
 			return res.json({

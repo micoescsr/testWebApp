@@ -182,10 +182,17 @@ const SAM = () => {
     // so no forced IDLE reset is needed here.
   }, [networksLoading, networks]);
 
-  // Helper: Filter vulnerabilities locally if needed
+  // Vulnerabilities state holds whichever bssid was last fetched (the most
+  // recently scanned network). Filtering by the currently selected network's
+  // bssid keeps a freshly-selected (not-yet-scanned) network from showing the
+  // previous network's stale scan results.
   const filteredVulns =
-    selectedNetwork && Array.isArray(vulnerabilities)
-      ? vulnerabilities.filter((v) => v.bssid === selectedNetwork.bssid)
+    selectedNetwork?.bssid && Array.isArray(vulnerabilities)
+      ? vulnerabilities.filter(
+          (v) =>
+            v.bssid &&
+            v.bssid.toUpperCase() === selectedNetwork.bssid.toUpperCase(),
+        )
       : [];
 
   const handleMetaChange = (field, value) => {
@@ -246,9 +253,12 @@ const SAM = () => {
       return;
     }
 
-    // 1. STOP previous detection & set scanning state
+    // 1. STOP previous detection & set scanning state, and clear stale
+    // results from any prior scan so they don't linger on screen while
+    // the new scan is in flight.
     resetDetection();
     setDetectionStatus("SCANNING");
+    reloadVulnerabilities(null);
 
     try {
       // 2. Trigger Scan
@@ -508,7 +518,7 @@ const SAM = () => {
 
         {activeTab === "vulnerabilities" && (
           <VulnerabilitiesTable
-            vulnerabilities={vulnerabilities}
+            vulnerabilities={filteredVulns}
             onView={openVulnDetail}
             onClear={() => {
               const bssid = selectedNetwork?.bssid || lastScannedNetwork?.bssid;

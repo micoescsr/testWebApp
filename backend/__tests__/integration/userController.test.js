@@ -105,12 +105,11 @@ describe("GET /api/webapp/users/profiles — getAllUsers", () => {
   });
 
   test("non-superadmin gets 403", async () => {
-    // authJWT + requireActiveProfile each call from("profiles") for status check,
-    // then getAllUsers.getCurrentUserRole calls it for role check.
-    mockAdminClient.from.mockReset();
+    // authJWT checks profiles.status (sets req.user.profileStatus),
+    // requireActiveProfile reuses that stamp (no extra DB call),
+    // then getAllUsers.getCurrentUserRole calls from("profiles") for role check.
     mockAdminClient.from
       .mockImplementationOnce(() => buildChain({ status: "active" })) // authJWT
-      .mockImplementationOnce(() => buildChain({ status: "active" })) // requireActiveProfile
       .mockImplementationOnce(() => buildChain({ role: "admin" }));   // getCurrentUserRole
     const res = await request(app)
       .get("/api/webapp/users/profiles")

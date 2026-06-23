@@ -10,6 +10,156 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## API Endpoint Audit & Fixes — June 23, 2026
+
+### Problem
+
+Full-stack API endpoint audit (following `backend-agent.md` workflow) revealed 5 issues across the backend and frontend: a security gap, a performance regression, dead code, and stale documentation.
+
+### Findings & Fixes
+
+#### Fix 1 — Missing middleware on `/api/device/status` (security)
+
+**File:** `backend/server.js`
+
+- The legacy `GET /api/device/status` route (line 170) only had `authJWT` in its middleware chain — missing `requireActiveProfile` and `requireAAL2`. A deactivated user or AAL1-only session could call this endpoint. The frontend uses `GET /api/pi/device/status` (which has the full chain), so this was a legacy route with weaker enforcement.
+- **Fix:** Added `requireActiveProfile` and `requireAAL2` to the route, plus the corresponding `require()` imports at the top of `server.js`.
+
+#### Fix 2 — Dead frontend API exports (cleanup)
+
+**File:** `src/api/samApi.js`
+
+- `getThreats()` and `getVulnerabilities()` called non-existent backend list endpoints (`GET /sam/threats`, `GET /sam/vulnerabilities`). The backend only has `GET /sam/threats/:idOrName` and `GET /sam/vulnerabilities/:idOrName`. These functions were never imported by any component — pure dead code.
+- **Fix:** Removed both dead exports.
+
+#### Fix 3 — Stale comment in `deviceApi.js` (accuracy)
+
+**File:** `src/api/deviceApi.js`
+
+- Line 60 JSDoc listed `'terms'` as a valid `update_type`, but the backend validator (`routeValidators.js`) doesn't accept it and no frontend code sends it.
+- **Fix:** Removed `'terms'` from the comment.
+
+#### Fix 4 — Stale endpoint docs in `server.js` (accuracy)
+
+**File:** `backend/server.js`
+
+- Comment block (lines 200–205) documented `GET/POST /api/captivePortal/terms` and `GET /api/captivePortal/terms/history` endpoints that were never implemented in `captivePortalRoutes.js`. No frontend code calls them.
+- **Fix:** Removed the three stale `terms` endpoint lines from the comment block.
+
+#### Fix 5 — Redundant profile DB query per request (performance)
+
+**Files:** `backend/middleware/statusMiddleware.js`, `backend/__tests__/integration/userController.test.js`
+
+- `authMiddleware.js` (line 50–67) already queries `profiles.status`, rejects non-active users, and stamps `req.user.profileStatus = profile.status`. Then `requireActiveProfile` — next in every authenticated middleware chain — made the identical Supabase query, doubling DB calls on every request.
+- **Fix:** `requireActiveProfile` now checks `req.user.profileStatus` (set by `authJWT`) first. If it's `"active"`, it skips the DB query entirely. Falls back to its own query when `authJWT` didn't run (defense-in-depth preserved).
+- **Test update:** `userController.test.js` — the non-superadmin test previously chained 3 `mockImplementationOnce` calls (authJWT + requireActiveProfile + getCurrentUserRole). With the fast path, `requireActiveProfile` no longer hits the mock, so reduced to 2 calls. Also removed a `mockReset()` that was poisoning subsequent tests' mock state.
+
+### Audit Scope
+
+Validated all 55 API endpoints across 13 route files:
+
+| Route File | Endpoints | Auth Chain | Validators | Frontend Match |
+|---|---|---|---|---|
+| `authRoutes.js` | 5 | Public + limiter | login validated | `authApi.js` |
+| `mfaRoutes.js` | 2 | AAL1 for sync, AAL2+superadmin for unenroll | UUID validated | `userApi.js` |
+| `webAppRoutes.js` | 2 | Full chain | — | direct |
+| `userRoutes.js` | 7 | Full chain + UUID + validators | All validated | `userApi.js` |
+| `rasPiRoutes.js` | 5 | Full chain + validators | Scan/network validated | `rasPiApi.js` |
+| `samRoutes.js` | 2 | Full chain | — | `samApi.js` |
+| `captivePortalRoutes.js` | 8 | Full chain + validators | Announcement/tips/sync | `deviceApi.js` |
+| `dashboardRoutes.js` | 4 | Full chain + UUID | UUID validated | `dashboardApi.js` |
+| `detectRoutes.js` | 5 | Full chain + validators | Start/stop validated | `detectApi.js` |
+| `historyRoutes.js` | 2 | Full chain | — | `samHistoryApi.js` |
+| `piProxyRoutes.js` | 6 | Full chain | — | direct |
+| `deviceMgmtRoutes.js` | 8 | Full chain + UUID + validators | enable-ap/job-poll/portal-update | `deviceApi.js` |
+| `auditRoutes.js` | 3 | Full chain + superadmin | — | `auditApi.js` |
+
+### Tests
+
+- Full backend suite: 32 suites, 471 tests passing.
+- Frontend eslint clean.
+- No schema, auth contract, or API surface changes.
+
+---
+
+## AP Enable Latency Fix + Async Bug Fixes — June 23, 2026
+
+### Problem
+
+Enabling the access point on the Device Management page was slow (~30–45s worst case on first enable). Separately, 4 bugs were identified in the async AP orchestration flow.
+
+### Cause (Latency)
+
+The enable-AP sync path had 3 sequential Pi network calls blocking the response on first-time enable:
+
+| Step | What | Time cost |
+|---|---|---|
+| Step 7 | `piFetch('/portal/patch')` — portal init (first enable only) | up to 15s |
+| Step 8 | `piFetch('/orchestrate/apply')` — actual AP enable | up to 15s |
+| Step 10 | `piFetch('/portal/patch')` — post-enable content push | up to 10s (no timeout!) |
+
+Step 10 was redundant on first-time enable (Step 7 already pushed the same content) and blocked the response even though it's non-fatal. On subsequent enables, Step 10 still blocked with its own `buildPortalPayloadFromDB` (5–8 DB queries) + Pi call.
+
+### Fix (Latency)
+
+**File:** `backend/routes/deviceMgmtRoutes.js`
+
+1. **Step 10 skipped when Step 7 just ran** — eliminates the duplicate `portal/patch` + duplicate `buildPortalPayloadFromDB` on first-time enable. Saves ~10–15s + 5–8 DB queries.
+2. **Step 10 is fire-and-forget via `setImmediate`** for subsequent enables — the response is sent immediately after `orchestrate/apply` succeeds; the portal patch runs asynchronously.
+3. **All `piFetch('/portal/patch')` calls now have explicit `timeoutMs: 15_000`** — prevents the old 10s default from causing inconsistent behavior.
+
+| Scenario | Before | After |
+|---|---|---|
+| First-time enable — sequential Pi calls | 3 (portal init + orchestrate + portal again) | 2 (portal init + orchestrate) |
+| First-time enable — `buildPortalPayloadFromDB` calls | 2 (5–8 queries each) | 1 |
+| First-time enable — response latency | ~30–45s worst case | ~15–30s worst case |
+| Subsequent enable — Pi calls blocking response | 2 (orchestrate + portal) | 1 (orchestrate only) |
+| Subsequent enable — portal patch | Blocks response, up to 10s | Fire-and-forget after response sent |
+
+### Bugs Fixed
+
+#### Bug A — Orphaned job recovery (critical)
+
+**File:** `backend/routes/deviceMgmtRoutes.js`
+
+If the server restarted mid-job, the in-memory `apJobStore` lost the job record. Subsequent client polls to `GET /jobs/:jobId` found no stored job and returned `UNKNOWN` indefinitely. The DB lock (`ap_apply_in_progress`) was never released.
+
+- **Fix:** Added `recoverOrphanedJob()` function. When `GET /jobs/:jobId` reaches a terminal Pi state (DONE or FAILED) but has no stored job, it queries Pi `/device/status` for authoritative AP state, reconciles the DB (`ap_enabled`, `ap_last_applied_at`), runs post-enable portal patch if AP is on, and releases the lock.
+
+#### Bug B — Portal seed timeout misclassification (moderate)
+
+**File:** `backend/routes/deviceMgmtRoutes.js`
+
+Portal init timeout (504 from `piFetch`) in Step 7 propagated to the outer catch which checked for 502/503/504 and entered AP-toggle reconciliation — misleading because `orchestrate/apply` was never called.
+
+- **Fix:** Wrapped Step 7 `piFetch('/portal/patch')` in its own try/catch. The catch returns `PORTAL_PATCH_FAILED` directly instead of falling through to the outer reconciliation branch.
+
+#### Bug C — Concurrent finalization (minor)
+
+**Files:** `backend/services/apJobStore.js`, `backend/routes/deviceMgmtRoutes.js`
+
+Two concurrent poll requests hitting a terminal job state could both run `finalizeJob()`, triggering duplicate DB writes and duplicate Pi portal/patch calls.
+
+- **Fix:** Added `tryAcquireFinalizing(jobId)` / `releaseFinalizingLock(jobId)` / `isFinalizing(jobId)` to `apJobStore.js`. `finalizeJob()` acquires the lock at the top; concurrent callers get a "finalizing" response instead of re-running the same DB writes.
+
+#### Bug D — Frontend UNKNOWN polling (minor)
+
+**File:** `src/hooks/useDevice.js`
+
+A single `UNKNOWN` from `GET /jobs/:jobId` shouldn't fail immediately (Pi might be briefly unreachable), but the frontend would silently poll for up to 5 minutes without surfacing an error.
+
+- **Fix:** Added `MAX_UNKNOWN_STREAK = 6` counter. After 6 consecutive `UNKNOWN` responses (~15s at 2.5s interval), the frontend synthesizes a `FAILED` response with `PI_UNREACHABLE` error code and surfaces "Lost contact with device" to the user.
+
+### Tests
+
+**File:** `backend/__tests__/integration/deviceMgmt.test.js`
+
+- First enable test: Updated expectations from 2 → 1 `buildPortalPayloadFromDB` calls, 3 → 2 fetch calls (no redundant second portal/patch).
+- Second enable test: Renamed, added `await new Promise((r) => setImmediate(r))` to drain deferred callback, updated to expect 2 fetch calls (orchestrate/apply + deferred portal/patch).
+- Full backend suite: 32 suites, 471 tests passing.
+
+---
+
 ## Mandatory TOTP MFA — June 18, 2026
 
 ### Problem

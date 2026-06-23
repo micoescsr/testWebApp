@@ -260,7 +260,7 @@ const AccessPointPanel = ({
           </div>
 
           {isEncrypted && (
-            <div className="info-row">
+            <div className="info-row ap-password-row">
               <span>AP Password</span>
               <input
                 type="password"

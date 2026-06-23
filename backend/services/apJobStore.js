@@ -14,6 +14,11 @@ const COMPLETED_TTL_MS = 10 * 60 * 1000; // evict completed jobs after 10 min
 /** @type {Map<string, Job>} */
 const jobs = new Map();
 
+// In-process guard: tracks job IDs currently being finalized so concurrent
+// polls for the same terminal job don't trigger duplicate DB writes / Pi calls.
+/** @type {Map<string, Promise<void>>} */
+const finalizingJobs = new Map();
+
 /**
  * @typedef {Object} Job
  * @property {string}  job_id
@@ -85,10 +90,38 @@ function update(jobId, fields) {
 /** Mark a job as finalized (DB writes complete). Idempotent. */
 function markFinalized(jobId) {
   const job = jobs.get(jobId);
-  if (!job) return null;
-  job.finalized = true;
-  job.updated_at = new Date().toISOString();
+  if (job) {
+    job.finalized = true;
+    job.updated_at = new Date().toISOString();
+  }
+  finalizingJobs.delete(jobId);
   return job;
+}
+
+/**
+ * Acquire the finalization lock for a job ID. Returns true if this caller
+ * won the lock; false if another call is already finalizing this job.
+ * The lock is released by markFinalized() or releaseFinalizingLock().
+ */
+function tryAcquireFinalizing(jobId) {
+  if (finalizingJobs.has(jobId)) return false;
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  promise._resolve = resolve;
+  finalizingJobs.set(jobId, promise);
+  return true;
+}
+
+/** Release the finalization lock without marking finalized (for error paths). */
+function releaseFinalizingLock(jobId) {
+  const p = finalizingJobs.get(jobId);
+  if (p?._resolve) p._resolve();
+  finalizingJobs.delete(jobId);
+}
+
+/** Check if a job is currently being finalized. */
+function isFinalizing(jobId) {
+  return finalizingJobs.has(jobId);
 }
 
 /** Remove stale completed jobs older than TTL. Call periodically. */
@@ -104,6 +137,7 @@ function cleanup() {
 /** Clear all jobs. For testing only. */
 function _reset() {
   jobs.clear();
+  finalizingJobs.clear();
 }
 
 /** Return count of stored jobs. For diagnostics. */
@@ -121,6 +155,9 @@ module.exports = {
   getActiveForNetwork,
   update,
   markFinalized,
+  tryAcquireFinalizing,
+  releaseFinalizingLock,
+  isFinalizing,
   cleanup,
   size,
   _reset,

@@ -57,7 +57,7 @@ export const getNetworkState = (networkId) =>
   api.get(`/device/network/${networkId}/state`);
 
 // ─── Portal Partial Update (client-driven, allowlisted) ──────────
-// update_type: 'announcement'|'terms'|'tips'|'risk'|'active'|'bulk'
+// update_type: 'announcement'|'tips'|'risk'|'active'|'bulk'
 export const updatePortal = (networkId, updateType, payload, reason = 'manual_update') =>
   api.post('/device/portal/update', {
     network_id: networkId,

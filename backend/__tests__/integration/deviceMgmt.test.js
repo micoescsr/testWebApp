@@ -353,25 +353,21 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     // Verify seedDefaultContent + buildPortalPayloadFromDB were called
     expect(seedDefaultContent).toHaveBeenCalledWith(NETWORK_ID);
-    expect(buildPortalPayloadFromDB).toHaveBeenCalledTimes(2);
+    // Step 7 (portal init) calls buildPortalPayloadFromDB once.
+    // Step 10 is skipped for first-time enable because Step 7 already patched.
+    expect(buildPortalPayloadFromDB).toHaveBeenCalledTimes(1);
     expect(buildPortalPayloadFromDB).toHaveBeenNthCalledWith(
       1,
       NETWORK_ID,
       networkRow.bssid,
       networkRow.ssid
     );
-    expect(buildPortalPayloadFromDB).toHaveBeenNthCalledWith(
-      2,
-      NETWORK_ID,
-      networkRow.bssid,
-      networkRow.ssid
-    );
 
-    // Verify portal/patch was called BEFORE orchestrate/apply
-    expect(fetchCalls.length).toBe(3);
+    // Verify portal/patch (init) was called BEFORE orchestrate/apply.
+    // No second portal/patch — Step 7 already pushed content; Step 10 skips.
+    expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0].url).toContain("/portal/patch");
     expect(fetchCalls[1].url).toContain("/orchestrate/apply");
-    expect(fetchCalls[2].url).toContain("/portal/patch");
 
     // Verify portal/patch payload includes risk classification fields (real score)
     const portalPayload = JSON.parse(fetchCalls[0].opts.body);
@@ -387,7 +383,7 @@ describe("POST /api/device/enable-ap — enable", () => {
     expect(apPayload.ap_status).toBe("enable");
   });
 
-  test("second enable (portal already initialized) → skips portal/patch", async () => {
+  test("second enable (portal already initialized) → skips portal init, defers portal patch", async () => {
     const scanData = freshScan();
     const scanChain = chain({ singleResult: { data: scanData, error: null } });
     const netChain = chain({
@@ -403,7 +399,11 @@ describe("POST /api/device/enable-ap — enable", () => {
 
     expect(res.status).toBe(200);
 
-    // Orchestrate/apply then portal/patch after enable
+    // orchestrate/apply runs first; portal/patch runs as fire-and-forget
+    // via setImmediate (non-blocking for the client response). Both are
+    // visible in the test because supertest drains the event loop.
+    // Allow a tick for the deferred callback to execute.
+    await new Promise((r) => setImmediate(r));
     expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0].url).toContain("/orchestrate/apply");
     expect(fetchCalls[1].url).toContain("/portal/patch");

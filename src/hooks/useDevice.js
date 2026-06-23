@@ -134,18 +134,38 @@ export const useDevice = (networkId, scanId) => {
   }, [setJobId, setJobStatus, setTargetApStatus]);
 
   // ─── Async job: poll /jobs/:jobId until terminal ──────────────
+  // Treats repeated UNKNOWN responses (Pi unreachable) as a terminal
+  // failure after MAX_UNKNOWN_STREAK consecutive occurrences, so the
+  // user doesn't wait silently for the full 5-minute poll window.
+  const MAX_UNKNOWN_STREAK = 6; // ~15s at 2.5s interval before surfacing
+
   useEffect(() => {
     if (!jobId || !jobStatus || ['DONE', 'FAILED'].includes(jobStatus)) return;
 
     const ac = new AbortController();
     jobPollAbortRef.current = ac;
+    let unknownStreak = 0;
 
     (async () => {
       try {
         const terminal = await pollUntil(
           async () => {
             const res = await pollApJob(jobId);
-            return res.data;
+            const d = res.data;
+            if (d?.job_status === 'UNKNOWN') {
+              unknownStreak++;
+              if (unknownStreak >= MAX_UNKNOWN_STREAK) {
+                return {
+                  ...d,
+                  job_status: 'FAILED',
+                  error_code: d.error_code || 'PI_UNREACHABLE',
+                  error_message: d.error_message || 'Lost contact with device. Please check your connection and try again.',
+                };
+              }
+            } else {
+              unknownStreak = 0;
+            }
+            return d;
           },
           (d) => ['DONE', 'FAILED'].includes(d?.job_status),
           { interval: 2_500, maxAttempts: 120, signal: ac.signal }

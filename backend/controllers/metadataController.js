@@ -126,6 +126,32 @@ async function getVulnerabilitiesLatest(req, res) {
     const networkId = network.network_id;
     console.log("[getVulnerabilitiesLatest] resolved network_id:", networkId);
 
+    // Step 1b: resolve the most recent scan for this network. Vulnerability
+    // rows are scoped per scan_id (each scan inserts its own fresh batch into
+    // vulnerabilities_threat — see rasPiController.saveNetworkMetadataScan),
+    // so filtering by network_id alone returns every historical scan's rows
+    // merged together, making old scans' findings reappear after a new scan.
+    const { data: latestScan, error: latestScanErr } = await supabaseClient
+      .from("scans")
+      .select("scan_id")
+      .eq("network_id", networkId)
+      .order("scan_id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestScanErr) {
+      console.error("[getVulnerabilitiesLatest] Latest scan lookup failed:", latestScanErr);
+      return res.status(500).json({ error: "Failed to resolve latest scan" });
+    }
+
+    if (!latestScan) {
+      // No scans yet for this network — nothing to show
+      return res.json({ status: "OK", rows: [] });
+    }
+
+    const latestScanId = latestScan.scan_id;
+    console.log("[getVulnerabilitiesLatest] resolved latest scan_id:", latestScanId);
+
     // Step 2: Build query (DO NOT AWAIT YET)
     let query = supabaseClient
       .from("vulnerabilities_threat")
@@ -134,12 +160,12 @@ async function getVulnerabilitiesLatest(req, res) {
         vt_name,
         vt_status,
         vt_value,
-        scans!inner(         
+        scans!inner(
           scan_id,
           scan_start,
           scan_end,
           network_id,
-          networks(          
+          networks(
             bssid,
             ssid
           )
@@ -149,13 +175,8 @@ async function getVulnerabilitiesLatest(req, res) {
           vt_severity_rating,
           vt_cvss_base_score
         )
-      `);
-
-    // Apply Filter
-    if (networkId) {
-      // Use "scans.network_id" because we are not aliasing "scans"
-      query = query.eq("scans.network_id", networkId);
-    }
+      `)
+      .eq("scan_id", latestScanId);
 
     // Only return rows that represent vulnerability findings (not runtime threats)
     // Use .ilike for case-insensitive match (DB may store "VULNERABILITY" or "vulnerability")
