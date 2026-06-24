@@ -2,6 +2,16 @@
 import { useState, useMemo } from "react";
 import { ArrowClockwise, MagnifyingGlass, PencilSimple, Check, X } from "@phosphor-icons/react";
 
+// Compact relative-time label for the auto-refresh indicator.
+const formatUpdatedAgo = (ts) => {
+  if (!ts) return null;
+  const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (secs < 5) return "Updated just now";
+  if (secs < 60) return `Updated ${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  return `Updated ${mins}m ago`;
+};
+
 const SAMSidebar = ({
   selectedNetwork,
   lastScannedNetwork,
@@ -9,11 +19,14 @@ const SAMSidebar = ({
   availableNetworks,
   onScan,
   networksLoading,
+  networksRefreshing = false,
   networksError,
+  networksUpdatedAt,
   onRefreshNetworks,
   lastScan,
   locationMeta,
   onChangeMeta,
+  scanning = false,
 }) => {
 
   const formatLastScan = (scan) => {
@@ -54,6 +67,13 @@ const SAMSidebar = ({
     : filteredNetworks.slice(0, DEFAULT_VISIBLE);
   const hasMore = !networkSearch && filteredNetworks.length > DEFAULT_VISIBLE;
 
+  const hasNetworks = Array.isArray(availableNetworks) && availableNetworks.length > 0;
+  // Only blank the card on the very first load / hard error (no data yet).
+  // Background refreshes and transient errors keep the last known list shown.
+  const showInitialLoading = networksLoading && !hasNetworks;
+  const showBlockingError = !!networksError && !hasNetworks && !networksLoading;
+  const updatedLabel = formatUpdatedAgo(networksUpdatedAt);
+
   return (
     <div className="sam-sidebar">
       <div className="sidebar-section">
@@ -79,20 +99,20 @@ const SAMSidebar = ({
           <button
             className="refresh-btn"
             onClick={onRefreshNetworks}
-            disabled={networksLoading}
+            disabled={networksLoading || networksRefreshing}
             title="Refresh network list"
             type="button"
           >
             <ArrowClockwise
-              className={`refresh-icon${networksLoading ? " spinning" : ""}`}
+              className={`refresh-icon${networksLoading || networksRefreshing ? " spinning" : ""}`}
               size={16}
             />
           </button>
         </div>
 
-          {networksLoading && <div className="info-value">Loading...</div>}
-          {networksError && <div className="info-value error">{networksError}</div>}
-        {!networksLoading && !networksError && (
+          {showInitialLoading && <div className="info-value">Loading...</div>}
+          {showBlockingError && <div className="info-value error">{networksError}</div>}
+        {!showInitialLoading && !showBlockingError && (
           <>
             <div className="network-search-wrapper">
               <MagnifyingGlass className="search-icon" size={16} />
@@ -114,6 +134,19 @@ const SAMSidebar = ({
                 </button>
               )}
             </div>
+            {(updatedLabel || (networksError && hasNetworks)) && (
+              <div className="network-refresh-status">
+                {networksError && hasNetworks ? (
+                  <span className="refresh-status-error">
+                    Couldn’t refresh — showing last results
+                  </span>
+                ) : (
+                  <span className="refresh-status-ok">
+                    {networksRefreshing ? "Updating…" : updatedLabel}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="network-list">
               {visibleNetworks.length > 0 ? (
                 visibleNetworks.map((net, idx) => (
@@ -203,8 +236,13 @@ const SAMSidebar = ({
       </div>
 
       <div className="sidebar-actions">
-        <button className="action-btn primary" onClick={onScan}>
-          + Scan Now
+        <button
+          className="action-btn primary"
+          onClick={onScan}
+          disabled={scanning}
+          type="button"
+        >
+          {scanning ? "Scanning…" : "+ Scan Now"}
         </button>
       </div>
     </div>

@@ -459,6 +459,161 @@
 }
 
 /* ==========================================================================
+ * Auth setup pages — Force reset password + MFA setup
+ *
+ * These reuse the Login/2FA shell (.login-page / AuthBackdrop / .login-card /
+ * .login-field / .login-input-wrap / .login-btn-primary / .login-error /
+ * .login-footer-meta). The rules below add only the extras those two flows
+ * need — a context-independent heading, success alert, dark password
+ * checklist, secondary button, and MFA code/QR helpers.
+ * ========================================================================== */
+
+/* Standalone heading (same look as .login-card h1 but not parent-scoped, so it
+   also renders correctly when MFASetup is embedded in the Profile modal). */
+.auth-heading {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  text-align: center;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+/* Success alert — mirrors .login-error using the positive severity tokens. */
+.login-success {
+  background: var(--sev-low-bg);
+  border: 1px solid var(--sev-low-fg);
+  color: var(--sev-low-fg);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  margin-bottom: 18px;
+}
+
+/* Field-level inline error (e.g. confirm-password mismatch). */
+.login-field-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+/* Vertical stack for the MFA action buttons. */
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+/* Secondary / ghost button — matches the primary button footprint. Also
+   restyles TotpQrDisplay's Reveal/Copy buttons (same class) to dark. */
+.auth-button-secondary {
+  width: 100%;
+  padding: 11px;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.auth-button-secondary:hover {
+  background: var(--surface-1);
+  border-color: var(--border-strong);
+}
+
+.auth-button-secondary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.auth-button-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* MFA code input shares the login input but reads as a code (mono, spaced). */
+.login-input-wrap input.code-input {
+  font-family: var(--font-mono);
+  letter-spacing: 0.25em;
+}
+
+/* Centered helper text for the MFA initializing state. */
+.login-loading-text {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: var(--space-6) 0;
+}
+
+/* ---- Password requirements checklist (dark) ---- */
+.password-checklist {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.password-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  transition: color 0.15s ease;
+}
+
+.password-checklist-item .checklist-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  flex-shrink: 0;
+}
+
+.password-checklist-item.neutral {
+  color: var(--text-muted);
+}
+.password-checklist-item.neutral .checklist-icon {
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+
+.password-checklist-item.valid {
+  color: var(--sev-low-fg);
+}
+.password-checklist-item.valid .checklist-icon {
+  background: var(--sev-low-bg);
+  color: var(--sev-low-fg);
+}
+
+.password-checklist-item.invalid {
+  color: var(--danger);
+}
+.password-checklist-item.invalid .checklist-icon {
+  background: var(--sev-critical-bg);
+  color: var(--danger);
+}
+
+/* ==========================================================================
  * FLAGGED TOKEN GAPS — values from reference with no existing token:
  *
  * Spacing:

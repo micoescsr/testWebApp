@@ -15,8 +15,8 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  /* main-content has ~80px top + 20px bottom padding; fill the rest */
-  min-height: calc(100vh - 100px);
+  /* Fill the area left by the shared page shell (top offset + bottom gutter). */
+  min-height: var(--page-content-height);
 }
 
 .history-header-row {

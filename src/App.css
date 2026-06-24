@@ -24,8 +24,9 @@ body {
 .main-content {
   margin-left: 186px;
   flex: 1;
-  padding: var(--space-5);
-  padding-top: 80px; /* room for the floating UserMenu */
+  /* Single source of page padding for every route. Top padding reserves the
+     band for the fixed account pill so no page content crowds it. */
+  padding: var(--page-top-offset) var(--page-pad-x) var(--page-pad-y);
   width: 100%;
   background-color: var(--surface-0);
   color: var(--text-primary);
@@ -51,7 +52,9 @@ body {
 
   .main-content {
     margin-left: 0;
-    padding-top: 70px; /* Less padding on mobile */
+    /* Mobile: smaller gutters; pill shrinks and moves to top:12 (see UserMenu). */
+    padding: var(--space-4);
+    padding-top: 68px;
   }
 }
 

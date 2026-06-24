@@ -1,19 +1,55 @@
 // hooks/useSAM.js
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import api from "../api/axios";
 import { getThreatDetail, getVulnerabilityDetail } from "../api/samApi";
-import { useApiResource } from "./useApiResource";
 import { useSessionState } from "./useSessionState";
+import { getApiErrorMessage } from "../utils/apiError";
 
-export const useNetworks = () => {
+/**
+ * Available-networks hook with background auto-refresh.
+ *
+ * The Pi continuously scans and the backend (`GET /rasPi/networks_list/`)
+ * returns the current AP list each call — there is no push/stream channel,
+ * so newly detected APs surface via short-interval polling. Polling runs only
+ * while this hook is mounted (i.e. the SAM sidebar is on screen) and pauses
+ * when the tab is hidden, to avoid hammering the Pi when nobody is looking.
+ *
+ * @param {number} pollInterval ms between background refreshes (default 15000)
+ */
+export const useNetworks = (pollInterval = 15000) => {
   const [networks, setNetworks] = useState([]);
   const [cached, setCached] = useState(false);
-  const { loading, error, run } = useApiResource("Failed to load networks");
+  // `loading` is the INITIAL load only — it gates the full-card spinner.
+  // Background refreshes use `refreshing` so the list never blanks mid-poll.
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const fetchNetworks = () =>
-    run(async () => {
+  // Monotonic request id: a slow in-flight request must never overwrite the
+  // result of a newer one (race / stale-response protection).
+  const reqSeqRef = useRef(0);
+  // Guards against overlapping requests (e.g. a manual refresh firing while a
+  // poll tick is already in flight) so we don't double-hit the backend.
+  const inFlightRef = useRef(false);
+  // Once we have served data at least once, background failures keep the last
+  // known list instead of clearing it.
+  const hasDataRef = useRef(false);
+
+  const fetchNetworks = useCallback(async ({ background = false } = {}) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const seq = ++reqSeqRef.current;
+
+    if (background) setRefreshing(true);
+    else setLoading(true);
+
+    try {
       const res = await api.get("/rasPi/networks_list/");
       const body = res.data; // { status, networks, cached }
+
+      // A newer request already resolved — discard this stale response.
+      if (seq !== reqSeqRef.current) return;
 
       if (body.status !== "OK") {
         throw new Error(body.error || "Backend returned ERROR");
@@ -21,15 +57,74 @@ export const useNetworks = () => {
 
       setNetworks(body.networks || []);
       setCached(body.cached ?? false);
-    });
-
-  useEffect(() => {
-    fetchNetworks();
+      setLastUpdated(Date.now());
+      setError(null);
+      hasDataRef.current = true;
+    } catch (err) {
+      if (seq !== reqSeqRef.current) return;
+      // Keep the last known list visible on refresh failure; the error is
+      // surfaced as a small non-intrusive notice in the sidebar.
+      setError(getApiErrorMessage(err, "Failed to load networks"));
+    } finally {
+      if (seq === reqSeqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+      inFlightRef.current = false;
+    }
   }, []);
 
-  const refetchNetworks = () => fetchNetworks();
+  // Initial load + background polling loop. Pauses while the tab is hidden and
+  // does an immediate refresh when it becomes visible again.
+  useEffect(() => {
+    fetchNetworks();
 
-  return { networks, loading, error, cached, refetchNetworks };
+    let intervalId = null;
+    const start = () => {
+      if (intervalId) return;
+      intervalId = setInterval(
+        () => fetchNetworks({ background: true }),
+        pollInterval,
+      );
+    };
+    const stop = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        fetchNetworks({ background: true });
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", handleVisibility);
+      // Invalidate any in-flight request so it can't setState after unmount.
+      reqSeqRef.current++;
+    };
+  }, [fetchNetworks, pollInterval]);
+
+  const refetchNetworks = () => fetchNetworks({ background: hasDataRef.current });
+
+  return {
+    networks,
+    loading,
+    refreshing,
+    error,
+    cached,
+    lastUpdated,
+    refetchNetworks,
+  };
 };
 
 /* =========================

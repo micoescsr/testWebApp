@@ -97,7 +97,9 @@ const SAM = () => {
   const {
     networks,
     loading: networksLoading,
+    refreshing: networksRefreshing,
     error: networksError,
+    lastUpdated: networksUpdatedAt,
     refetchNetworks,
   } = useNetworks();
 
@@ -441,65 +443,19 @@ const SAM = () => {
     };
   } else if (detectionStatus === "SCANNING") {
     statusPillConfig = { label: "Starting\u2026", cls: "starting" };
-  } else if (shouldShowDetectionError) {
-    statusPillConfig = { label: "Failed", cls: "failed" };
   } else if (isOutOfRange) {
     // Only show "Paused" when detection is NOT actively running
     statusPillConfig = { label: "Paused \u2014 out of range", cls: "paused" };
   }
 
+  const isVulnTab = activeTab === "vulnerabilities";
+
   return (
-    <div
-      className={activeTab === "vulnerabilities" ? "sam-layout" : "sam-page"}
-    >
-      <div className="sam-main">
+    <div className="sam-page">
+      {/* Full-width page header — keeps title/tabs/status out of the
+          two-column grid so the sidebar aligns with the findings card. */}
+      <header className="sam-pageheader">
         <h1 className="page-title">Security Assessment Management</h1>
-
-        {shouldShowDetectionError && (
-          <div className="status-banner failed">
-            {/^.*timeout.*$/i.test(failureReason || "")
-              ? "Detection timed out. Start a new scan to continue."
-              : "Detection failed. Start a new scan to continue."}
-          </div>
-        )}
-
-        {redirectCountdown !== null && (
-          <div className="status-banner redirect-banner">
-            <span>
-              Switching to <strong>Threats</strong> tab in{" "}
-              <strong>{redirectCountdown}s</strong>&hellip;
-            </span>
-            <button
-              className="dismiss-banner-btn"
-              onClick={() => {
-                if (redirectTimerRef.current) {
-                  clearInterval(redirectTimerRef.current);
-                  redirectTimerRef.current = null;
-                }
-                setRedirectCountdown(null);
-              }}
-              title="Stay on Vulnerabilities"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {selectedNetwork?._notInRange && showOutOfRangeBanner && (
-          <div className="status-banner warning out-of-range-banner">
-            <span>
-              Previously selected network &ldquo;{selectedNetwork.ssid}&rdquo;
-              is no longer in range. Select a new network to scan.
-            </span>
-            <button
-              className="dismiss-banner-btn"
-              onClick={handleDismissOutOfRange}
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        )}
 
         <div className="sam-header">
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
@@ -522,43 +478,109 @@ const SAM = () => {
             </div>
           )}
         </div>
+      </header>
 
-        {activeTab === "threats" && (
-          <ThreatsTable
-            threats={displayThreats}
-            onView={openThreatDetail}
-            detectionStatus={detectionStatus}
-          />
-        )}
+      {/* Compact inline alerts — sized to content, never a full-width row.
+          Only current/actionable states; failed is gated by
+          shouldShowDetectionError so no stale timeout shows on idle load. */}
+      {(shouldShowDetectionError ||
+        redirectCountdown !== null ||
+        (selectedNetwork?._notInRange && showOutOfRangeBanner)) && (
+        <div className="sam-banners">
+          {shouldShowDetectionError && (
+            <div className="sam-alert failed" role="status">
+              <span className="sam-alert-dot" />
+              <span className="sam-alert-label">Failed</span>
+              <span className="sam-alert-text">
+                {/^.*timeout.*$/i.test(failureReason || "")
+                  ? "Detection timed out — start a new scan."
+                  : "Start a new scan to continue."}
+              </span>
+            </div>
+          )}
 
-        {activeTab === "vulnerabilities" && (
-          <VulnerabilitiesTable
-            vulnerabilities={filteredVulns}
-            onView={openVulnDetail}
-            onClear={() => {
-              const bssid = selectedNetwork?.bssid || lastScannedNetwork?.bssid;
-              clearVulnerabilities(bssid);
-            }}
+          {redirectCountdown !== null && (
+            <div className="sam-alert info">
+              <span className="sam-alert-text">
+                Threats tab in {redirectCountdown}s
+              </span>
+              <button
+                className="sam-alert-btn"
+                onClick={() => {
+                  if (redirectTimerRef.current) {
+                    clearInterval(redirectTimerRef.current);
+                    redirectTimerRef.current = null;
+                  }
+                  setRedirectCountdown(null);
+                }}
+                title="Stay on Vulnerabilities"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {selectedNetwork?._notInRange && showOutOfRangeBanner && (
+            <div className="sam-alert warning">
+              <span className="sam-alert-text">
+                &ldquo;{selectedNetwork.ssid}&rdquo; out of range — select a
+                network.
+              </span>
+              <button
+                className="sam-alert-btn icon"
+                onClick={handleDismissOutOfRange}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={isVulnTab ? "sam-content-grid" : "sam-content-single"}>
+        <main className="sam-main">
+          {activeTab === "threats" && (
+            <ThreatsTable
+              threats={displayThreats}
+              onView={openThreatDetail}
+              detectionStatus={detectionStatus}
+            />
+          )}
+
+          {activeTab === "vulnerabilities" && (
+            <VulnerabilitiesTable
+              vulnerabilities={filteredVulns}
+              onView={openVulnDetail}
+              onClear={() => {
+                const bssid =
+                  selectedNetwork?.bssid || lastScannedNetwork?.bssid;
+                clearVulnerabilities(bssid);
+              }}
+            />
+          )}
+        </main>
+
+        {isVulnTab && (
+          <SAMSidebar
+            selectedNetwork={selectedNetwork}
+            lastScannedNetwork={lastScannedNetwork}
+            onSelectNetwork={handleSelectNetwork}
+            availableNetworks={networks}
+            networksLoading={networksLoading}
+            networksRefreshing={networksRefreshing}
+            networksError={networksError}
+            networksUpdatedAt={networksUpdatedAt}
+            onRefreshNetworks={refetchNetworks}
+            onScan={handleScan}
+            onSaveNetwork={saveSelectedNetwork}
+            lastScan={lastScan}
+            locationMeta={locationMeta}
+            onChangeMeta={handleMetaChange}
+            scanning={detectionStatus === "SCANNING"}
           />
         )}
       </div>
-
-      {activeTab === "vulnerabilities" && (
-        <SAMSidebar
-          selectedNetwork={selectedNetwork}
-          lastScannedNetwork={lastScannedNetwork}
-          onSelectNetwork={handleSelectNetwork}
-          availableNetworks={networks}
-          networksLoading={networksLoading}
-          networksError={networksError}
-          onRefreshNetworks={refetchNetworks}
-          onScan={handleScan}
-          onSaveNetwork={saveSelectedNetwork}
-          lastScan={lastScan}
-          locationMeta={locationMeta}
-          onChangeMeta={handleMetaChange}
-        />
-      )}
 
       {isModalOpen && (
         <FindingDetailModal

@@ -17,7 +17,9 @@ import { supabase } from "../../lib/supabaseClient";
 import api, { getAccessToken } from "../../api/axios";
 import { validatePassword } from "../../passwordValidation";
 import PasswordChecklist from "./PasswordChecklist";
-import "./Auth.css";
+import AuthBackdrop from "../Login/AuthBackdrop";
+import { LockKey, LockSimple, Eye, EyeSlash, ArrowRight } from "@phosphor-icons/react";
+import "../Login/Login.css";
 
 function ForceResetPassword() {
   const navigate = useNavigate();
@@ -123,104 +125,100 @@ function ForceResetPassword() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        {/* Lock icon */}
-        <div style={{ textAlign: "center", marginBottom: "12px" }}>
-          <span style={{ fontSize: "32px" }}>🔐</span>
-        </div>
+    <div className="login-page">
+      <AuthBackdrop />
 
-        <h1 className="auth-title">Set a new password</h1>
-        <p className="auth-subtitle">
-          Your account was given a temporary password. You must set a new
-          password before you can continue.
+      <div className="login-card">
+        <div className="login-app-mark">
+          <LockKey size={24} weight="duotone" />
+        </div>
+        <div className="login-wordmark">WHY-PII?</div>
+
+        <h1 className="auth-heading">Set a new password</h1>
+        <p className="login-subhead">
+          Your account was issued a temporary password. Create a new password to
+          continue.
         </p>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        {status.error && <div className="login-error">{status.error}</div>}
+        {status.message && <div className="login-success">{status.message}</div>}
+
+        <form onSubmit={handleSubmit}>
           {/* New password */}
-          <div className="form-group">
+          <div className="login-field">
             <label htmlFor="force-password">New password</label>
-            <div className="password-input-wrapper">
+            <div className="login-input-wrap">
+              <span className="login-input-icon">
+                <LockSimple size={16} />
+              </span>
               <input
                 id="force-password"
                 type={showPassword ? "text" : "password"}
+                className="has-toggle"
                 required
                 placeholder="Choose a strong password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={status.submitting}
-                className="password-input"
               />
               <button
                 type="button"
-                className="password-toggle"
+                className="login-toggle-visibility"
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? "Hide" : "Show"}
+                {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
               </button>
             </div>
             <PasswordChecklist password={password} />
-          </div>
-
-          {/* Confirm password */}
-          <div className="form-group">
-            <label htmlFor="force-confirm">Confirm new password</label>
-            <div className="password-input-wrapper">
-              <input
-                id="force-confirm"
-                type={showConfirm ? "text" : "password"}
-                required
-                placeholder="Re-enter your new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={status.submitting}
-                className="password-input"
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowConfirm((prev) => !prev)}
-                aria-label={showConfirm ? "Hide password" : "Show password"}
-              >
-                {showConfirm ? "Hide" : "Show"}
-              </button>
-            </div>
-            {confirmError && (
-              <p className="error-text" style={{ marginTop: "4px" }}>
-                {confirmError}
-              </p>
+            {passwordErrors.length > 0 && (
+              <p className="login-field-error">{passwordErrors[0]}</p>
             )}
           </div>
 
-          {/* Strength errors */}
-          {passwordErrors.length > 0 && (
-            <ul className="password-errors">
-              {passwordErrors.map((err) => (
-                <li key={err}>{err}</li>
-              ))}
-            </ul>
-          )}
+          {/* Confirm password */}
+          <div className="login-field login-field--last">
+            <label htmlFor="force-confirm">Confirm new password</label>
+            <div className="login-input-wrap">
+              <span className="login-input-icon">
+                <LockSimple size={16} />
+              </span>
+              <input
+                id="force-confirm"
+                type={showConfirm ? "text" : "password"}
+                className="has-toggle"
+                required
+                placeholder="Re-enter your new password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={status.submitting}
+              />
+              <button
+                type="button"
+                className="login-toggle-visibility"
+                onClick={() => setShowConfirm((prev) => !prev)}
+                aria-label={showConfirm ? "Hide password" : "Show password"}
+              >
+                {showConfirm ? <EyeSlash size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            {confirmError && <p className="login-field-error">{confirmError}</p>}
+          </div>
 
           <button
-            className="auth-button"
+            className="login-btn-primary"
             type="submit"
             disabled={status.submitting}
+            style={{ marginTop: "var(--space-6)" }}
           >
-            {status.submitting ? "Updating…" : "Set new password"}
+            {status.submitting ? "Saving…" : "Set new password"}
+            <ArrowRight size={16} />
           </button>
         </form>
 
-        {status.message && (
-          <p className="success-text" style={{ marginTop: "16px" }}>
-            {status.message}
-          </p>
-        )}
-        {status.error && (
-          <p className="error-text" style={{ marginTop: "16px" }}>
-            {status.error}
-          </p>
-        )}
+        <div className="login-footer-meta">SECURE CONNECTION · TLS 1.3</div>
       </div>
     </div>
   );

@@ -48,6 +48,25 @@
   --radius-md: 6px;
   --radius-lg: 10px;
   --radius-pill: 999px;
+
+  /* --- Layout / page shell ---
+   * One source of truth for the page gutter and the band reserved for the
+   * fixed account pill (UserMenu). Pages should NOT add their own outer
+   * padding — they inherit it from .main-content so every page aligns. */
+  --topbar-height: 72px;          /* vertical band occupied by the fixed pill */
+  --page-pad-x: var(--space-7);   /* horizontal page gutter (desktop) */
+  --page-pad-y: var(--space-6);   /* bottom page gutter (desktop) */
+  --page-top-gap: var(--space-5); /* breathing room between pill and content */
+  --section-gap: var(--space-6);  /* vertical rhythm between page sections */
+  /* Where the first row of page content starts (clears the pill cleanly). */
+  --page-top-offset: calc(var(--topbar-height) + var(--page-top-gap));
+  /* Sticky elements (e.g. SAM sidebar) should stop here so they don't slide
+   * under the fixed pill. */
+  --page-sticky-offset: var(--page-top-offset);
+  /* Usable content height after the top offset + bottom gutter are removed. */
+  --page-content-height: calc(
+    100vh - var(--page-top-offset) - var(--page-pad-y)
+  );
 }
 
 /* ============================================================================

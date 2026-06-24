@@ -11,7 +11,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import api, { getAccessToken, setAccessToken } from "../../api/axios";
 import TotpQrDisplay from "../../components/auth/TotpQrDisplay";
-import "./Auth.css";
+import AuthBackdrop from "../Login/AuthBackdrop";
+import { ShieldCheck, ArrowRight } from "@phosphor-icons/react";
+import "../Login/Login.css";
 
 function MFASetup({ mode = "forced", onClose }) {
   const [factor, setFactor] = useState(null); // { id, totp: { qr_code, secret } }
@@ -167,14 +169,22 @@ function MFASetup({ mode = "forced", onClose }) {
     window.location.replace("/login");
   };
 
-  // "forced" renders as the full standalone /mfa-setup page (own
-  // background/card chrome, matching ForgotPassword/ForceResetPassword).
-  // "self-service" renders just the inner content — the Profile page
-  // hosts it inside its own modal, which already provides page chrome.
+  // "forced" renders as the full standalone /mfa-setup page (own backdrop +
+  // card chrome, matching Login/2FA). "self-service" renders just the inner
+  // content — the Profile page hosts it inside its own modal, which already
+  // provides page chrome — so the backdrop/brand mark/footer are skipped.
   const Wrapper = mode === "forced"
     ? ({ children }) => (
-        <div className="auth-page">
-          <div className="auth-card">{children}</div>
+        <div className="login-page">
+          <AuthBackdrop />
+          <div className="login-card">
+            <div className="login-app-mark">
+              <ShieldCheck size={24} weight="duotone" />
+            </div>
+            <div className="login-wordmark">WHY-PII?</div>
+            {children}
+            <div className="login-footer-meta">SECURE CONNECTION · TLS 1.3</div>
+          </div>
         </div>
       )
     : ({ children }) => <>{children}</>;
@@ -182,8 +192,11 @@ function MFASetup({ mode = "forced", onClose }) {
   if (initializing) {
     return (
       <Wrapper>
-        <p className="auth-subtitle">Setting up two-factor authentication...</p>
-        {error && <p className="error-text">{error}</p>}
+        <h1 className="auth-heading">Set up two-factor authentication</h1>
+        <p className="login-loading-text">
+          Setting up two-factor authentication…
+        </p>
+        {error && <div className="login-error">{error}</div>}
       </Wrapper>
     );
   }
@@ -192,18 +205,18 @@ function MFASetup({ mode = "forced", onClose }) {
     <Wrapper>
       {!successMessage && (
         <>
-          <h1 className="auth-title">Set up two-factor authentication</h1>
-          <p className="auth-subtitle">
-            Scan this QR code with your authenticator app, then enter the
-            6-digit code it generates.
+          <h1 className="auth-heading">Set up two-factor authentication</h1>
+          <p className="login-subhead">
+            Scan the QR code with your authenticator app, then enter the 6-digit
+            code to enable MFA.
           </p>
         </>
       )}
 
       {successMessage && (
         <>
-          <p className="success-text">{successMessage}</p>
-          <button className="auth-button" type="button" onClick={onClose}>
+          <div className="login-success">{successMessage}</div>
+          <button className="login-btn-primary" type="button" onClick={onClose}>
             Done
           </button>
         </>
@@ -215,15 +228,17 @@ function MFASetup({ mode = "forced", onClose }) {
           instead of leaving the user on a dead-end screen. */}
       {!factor && error && (
         <>
-          <p className="error-text">{error}</p>
-          <button className="auth-button" type="button" onClick={startEnrollment}>
-            Retry
-          </button>
-          {mode === "forced" && (
-            <button className="auth-button-secondary" type="button" onClick={handleCancel}>
-              Cancel and log out
+          <div className="login-error">{error}</div>
+          <div className="login-actions">
+            <button className="login-btn-primary" type="button" onClick={startEnrollment}>
+              Retry
             </button>
-          )}
+            {mode === "forced" && (
+              <button className="auth-button-secondary" type="button" onClick={handleCancel}>
+                Cancel and log out
+              </button>
+            )}
+          </div>
         </>
       )}
 
@@ -231,47 +246,57 @@ function MFASetup({ mode = "forced", onClose }) {
         <>
           <TotpQrDisplay qrCodeSvg={factor.totp.qr_code} secret={factor.totp.secret} />
 
-          <form className="auth-form" onSubmit={handleVerify}>
-            <div className="form-group">
+          <form onSubmit={handleVerify}>
+            <div className="login-field login-field--last">
               <label htmlFor="totp-code">Authentication code</label>
-              <input
-                id="totp-code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="123456"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                disabled={verifying}
-                maxLength={6}
-              />
+              <div className="login-input-wrap">
+                <input
+                  id="totp-code"
+                  type="text"
+                  className="code-input"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  disabled={verifying}
+                  maxLength={6}
+                />
+              </div>
             </div>
 
-            {error && <p className="error-text">{error}</p>}
+            {error && <div className="login-error" style={{ marginTop: "var(--space-4)" }}>{error}</div>}
 
-            <button className="auth-button" type="submit" disabled={verifying || code.length !== 6}>
-              {verifying ? "Verifying..." : "Verify and enable"}
-            </button>
+            <div className="login-actions">
+              <button
+                className="login-btn-primary"
+                type="submit"
+                disabled={verifying || code.length !== 6}
+              >
+                {verifying ? "Verifying…" : "Verify and enable"}
+                <ArrowRight size={16} />
+              </button>
 
-            <button
-              className="auth-button-secondary"
-              type="button"
-              onClick={handleStartOver}
-              disabled={verifying}
-            >
-              Start over
-            </button>
-
-            {mode === "forced" && (
               <button
                 className="auth-button-secondary"
                 type="button"
-                onClick={handleCancel}
+                onClick={handleStartOver}
                 disabled={verifying}
               >
-                Cancel and log out
+                Start over
               </button>
-            )}
+
+              {mode === "forced" && (
+                <button
+                  className="auth-button-secondary"
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={verifying}
+                >
+                  Cancel and log out
+                </button>
+              )}
+            </div>
           </form>
         </>
       )}

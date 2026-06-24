@@ -1,20 +1,32 @@
-.sam-layout {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: var(--space-6);
+.sam-page {
   padding: 0;
-  align-items: stretch;
-  min-height: calc(100vh - 140px);
+}
+
+/* Full-width header: title + tabs + status chip sit above the content grid
+   so the sidebar starts level with the findings card, not the page title. */
+.sam-pageheader {
+  margin-bottom: var(--space-2);
+}
+
+/* Two-column content area (Vulnerabilities tab). align-items:start keeps the
+   sidebar pinned to the top of the findings card instead of stretching. */
+.sam-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* Threats tab: no sidebar, single full-width column. */
+.sam-content-single {
+  display: block;
 }
 
 .sam-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-
-.sam-page {
-  padding: 0;
+  min-height: calc(100vh - 220px);
 }
 
 /* Fixed-height scrollable area for vulnerability/threat table content */
@@ -38,7 +50,6 @@
 }
 
 .sam-card {
-  margin-top: var(--space-4);
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -206,19 +217,98 @@
   border: 1px solid var(--border);
 }
 
-/* ─── FAILED detection banner (token-based) ─── */
-.status-banner.failed {
+/* ─── Compact inline alerts ───────────────────────────────────
+   Sized to their content and laid out in a wrapping row so they never
+   occupy a full-width banner. One severity-tinted pill per alert. */
+.sam-banners {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.sam-alert {
+  display: inline-flex;
   align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+}
+
+.sam-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.sam-alert-label {
+  font-weight: var(--weight-semibold);
+}
+
+/* Separator between the status label and the descriptive message. */
+.sam-alert-label + .sam-alert-text::before {
+  content: "—";
+  margin: 0 var(--space-1) 0 0;
+  opacity: 0.6;
+}
+
+.sam-alert-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.95;
+}
+
+.sam-alert.failed {
   background: var(--sev-critical-bg);
   color: var(--sev-critical-fg);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-3);
+  border-color: var(--sev-critical-fg);
+}
+
+.sam-alert.info {
+  background: var(--sev-info-bg);
+  color: var(--sev-info-fg);
+  border-color: var(--sev-info-fg);
+}
+
+.sam-alert.warning {
+  background: var(--sev-high-bg);
+  color: var(--sev-high-fg);
+  border-color: var(--sev-high-fg);
+}
+
+.sam-alert-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  padding: 0 var(--space-1);
+  line-height: 1;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--sev-critical-fg);
+}
+
+.sam-alert-btn:hover {
+  text-decoration: underline;
+}
+
+.sam-alert-btn.icon {
   font-size: var(--text-sm);
-  line-height: 1.5;
+}
+
+.sam-alert-btn.icon:hover {
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ─── Network item row layout (replaces dead Tailwind utilities) ─── */
@@ -314,6 +404,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* Stick within its column while the user scrolls the findings table.
+     Offset clears the app header; falls back to 1rem. */
+  position: sticky;
+  top: var(--page-sticky-offset, var(--space-4));
+  align-self: start;
 }
 
 .sidebar-section {
@@ -467,6 +562,22 @@
 .clear-search-btn:hover {
   color: var(--text-primary);
   background: var(--surface-2);
+}
+
+.network-refresh-status {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.network-refresh-status .refresh-status-ok {
+  color: var(--text-muted);
+}
+
+.network-refresh-status .refresh-status-error {
+  color: var(--color-warning, #d9a441);
 }
 
 .network-list {
@@ -687,19 +798,21 @@
 }
 
 @media (max-width: 1200px) {
-  .sam-layout {
+  .sam-content-grid {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    min-height: auto;
   }
 
   .sam-main {
     order: 0;
+    min-height: auto;
   }
 
   .sam-sidebar {
     order: 1; /* sidebar AFTER table */
+    position: static; /* drop sticky once stacked */
+    top: auto;
   }
 }
 
@@ -716,17 +829,16 @@
     gap: var(--space-2);
   }
 
-  .sam-layout {
+  .sam-content-grid {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    padding: 0;
-    min-height: auto;
   }
 
   .sam-main {
     width: 100%;
     order: 0;
+    min-height: auto;
   }
 
   .sam-sidebar {
@@ -1064,58 +1176,3 @@ th.sortable {
   margin-left: 2px;
 }
 
-/* ─── Out-of-range banner with dismiss ─── */
-
-.out-of-range-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--sev-high-bg);
-  color: var(--sev-high-fg);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--sev-high-fg);
-}
-
-.dismiss-banner-btn {
-  background: none;
-  border: none;
-  color: var(--sev-high-fg);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  line-height: 1;
-  flex-shrink: 0;
-  margin-left: var(--space-3);
-}
-
-.dismiss-banner-btn:hover {
-  background: var(--surface-2);
-}
-
-/* ——— Redirect countdown banner ——— */
-
-.redirect-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--sev-info-bg);
-  color: var(--sev-info-fg);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--sev-info-fg);
-  font-size: var(--text-base);
-}
-
-.redirect-banner .dismiss-banner-btn {
-  color: var(--sev-info-fg);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-}
-
-.redirect-banner .dismiss-banner-btn:hover {
-  background: var(--surface-2);
-}

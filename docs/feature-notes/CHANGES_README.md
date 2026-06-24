@@ -10,6 +10,46 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Auth UI Redesign + Recovery-Link Hardening — June 25, 2026
+
+### Problem
+
+The setup/recovery auth pages (`/force-reset-password`, `/mfa-setup`, `/forgot-password`, `/reset-password`) still used the old light card on a plain blue radial gradient (`Auth.css`) — visually inconsistent with the redesigned dark Login/2FA pages. Separately, a password-reset link for an MFA-enrolled user failed with `401: AAL2 session is required to update email or password when MFA is enabled`, and expired/consumed recovery links showed a slow/vague error.
+
+### Cause
+
+- Setup pages duplicated their own light styling instead of reusing the Login/2FA shell.
+- A recovery link establishes an **aal1** session; with a verified TOTP factor, Supabase rejects `updateUser({password})` until the session is elevated to **aal2** — the reset page never ran an MFA step.
+- Recovery one-time tokens are single-use; email-provider link scanners (e.g. Gmail prefetch) consume them before the user clicks (`GET /verify → 403 "One-time token not found"`). The page waited on a 2s timeout and surfaced raw/vague text.
+
+### Fix (Frontend only — auth model unchanged: in-memory tokens, `persistSession:false`, no PKCE)
+
+- **Shared auth shell reuse:** all four pages now reuse the Login/2FA design — `AuthBackdrop` + `.login-*` classes from `src/pages/Login/Login.css`. Dropped `./Auth.css` imports from `ForceResetPassword.jsx`, `MFASetup.jsx`, `ForgotPassword.jsx`, `ResetPassword.jsx`. (`Auth.css` now unimported by any page — left in place, pending deletion approval.)
+- **New shared styles appended to `src/pages/Login/Login.css`** (token-based, clearly sectioned): `.auth-heading` (parent-independent heading), `.login-success` alert, `.login-field-error`, `.login-actions` button stack, dark `.auth-button-secondary`, `.code-input`, `.login-loading-text`, and the dark password checklist (`.password-checklist*`). `PasswordChecklist.jsx` / `passwordValidation.js` / `TotpQrDisplay.*` reused unchanged (single source for rules + QR).
+- **`src/pages/Auth/ForceResetPassword.jsx`** — reskinned (icon inputs, Eye/EyeSlash toggles, dark checklist); copy: "Set a new password" / "Saving…". Logic untouched.
+- **`src/pages/Auth/MFASetup.jsx`** — forced mode = full dark shell (backdrop/brand/footer); self-service mode = inner-only for the Profile modal (contract preserved). `Verify and enable` / `Verifying…`, secondary `Start over` / `Cancel and log out` / `Retry`. Enrollment/verify logic untouched.
+- **`src/pages/Auth/ForgotPassword.jsx`** — reskinned; copy per spec. Security: always shows neutral `If an account exists for that email, reset instructions have been sent.` (no account-enumeration); raw backend errors suppressed (generic fallback). API flow unchanged.
+- **`src/pages/Auth/ResetPassword.jsx`** —
+  - **AAL2/MFA gate:** after the recovery session is established, probes `mfa.getAuthenticatorAssuranceLevel()`; if `aal1→aal2` with a TOTP factor, renders the existing `TwoFactorForm` (login's 6-digit step) to elevate the in-memory session to aal2 before showing the password form. Defensive fallback routes to the MFA step if `updateUser` still returns an `aal2` error.
+  - **Consumed/expired/invalid link hardening:** `readLinkError()` reads the URL-hash error params Supabase appends (`error`/`error_code`, e.g. `otp_expired`, `access_denied`) and opens straight into the error state (computed as initial `useState`, no setState-in-effect); the hash is scrubbed via `history.replaceState` so no raw error/token lingers. Single neutral `LINK_INVALID_MESSAGE` + "Request a new reset link" CTA. Never retries a consumed one-time token.
+  - No `console`/logging of tokens, links, access/refresh tokens, MFA secrets, or raw auth errors.
+
+### Config follow-up (owner: user, not code)
+
+Supabase dashboard changes still required to stop link-prefetch consumption: switch the Reset Password email template to a `{{ .TokenHash }}`/OTP-style verification, and ensure the redirect URL allowlist covers both prod (`…up.railway.app`) and `localhost:5173` `…/reset-password` origins. PKCE migration deliberately deferred (would require a storage/session-design change to the in-memory model).
+
+### Tests
+
+- ESLint clean on all changed files; `vite build` passes.
+- Not browser-verified — manual checklist: `/forgot-password` (neutral message), `/force-reset-password` + `/mfa-setup` (dark shell, toggles, checklist), `/reset-password` with valid link + MFA user (TOTP → password update succeeds) and with expired/consumed link (immediate "Reset link unavailable" + CTA).
+
+### Separately — SAM Available Networks auto-refresh — June 25, 2026
+
+- **`src/hooks/useSAM.js`** `useNetworks` now background-polls `GET /rasPi/networks_list/` (default 15s) so newly detected APs appear without manual reload. Race-guarded via a monotonic request seq, dedupes concurrent requests, pauses on tab hide (`visibilitychange`), keeps the last known list on background-refresh failure, and exposes `refreshing` + `lastUpdated`. No WebSocket/SSE exists; polling chosen per the backend's pull-only `/networks` contract.
+- **`src/pages/SAM/SAM.jsx`** passes `networksRefreshing` / `networksUpdatedAt`. **`src/components/sam/SAMSidebar.jsx`** only blanks on initial load (not background refresh), shows a subtle "Updated Xs ago" / "Updating…" / soft-error indicator, preserves search/filter/selection. **`src/pages/SAM/SAM.css`** — `.network-refresh-status` styles.
+
+---
+
 ## API Endpoint Audit & Fixes — June 23, 2026
 
 ### Problem
