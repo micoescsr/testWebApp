@@ -143,6 +143,78 @@
   gap: var(--space-4);
 }
 
+/* Summary: full-width "Networks by Encryption" card (single panel, no gap) */
+.dash-bottom-full {
+  display: block;
+}
+
+/* Full-width encryption layout: donut left, breakdown right */
+.enc-full {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 1.4fr;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.enc-chart {
+  height: 260px;
+  min-width: 0;
+}
+
+.enc-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.enc-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.enc-legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.enc-legend-total {
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.enc-dot-muted {
+  background-color: var(--text-muted);
+}
+
+.enc-count {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  text-align: right;
+  min-width: 2.5rem;
+}
+
+.enc-pct {
+  color: var(--text-muted);
+  text-align: right;
+  min-width: 3rem;
+}
+
+.enc-interpretation {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* Radial chart wrapper */
 .radial-wrapper {
   height: 260px;
@@ -282,8 +354,15 @@
   font-weight: var(--weight-medium);
 }
 
-/* Per-network stat cards */
-.stat-highlight {
+/* Per-network status card — conditional warning/critical states.
+   Default border comes from .stat-card; these only apply when the previous
+   scan indicates a degraded or stale condition (see utils/scanStatus.js). */
+.stat-card--warning {
+  position: relative;
+  border: 2px solid var(--sev-high-fg);
+}
+
+.stat-card--critical {
   position: relative;
   border: 2px solid var(--sev-critical-fg);
 }
@@ -295,6 +374,10 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
+  background-color: var(--sev-high-fg);
+}
+
+.stat-card--critical .stat-indicator {
   background-color: var(--sev-critical-fg);
 }
 
@@ -357,33 +440,13 @@
   color: var(--text-secondary);
 }
 
-/* Risk legend dots — mapped to the severity scale */
+/* Risk legend dots — color set inline from the centralized severity tokens
+   (see LegendForScore.jsx / utils/riskColors.js). */
 .indicator-dot {
   display: inline-block;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-}
-
-.indicator-dot.green {
-  background-color: var(--sev-low-fg);
-}
-
-.indicator-dot.yellow {
-  background-color: var(--sev-medium-fg);
-}
-
-.indicator-dot.orange {
-  background-color: var(--sev-high-fg);
-}
-
-.indicator-dot.red {
-  background-color: var(--sev-critical-fg);
-}
-
-.indicator-dot.dark-red {
-  background-color: var(--sev-critical-fg);
-  filter: brightness(0.75);
 }
 
 /* Detailed vulnerability list */
@@ -488,6 +551,12 @@
   .dash-stats-row-6 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  /* Encryption card: keep donut + breakdown side by side but balanced */
+  .enc-full {
+    grid-template-columns: minmax(220px, 1fr) 1fr;
+    gap: var(--space-4);
+  }
 }
 
 /* Phone: single-column layout */
@@ -561,6 +630,30 @@
   .threat-legend {
     width: 100%;
   }
+
+  /* Encryption card: stack donut above breakdown */
+  .enc-full {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+
+  .enc-chart {
+    height: 220px;
+  }
+}
+
+/* Clickable cards / panels / rows that open a metric-detail drawer */
+.dash-clickable {
+  cursor: pointer;
+}
+
+.dash-clickable:hover {
+  border-color: var(--border-strong);
+}
+
+.dash-clickable:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 /* Linked-hover glow for interrelated items */

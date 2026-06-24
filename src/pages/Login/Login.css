@@ -24,7 +24,12 @@
   inset: 0;
   /* FLAGGED: decorative gradient — no tokens for #020617, #061229, #0044cc */
   background: linear-gradient(135deg, #020617 0%, #061229 35%, #0044cc 100%);
+  /* Oversized so background-position can drift without exposing edges. */
+  background-size: 220% 220%;
+  background-position: 0% 50%;
   z-index: 0;
+  /* GPU-friendly: animates only background-position. */
+  animation: loginBgDrift 16s ease-in-out infinite alternate;
 }
 
 .login-glow {
@@ -33,6 +38,7 @@
   filter: blur(80px);
   opacity: 0.35;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 
 /* FLAGGED: decorative — no token for #2f7df6 */
@@ -42,6 +48,7 @@
   background: #2f7df6;
   top: -120px;
   left: -100px;
+  animation: loginGlowFloatOne 14s ease-in-out infinite alternate;
 }
 
 /* FLAGGED: decorative — no token for #6366f1 */
@@ -51,6 +58,57 @@
   background: #6366f1;
   bottom: -140px;
   right: -80px;
+  animation: loginGlowFloatTwo 18s ease-in-out infinite alternate;
+}
+
+/* ---- Soft light sweep (very low opacity, slow diagonal pass) ---- */
+.login-sweep {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  /* FLAGGED: decorative — subtle white highlight, no token */
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 45%,
+    transparent 70%
+  );
+  transform: translateX(-35%);
+  will-change: transform, opacity;
+  animation: loginSweep 18s ease-in-out infinite;
+}
+
+@keyframes loginBgDrift {
+  from { background-position: 0% 50%; }
+  to   { background-position: 100% 50%; }
+}
+
+@keyframes loginGlowFloatOne {
+  from { transform: translate3d(-10%, -6%, 0) scale(1); opacity: 0.28; }
+  to   { transform: translate3d(22%, 16%, 0) scale(1.14); opacity: 0.5; }
+}
+
+@keyframes loginGlowFloatTwo {
+  from { transform: translate3d(10%, 8%, 0) scale(1.1); opacity: 0.45; }
+  to   { transform: translate3d(-18%, -14%, 0) scale(1); opacity: 0.25; }
+}
+
+@keyframes loginSweep {
+  0%, 100% { transform: translateX(-35%); opacity: 0; }
+  45%, 60% { opacity: 1; }
+  75%      { transform: translateX(35%); opacity: 0; }
+}
+
+/* Respect reduced-motion: hold everything static. */
+@media (prefers-reduced-motion: reduce) {
+  .login-backdrop,
+  .login-glow--one,
+  .login-glow--two,
+  .login-sweep,
+  .login-card {
+    animation: none;
+  }
+  .login-sweep { opacity: 0; }
 }
 
 /* ---- Card ---- */

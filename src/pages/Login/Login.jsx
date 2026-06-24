@@ -5,6 +5,7 @@ import api, { setAccessToken } from "../../api/axios";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { Link } from "react-router-dom";
 import TwoFactorForm from "./TwoFactorForm";
+import AuthBackdrop from "./AuthBackdrop";
 import {
   GlobeHemisphereWest,
   EnvelopeSimple,
@@ -172,10 +173,7 @@ const Login = () => {
 
   return (
     <div className="login-page">
-      <div className="login-backdrop">
-        <div className="login-glow login-glow--one" />
-        <div className="login-glow login-glow--two" />
-      </div>
+      <AuthBackdrop />
 
       <div className="login-card">
         <div className="login-app-mark">

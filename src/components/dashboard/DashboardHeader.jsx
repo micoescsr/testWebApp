@@ -1,4 +1,6 @@
 // components/dashboard/DashboardHeader.jsx
+import NetworkCombobox from "./NetworkCombobox";
+
 const DashboardHeader = ({
   viewMode,
   setViewMode,
@@ -33,17 +35,11 @@ const DashboardHeader = ({
       <div className="dash-filters">
         <div className="filter-group">
           <label>NETWORK</label>
-          <select
+          <NetworkCombobox
             value={viewMode}
-            onChange={(e) => setViewMode(e.target.value)}
-          >
-            <option value="Summary">Summary</option>
-            {(networks || []).map((n) => (
-              <option key={n.network_id} value={n.network_id}>
-                {n.ssid || "Unnamed Network"}
-              </option>
-            ))}
-          </select>
+            networks={networks}
+            onChange={setViewMode}
+          />
         </div>
 
         {!isSummary && (

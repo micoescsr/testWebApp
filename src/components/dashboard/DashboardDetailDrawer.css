@@ -1,0 +1,215 @@
+/* DashboardDetailDrawer.css — self-contained (Dashboard is its own bundle chunk,
+   so it must not depend on ScanDetailsDrawer.css being loaded). The shared
+   backdrop/header/close rules below are identical to that component's and are
+   harmless if both happen to load. */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--space-5) var(--space-5) var(--space-3);
+  background-color: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-header-left h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.drawer-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--surface-3);
+  color: var(--text-primary);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.drawer-close:hover {
+  background-color: var(--surface-2);
+}
+
+.dash-detail-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 440px;
+  max-width: 95vw;
+  height: 100vh;
+  background-color: var(--surface-0);
+  z-index: 1000;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.dash-detail-drawer.open {
+  transform: translateX(0);
+}
+
+.dash-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Detail list (open/encrypted/clients/encryption rows) */
+.dd-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+/* Clickable rows (deep-link into a network view) */
+button.dd-row {
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+button.dd-row:hover,
+button.dd-row:focus-visible {
+  border-color: var(--border-strong);
+  background-color: var(--surface-2);
+  outline: none;
+}
+
+.dd-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dd-row-title {
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-row-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.dd-row-aside {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.dd-enc-badge {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-2);
+}
+
+/* Section heading inside the drawer */
+.dd-section-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: var(--weight-bold);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.dd-section-title:first-child {
+  margin-top: 0;
+}
+
+/* Simple stat line (counts / percentages) */
+.dd-stat-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.dd-stat-line:last-child {
+  border-bottom: none;
+}
+
+.dd-stat-value {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.dd-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  margin-right: var(--space-2);
+}
+
+/* Empty state */
+.dd-empty {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Mobile: full-screen */
+@media (max-width: 640px) {
+  .dash-detail-drawer {
+    width: 100vw;
+  }
+}

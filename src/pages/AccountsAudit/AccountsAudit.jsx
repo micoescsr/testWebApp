@@ -4,8 +4,9 @@ import Tabs from "../../components/common/Tabs/Tabs";
 import AccountsAuditModal from "../../components/modals/AccountsAuditModal/AccountsAuditModal";
 import "./AccountsAudit.css";
 import UserForm from "../../components/accounts/UserForm";
-import AccountsTable from "../../components/accounts/AccountsTable";
+import AccountsPanel from "../../components/accounts/AccountsPanel";
 import AuditLogsTable from "../../components/accounts/AuditLogsTable";
+import AuditToolbar from "../../components/accounts/AuditToolbar";
 import useUsers from "../../hooks/useUsers";
 import useAuditLogs from "../../hooks/useAuditLogs";
 //import { updateUser } from "../../api/userApi";
@@ -43,6 +44,8 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
   const {
   logs: auditLogs,
   loading: auditLoading,
+  initialLoading: auditInitialLoading,
+  isFetching: auditIsFetching,
   error: auditError,
   page: auditPage,
   totalPages: auditTotalPages,
@@ -50,12 +53,17 @@ const [detailsSavedForReactivation, setDetailsSavedForReactivation] = useState(f
   statusFilter: auditStatusFilter,
   fromDate: auditFromDate,
   toDate: auditToDate,
+  eventCategory: auditEventCategory,
+  sortBy: auditSortBy,
+  sortDir: auditSortDir,
   isExporting: auditIsExporting,
   exportError: auditExportError,
   handleSearch: handleAuditSearch,
   handleStatusFilter: handleAuditStatusFilter,
   handleFromDate: handleAuditFromDate,
   handleToDate: handleAuditToDate,
+  handleEventCategory: handleAuditEventCategory,
+  handleSort: handleAuditSort,
   handleExport: handleAuditExport,
   goToPage: goToAuditPage,
 } = useAuditLogs();
@@ -319,46 +327,6 @@ const handleReactivate = (formData) => {
 
       <div className="top-bar">
         <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-        {activeTab === "logs" && (
-          <div className="audit-filters">
-            <input
-              type="text"
-              placeholder="Search events..."
-              className="search-input"
-              value={auditSearch}
-              onChange={(e) => handleAuditSearch(e.target.value)}
-            />
-            <select
-              className="status-filter-select"
-              value={auditStatusFilter}
-              onChange={(e) => handleAuditStatusFilter(e.target.value)}
-            >
-              <option value="">All Statuses</option>
-              <option value="SUCCESS">Success</option>
-              <option value="FAILED">Failed</option>
-            </select>
-            <div className="date-range-filters">
-              <label className="date-filter-label">
-                From
-                <input
-                  type="date"
-                  className="date-input"
-                  value={auditFromDate}
-                  onChange={(e) => handleAuditFromDate(e.target.value)}
-                />
-              </label>
-              <label className="date-filter-label">
-                To
-                <input
-                  type="date"
-                  className="date-input"
-                  value={auditToDate}
-                  onChange={(e) => handleAuditToDate(e.target.value)}
-                />
-              </label>
-            </div>
-          </div>
-        )}
       </div>
 
       {activeTab === "accounts" && (
@@ -371,41 +339,60 @@ const handleReactivate = (formData) => {
           {!isPageLoading && error && <p className="error-text">{error}</p>}
 
           {!isPageLoading && !error && (
-            <AccountsTable
+            <AccountsPanel
               users={users}
               onEdit={openEditUser}
               onResetMfa={handleResetMfa}
+              onAddUser={openAddUser}
             />
           )}
-
-
-          <button className="add-user-btn" onClick={openAddUser}>
-            Add a New User
-          </button>
         </>
       )}
 
       {activeTab === "logs" && (
         <>
-          {(profileLoading || auditLoading) && (
+          <AuditToolbar
+            search={auditSearch}
+            onSearch={handleAuditSearch}
+            status={auditStatusFilter}
+            onStatus={handleAuditStatusFilter}
+            eventCategory={auditEventCategory}
+            onEventCategory={handleAuditEventCategory}
+            fromDate={auditFromDate}
+            onFromDate={handleAuditFromDate}
+            toDate={auditToDate}
+            onToDate={handleAuditToDate}
+            isSuperadmin={profile?.role === "superadmin"}
+            isExporting={auditIsExporting}
+            exportError={auditExportError}
+            onExport={handleAuditExport}
+          />
+
+          {/* Full loader only on the very first load; page/filter refetches keep
+              the table mounted and show a subtle overlay (no flash/remount). */}
+          {(profileLoading || auditInitialLoading) && (
             <div className="table-container">
               <p style={{ padding: "24px", textAlign: "center" }}>Loading audit logs...</p>
             </div>
           )}
-          {!profileLoading && !auditLoading && auditError && <p className="error-text">{auditError}</p>}
 
-          {!profileLoading && !auditLoading && !auditError && (
+          {!profileLoading && !auditInitialLoading && auditError && (
+            <p className="error-text">{auditError}</p>
+          )}
+
+          {!profileLoading && !auditInitialLoading && (
             <AuditLogsTable
               logs={auditLogs}
               page={auditPage}
               totalPages={auditTotalPages}
               onPageChange={goToAuditPage}
-              currentUser={profile}
-              fromDate={auditFromDate}
-              toDate={auditToDate}
-              isExporting={auditIsExporting}
-              exportError={auditExportError}
-              onExport={handleAuditExport}
+              isFetching={auditIsFetching}
+              sortBy={auditSortBy}
+              sortDir={auditSortDir}
+              onSort={handleAuditSort}
+              filtersActive={
+                !!(auditSearch || auditStatusFilter || auditFromDate || auditToDate || auditEventCategory)
+              }
             />
           )}
         </>

@@ -20,6 +20,19 @@ const useAuditLogs = () => {
   const [statusFilter, setStatusFilter] = useState(""); // '' | 'SUCCESS' | 'FAILED'
   const [fromDate, setFromDate] = useState("");          // YYYY-MM-DD
   const [toDate, setToDate] = useState("");              // YYYY-MM-DD
+  const [eventCategory, setEventCategory] = useState(""); // '' | AUTH | ACCOUNTS | SCANS | DEVICE | DETECTION | SYSTEM
+  // Server-supported sort (whitelist: created_at | event_name | event_status | entity_type)
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
+
+  // Tracks whether the first successful load has happened, so page/filter
+  // refetches show a subtle overlay instead of blanking/remounting the table.
+  const hasLoadedRef = useRef(false);
+
+  // Monotonic request id — only the latest request is allowed to commit state.
+  // Guards against out-of-order responses from rapid page/filter clicks, which
+  // previously caused stale responses to overwrite newer ones in a refetch loop.
+  const reqIdRef = useRef(0);
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
@@ -38,35 +51,47 @@ const useAuditLogs = () => {
         status: overrides.status ?? statusFilter,
         startDate: overrides.fromDate ?? fromDate,
         endDate: overrides.toDate ?? toDate,
+        sort: overrides.sort ?? sortBy,
+        dir: overrides.dir ?? sortDir,
+        eventCategory: overrides.eventCategory ?? eventCategory,
       };
+
+      const myReqId = ++reqIdRef.current;
+      const isStale = () => myReqId !== reqIdRef.current;
 
       return run(
         async () => {
           const res = await getAuditLogs(params);
-          const data = res.data;
+          // A newer request started while this one was in flight — discard so an
+          // older page's data can never overwrite the newer page's state.
+          if (isStale()) return;
 
+          const data = res.data;
           setLogs(data.logs || []);
           setTotal(data.total || 0);
-
-          // Sync page in case backend clamped it
-          if (data.page) setPage(data.page);
+          hasLoadedRef.current = true;
+          // NOTE: intentionally do NOT re-sync page from the response here.
+          // goToPage already clamps to the valid range, and filter/sort changes
+          // reset to page 1 — re-syncing inside the success path re-triggered the
+          // fetch effect and caused the rapid-click "stuck updating" loop.
         },
         {
+          isStale,
+          // Keep previously-loaded rows visible on a failed page/filter fetch
+          // (no blanking). The error banner still surfaces via `error`.
           onError: (err) => {
             console.error("Fetch audit logs error:", err);
-            setLogs([]);
-            setTotal(0);
           },
         }
       );
     },
-    [page, limit, search, statusFilter, fromDate, toDate, run]
+    [page, limit, search, statusFilter, fromDate, toDate, sortBy, sortDir, eventCategory, run]
   );
 
-  // Auto-fetch on mount and when page/statusFilter/dates change
+  // Auto-fetch on mount and when page/statusFilter/dates/sort/category change
   useEffect(() => {
     fetchAuditLogs();
-  }, [page, statusFilter, fromDate, toDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, statusFilter, fromDate, toDate, sortBy, sortDir, eventCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search handler (300ms)
   const handleSearch = useCallback(
@@ -86,6 +111,19 @@ const useAuditLogs = () => {
     setPage(1);
   }, []);
 
+  // Toggle/select sort on a server-supported column; resets to page 1.
+  const handleSort = useCallback((field) => {
+    setSortBy((prevField) => {
+      if (prevField === field) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        return prevField;
+      }
+      setSortDir("desc");
+      return field;
+    });
+    setPage(1);
+  }, []);
+
   const handleFromDate = useCallback((value) => {
     setFromDate(value);
     setPage(1);
@@ -93,6 +131,11 @@ const useAuditLogs = () => {
 
   const handleToDate = useCallback((value) => {
     setToDate(value);
+    setPage(1);
+  }, []);
+
+  const handleEventCategory = useCallback((value) => {
+    setEventCategory(value);
     setPage(1);
   }, []);
 
@@ -170,6 +213,9 @@ const useAuditLogs = () => {
   return {
     logs,
     loading,
+    // Only the very first load blanks the area; later fetches use isFetching.
+    initialLoading: loading && !hasLoadedRef.current,
+    isFetching: loading,
     error,
     total,
     page,
@@ -179,6 +225,9 @@ const useAuditLogs = () => {
     statusFilter,
     fromDate,
     toDate,
+    eventCategory,
+    sortBy,
+    sortDir,
 
     // export state
     isExporting,
@@ -190,6 +239,8 @@ const useAuditLogs = () => {
     handleStatusFilter,
     handleFromDate,
     handleToDate,
+    handleEventCategory,
+    handleSort,
     handleExport,
     goToPage,
     setPage,

@@ -1,5 +1,37 @@
 // components/accounts/AuditLogsTable.jsx
-import { useState, useCallback } from "react";
+import { useState, Fragment } from "react";
+import SortHeader from "../history/SortHeader";
+
+/** Header row. Event/Date/Status are server-sortable; the rest are plain. */
+const AuditHeaderRow = ({ sortBy, sortDir, onSort }) => {
+  const sortable = onSort
+    ? { sortField: sortBy, sortDir, onSort }
+    : null;
+  return (
+    <tr>
+      <th>USER</th>
+      {sortable ? (
+        <SortHeader field="event_name" label="EVENT" {...sortable} />
+      ) : (
+        <th>EVENT</th>
+      )}
+      <th>TARGET</th>
+      <th>DETAILS</th>
+      {sortable ? (
+        <SortHeader field="created_at" label="DATE" {...sortable} />
+      ) : (
+        <th>DATE</th>
+      )}
+      <th>TIME</th>
+      <th>MODULE</th>
+      {sortable ? (
+        <SortHeader field="event_status" label="STATUS" {...sortable} />
+      ) : (
+        <th>STATUS</th>
+      )}
+    </tr>
+  );
+};
 
 /**
  * Formats ISO timestamp to readable date + time.
@@ -27,39 +59,41 @@ function formatTimestamp(isoString) {
 }
 
 /**
- * Maps event_name to a human-readable module/category.
- * Supports both dot-notation (AUTH.LOGIN) and legacy underscore names.
+ * Maps event_name to one of the canonical module categories used for the badge:
+ *   AUTH | ACCOUNTS | SCANS | DEVICE | DETECTION | SYSTEM, with a GENERAL fallback.
+ * Supports both dot-notation (AUTH.LOGIN) and legacy underscore names. Kept aligned
+ * with the backend `eventCategory` filter (auditRepository CATEGORY_EVENT_PATTERNS),
+ * so the visible pill and the category filter agree.
  */
 function getEventModule(eventName) {
-  if (!eventName) return "—";
+  if (!eventName) return "GENERAL";
   const upper = eventName.toUpperCase();
+  const prefix = upper.includes(".") ? upper.split(".")[0] : upper;
 
-  // Dot-notation: module is the prefix before the first dot
-  if (upper.includes(".")) {
-    const module = upper.split(".")[0];
-    const moduleMap = {
-      AUTH: "AUTH",
-      USER: "ACCOUNTS",
-      SCAN: "SCANS",
-      DETECTION: "DETECTION",
-      DEVICE: "DEVICE",
-      PORTAL: "PORTAL",
-      AUTHORIZATION: "AUTH",
-      EXPORT: "SYSTEM",
-      ARCHIVE: "SYSTEM",
-      RISK: "SYSTEM",
-    };
-    return moduleMap[module] || module;
-  }
+  // Exact dot-notation prefix match (fast path)
+  const PREFIX_MAP = {
+    AUTH: "AUTH",
+    AUTHORIZATION: "AUTH",
+    USER: "ACCOUNTS",
+    SCAN: "SCANS",
+    DETECTION: "DETECTION",
+    DEVICE: "DEVICE",
+    PORTAL: "DEVICE",
+    EXPORT: "SYSTEM",
+    ARCHIVE: "SYSTEM",
+    RISK: "SYSTEM",
+    NETWORK: "SYSTEM",
+  };
+  if (PREFIX_MAP[prefix]) return PREFIX_MAP[prefix];
 
   // Legacy underscore names (backwards compat)
-  if (upper.includes("LOGIN") || upper.includes("LOGOUT") || upper.includes("AUTH") || upper.includes("REFRESH") || upper.includes("TEMP_EXPIRED")) return "AUTH";
+  if (upper.includes("LOGIN") || upper.includes("LOGOUT") || upper.includes("AUTH") || upper.includes("REFRESH") || upper.includes("PASSWORD") || upper.includes("TEMP_EXPIRED")) return "AUTH";
   if (upper.includes("USER") || upper.includes("PROFILE") || upper.includes("ACTIVATE") || upper.includes("DEACTIVATE")) return "ACCOUNTS";
   if (upper.includes("SCAN")) return "SCANS";
-  if (upper.includes("NETWORK")) return "NETWORK";
-  if (upper.includes("DEVICE")) return "DEVICE";
-  if (upper.includes("PORTAL")) return "PORTAL";
-  return "SYSTEM";
+  if (upper.includes("DETECTION")) return "DETECTION";
+  if (upper.includes("DEVICE") || upper.includes("PORTAL")) return "DEVICE";
+  if (upper.includes("EXPORT") || upper.includes("ARCHIVE") || upper.includes("RISK") || upper.includes("NETWORK")) return "SYSTEM";
+  return "GENERAL";
 }
 
 /**
@@ -134,58 +168,107 @@ function formatEventName(name) {
   return map[name.toUpperCase()] || name.replace(/[_.]/g, " ");
 }
 
+// Sensitive keys that must never be surfaced in Target/Details/metadata.
+const SENSITIVE_KEYS = [
+  "password", "temp_password", "token", "access_token", "refresh_token",
+  "secret", "credential", "otp", "totp", "mfa_secret", "session", "session_id",
+  "cookie", "authorization", "auth_key", "hash", "salt", "private_key", "api_key",
+];
+
+const isSensitiveKey = (k) =>
+  SENSITIVE_KEYS.some((s) => String(k).toLowerCase().includes(s));
+
+// Internal/noise keys not useful for audit reading.
+const NOISE_KEYS = [
+  "id", "must_change_password", "temp_expires_at", "created_at", "updated_at",
+];
+
+// Concrete entity object types whose id is a legitimate "target" reference.
+// Excludes module-ish entity types (AUTH, AUTHORIZATION) so we never render a
+// module/category + id as a fake target (e.g. the old "AUTH 7edc6428…" bug).
+const OBJECT_ENTITY_TYPES = ["USER", "PROFILE", "ACCOUNT", "NETWORK", "SCAN", "DEVICE", "AP", "PORTAL"];
+
+const titleCase = (s) =>
+  String(s).charAt(0).toUpperCase() + String(s).slice(1).toLowerCase();
+
 /**
- * Generates a one-line summary of what changed for inline display.
+ * getAuditTarget(log) — the actual affected entity/object, strictly from stored
+ * fields. Never derived from module/category. Returns null when no reliable
+ * source-backed target exists (caller shows a muted dash / "No target").
  */
-function getChangeSummary(log) {
-  const { oldValues, newValues, meta, eventName } = log;
-  const upper = (eventName || "").toUpperCase();
+function getAuditTarget(log) {
+  const { oldValues, newValues, meta, entityType, entityIdUuid, entityIdBigint } = log;
+  const vals = newValues || oldValues || {};
+  const m = meta || {};
 
-  // Special events (support both dot-notation and legacy names)
-  if (upper === "USER_DEACTIVATE" || upper === "USER.DEACTIVATE") {
-    return meta?.anonymized ? "Archived & anonymized" : "Deactivated";
+  // Explicit, source-provided target/identity fields.
+  if (m.target) return String(m.target);
+  if (vals.username) return vals.username;
+  if (vals.email) return vals.email;
+  if (vals.first_name || vals.last_name) {
+    return `${vals.first_name || ""} ${vals.last_name || ""}`.trim();
   }
-  if (upper === "USER_ACTIVATE" || upper === "USER.ACTIVATE") {
-    return "Activated with temp password";
-  }
-  if (upper.includes("LOGIN") || upper.startsWith("AUTH.")) return null;
-  if (upper.includes("SCAN") || upper.startsWith("SCAN.")) return null;
-  if (upper.startsWith("DETECTION.")) return null;
+  if (m.ssid) return String(m.ssid);
+  if (m.bssid) return String(m.bssid);
+  if (m.network_id != null) return `Network #${m.network_id}`;
+  if (m.scan_id != null) return `Scan #${m.scan_id}`;
+  if (m.device_id != null) return `Device ${m.device_id}`;
 
-  // For edits, show changed fields
-  if (oldValues && newValues) {
-    const HIDDEN = ["id", "must_change_password", "temp_expires_at", "created_at", "updated_at"];
-    const changes = Object.keys(newValues).filter(k => {
-      if (HIDDEN.includes(k)) return false;
-      return JSON.stringify(oldValues[k]) !== JSON.stringify(newValues[k]);
-    });
-    if (changes.length === 0) return null;
-    if (changes.length <= 2) {
-      return changes.map(k => {
-        const label = k.replace(/_/g, " ");
-        return `${label}: ${oldValues[k] || "—"} → ${newValues[k] || "—"}`;
-      }).join(", ");
-    }
-    return `${changes.length} fields changed`;
+  // Concrete entity object + id (NOT a module/category). e.g. "User a1b2c3d4…".
+  const et = (entityType || "").toUpperCase();
+  if (OBJECT_ENTITY_TYPES.includes(et)) {
+    if (entityIdBigint != null) return `${titleCase(et)} #${entityIdBigint}`;
+    if (entityIdUuid) return `${titleCase(et)} ${String(entityIdUuid).slice(0, 8)}…`;
   }
   return null;
 }
 
 /**
- * Gets the target entity display (who/what was affected).
+ * getAuditDetails(log) — a one-line summary built only from stored source fields
+ * (meta description/message/reason/error and old/new value changes). Never
+ * generated from the event name. Returns null when no source detail exists
+ * (caller shows "No details").
  */
-function getTargetDisplay(log) {
-  const { oldValues, newValues, entityType, meta } = log;
-  // Try to get target from old or new values
-  const vals = oldValues || newValues;
-  if (vals) {
-    if (vals.username) return vals.username;
-    if (vals.email) return vals.email;
-    if (vals.first_name && vals.last_name) return `${vals.first_name} ${vals.last_name}`;
+function getAuditDetails(log) {
+  const { oldValues, newValues, meta } = log;
+  const m = meta || {};
+
+  // Explicit free-text source fields.
+  const text = m.description || m.details || m.message || m.reason || m.error;
+  if (text) return String(text);
+
+  // Source-stored counters.
+  if (m.rows_exported != null) return `${m.rows_exported} rows exported`;
+  if (m.rows_archived != null) return `${m.rows_archived} rows archived`;
+  if (m.anonymized === true) return "Profile anonymized";
+
+  // Actual field changes captured in old/new value snapshots.
+  const changes = diffChangedKeys(oldValues, newValues);
+  if (changes.length === 0) return null;
+  if (changes.length <= 2) {
+    return changes
+      .map((k) => `${k.replace(/_/g, " ")}: ${oldValues[k] ?? "—"} → ${newValues[k] ?? "—"}`)
+      .join(", ");
   }
-  // For deactivated users, check meta
-  if (meta?.reason) return null;
-  return null;
+  return `${changes.length} fields changed`;
+}
+
+/** Keys whose value changed between old/new, excluding noise + sensitive keys. */
+function diffChangedKeys(oldValues, newValues) {
+  if (!oldValues || !newValues) return [];
+  return Object.keys(newValues).filter((k) => {
+    if (NOISE_KEYS.includes(k) || isSensitiveKey(k)) return false;
+    return JSON.stringify(oldValues[k]) !== JSON.stringify(newValues[k]);
+  });
+}
+
+/** Flatten safe metadata into displayable key/value pairs. */
+function formatAuditMetadata(log) {
+  const meta = log?.meta;
+  if (!meta || typeof meta !== "object") return [];
+  return Object.entries(meta)
+    .filter(([k, v]) => !isSensitiveKey(k) && v != null && typeof v !== "object")
+    .map(([k, v]) => [k.replace(/_/g, " "), String(v)]);
 }
 
 /**
@@ -200,9 +283,8 @@ function ChangeDiff({ oldValues, newValues }) {
   ]);
 
   // Filter out internal/sensitive fields
-  const HIDDEN_FIELDS = ["id", "must_change_password", "temp_expires_at"];
   const changedKeys = [...allKeys].filter((k) => {
-    if (HIDDEN_FIELDS.includes(k)) return false;
+    if (NOISE_KEYS.includes(k) || isSensitiveKey(k)) return false;
     const oldVal = oldValues?.[k];
     const newVal = newValues?.[k];
     return JSON.stringify(oldVal) !== JSON.stringify(newVal);
@@ -228,135 +310,121 @@ function ChangeDiff({ oldValues, newValues }) {
   );
 }
 
+/**
+ * Expanded detail panel for a single audit row — a labelled summary grid plus
+ * a field-change diff, safe metadata key/values, and an optional collapsible
+ * raw-metadata section. Sensitive keys are stripped upstream.
+ */
+function AuditDetailPanel({ log, module, target, summary, date, time }) {
+  const metaPairs = formatAuditMetadata(log);
+  const hasDiff = log.oldValues || log.newValues;
+
+  const rows = [
+    ["Event", formatEventName(log.eventName)],
+    ["Actor", getActorDisplay(log.actor)],
+    ["Status", log.eventStatus || "—"],
+    ["Module", module],
+    ["Date & Time", `${date} ${time}`.trim()],
+    ["Target", target || "No target"],
+    ["Details", summary || "No details"],
+  ];
+
+  if (log.actorIp) rows.push(["Actor IP", log.actorIp]);
+  if (log.entityType) {
+    const ref = log.entityIdUuid
+      ? ` (${String(log.entityIdUuid).slice(0, 8)}…)`
+      : log.entityIdBigint != null
+        ? ` (#${log.entityIdBigint})`
+        : "";
+    rows.push(["Entity", `${log.entityType}${ref}`]);
+  }
+  if (log.requestId) rows.push(["Request ID", log.requestId]);
+
+  return (
+    <div className="audit-detail-content">
+      <dl className="audit-detail-grid">
+        {rows.map(([label, value]) => (
+          <div key={label} className="audit-detail-item">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {hasDiff && (
+        <div className="audit-detail-section">
+          <p className="audit-detail-section-title">Changes</p>
+          <ChangeDiff oldValues={log.oldValues} newValues={log.newValues} />
+        </div>
+      )}
+
+      {metaPairs.length > 0 && (
+        <div className="audit-detail-section">
+          <p className="audit-detail-section-title">Metadata</p>
+          <dl className="audit-detail-grid">
+            {metaPairs.map(([k, v]) => (
+              <div key={k} className="audit-detail-item">
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      {log.meta && typeof log.meta === "object" && (
+        <details className="audit-raw-meta">
+          <summary>Raw metadata</summary>
+          <pre>{JSON.stringify(redactObject(log.meta), null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Deep-ish redaction of sensitive keys for the raw-metadata view. */
+function redactObject(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(redactObject);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = isSensitiveKey(k) ? "[redacted]" : (typeof v === "object" ? redactObject(v) : v);
+  }
+  return out;
+}
+
 const AuditLogsTable = ({
   logs,
   page,
   totalPages,
   onPageChange,
-  currentUser,
-  fromDate,
-  toDate,
-  isExporting,
-  exportError,
-  onExport,
+  isFetching = false,
+  sortBy,
+  sortDir,
+  onSort,
+  filtersActive = false,
 }) => {
   const [expandedId, setExpandedId] = useState(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFrom, setExportFrom] = useState("");
-  const [exportTo, setExportTo] = useState("");
-  const [exportValidationError, setExportValidationError] = useState("");
 
   const toggleExpand = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
-  const isSuperadmin = currentUser?.role === "superadmin";
-
-  const handleExportClick = useCallback(() => {
-    setExportFrom("");
-    setExportTo("");
-    setExportValidationError("");
-    setShowExportModal(true);
-  }, []);
-
-  const confirmExport = useCallback(async () => {
-    if (!exportFrom || !exportTo) {
-      setExportValidationError("Please select both a start and end date.");
-      return;
-    }
-    if (new Date(exportFrom) > new Date(exportTo)) {
-      setExportValidationError("Start date cannot be after end date.");
-      return;
-    }
-    setExportValidationError("");
-    setShowExportModal(false);
-    if (onExport) {
-      await onExport(exportFrom, exportTo);
-    }
-  }, [onExport, exportFrom, exportTo]);
-
-  const cancelExport = useCallback(() => {
-    setShowExportModal(false);
-    setExportValidationError("");
-  }, []);
+  const emptyMessage = filtersActive
+    ? "No audit log records match the selected filters."
+    : "No audit log records found.";
 
   if (!logs || logs.length === 0) {
     return (
       <div className="table-container">
-        {/* Export bar — shown even with no results so superadmin can still export by date range */}
-        {isSuperadmin && (
-          <div className="export-bar">
-            <button
-              className="export-csv-btn"
-              disabled={isExporting}
-              onClick={handleExportClick}
-              title={isExporting ? "Export in progress…" : "Export audit logs as CSV"}
-            >
-              {isExporting ? "Exporting…" : "Export CSV"}
-            </button>
-            {exportError && <span className="export-error">{exportError}</span>}
-          </div>
-        )}
-
-        {/* Export date range modal */}
-        {showExportModal && (
-          <div className="export-confirm-overlay" onClick={cancelExport}>
-            <div className="export-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-              <p className="export-confirm-title">Export Audit Logs</p>
-              <p className="export-confirm-text">
-                Select a date range for the audit logs you want to export.
-              </p>
-              <div className="export-date-fields">
-                <label className="export-date-label">
-                  From
-                  <input
-                    type="date"
-                    className="date-input"
-                    value={exportFrom}
-                    onChange={(e) => setExportFrom(e.target.value)}
-                  />
-                </label>
-                <label className="export-date-label">
-                  To
-                  <input
-                    type="date"
-                    className="date-input"
-                    value={exportTo}
-                    onChange={(e) => setExportTo(e.target.value)}
-                  />
-                </label>
-              </div>
-              {exportValidationError && (
-                <p className="export-error" style={{ marginTop: 8 }}>{exportValidationError}</p>
-              )}
-              <span className="export-confirm-note">This action will be recorded in the audit log.</span>
-              <div className="export-confirm-actions">
-                <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
-                <button className="confirm-btn" onClick={confirmExport} disabled={isExporting}>
-                  {isExporting ? "Exporting…" : "Export"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         <table className="accounts-table">
           <thead>
-            <tr>
-              <th>USER</th>
-              <th>EVENT</th>
-              <th>TARGET</th>
-              <th>DETAILS</th>
-              <th>DATE</th>
-              <th>TIME</th>
-              <th>MODULE</th>
-              <th>STATUS</th>
-            </tr>
+            <AuditHeaderRow sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
           </thead>
           <tbody>
             <tr>
-              <td colSpan={8} style={{ textAlign: "center", padding: "32px", color: "#888" }}>
-                No audit logs found.
+              <td colSpan={8} className="history-empty-cell">
+                {emptyMessage}
               </td>
             </tr>
           </tbody>
@@ -366,109 +434,60 @@ const AuditLogsTable = ({
   }
 
   return (
-    <div className="table-container">
-      {/* Export bar — superadmin only */}
-      {isSuperadmin && (
-        <div className="export-bar">
-          <button
-            className="export-csv-btn"
-            disabled={isExporting}
-            onClick={handleExportClick}
-            title={isExporting ? "Export in progress…" : "Export audit logs as CSV"}
-          >
-            {isExporting ? "Exporting…" : "Export CSV"}
-          </button>
-          {exportError && <span className="export-error">{exportError}</span>}
-        </div>
-      )}
-
-      {/* Export date range modal */}
-      {showExportModal && (
-        <div className="export-confirm-overlay" onClick={cancelExport}>
-          <div className="export-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <p className="export-confirm-title">Export Audit Logs</p>
-            <p className="export-confirm-text">
-              Select a date range for the audit logs you want to export.
-            </p>
-            <div className="export-date-fields">
-              <label className="export-date-label">
-                From
-                <input
-                  type="date"
-                  className="date-input"
-                  value={exportFrom}
-                  onChange={(e) => setExportFrom(e.target.value)}
-                />
-              </label>
-              <label className="export-date-label">
-                To
-                <input
-                  type="date"
-                  className="date-input"
-                  value={exportTo}
-                  onChange={(e) => setExportTo(e.target.value)}
-                />
-              </label>
-            </div>
-            {exportValidationError && (
-              <p className="export-error" style={{ marginTop: 8 }}>{exportValidationError}</p>
-            )}
-            <span className="export-confirm-note">This action will be recorded in the audit log.</span>
-            <div className="export-confirm-actions">
-              <button className="cancel-btn" onClick={cancelExport}>Cancel</button>
-              <button className="confirm-btn" onClick={confirmExport} disabled={isExporting}>
-                {isExporting ? "Exporting…" : "Export"}
-              </button>
-            </div>
-          </div>
+    <div className={`table-container ${isFetching ? "is-fetching" : ""}`}>
+      {/* Subtle overlay during page/filter refetch — rows stay visible underneath */}
+      {isFetching && (
+        <div className="table-loading-overlay" aria-hidden="true">
+          <span className="table-loading-pill">Updating…</span>
         </div>
       )}
 
       <table className="accounts-table audit-table">
         <thead>
-          <tr>
-            <th>USER</th>
-            <th>EVENT</th>
-            <th>TARGET</th>
-            <th>DETAILS</th>
-            <th>DATE</th>
-            <th>TIME</th>
-            <th>MODULE</th>
-            <th>STATUS</th>
-          </tr>
+          <AuditHeaderRow sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
         </thead>
         <tbody>
           {logs.map((log) => {
             const { date, time } = formatTimestamp(log.createdAt);
             const statusClass = (log.eventStatus || "").toLowerCase();
             const isExpanded = expandedId === log.id;
-            const hasDetails = log.oldValues || log.newValues;
-            const target = getTargetDisplay(log);
-            const summary = getChangeSummary(log);
+            const module = getEventModule(log.eventName);
+            const target = getAuditTarget(log);
+            const summary = getAuditDetails(log);
 
             return (
-              <>
+              <Fragment key={log.id}>
                 <tr
-                  key={log.id}
-                  className={`audit-row ${hasDetails ? "expandable" : ""} ${isExpanded ? "expanded" : ""}`}
-                  onClick={() => hasDetails && toggleExpand(log.id)}
-                  title={hasDetails ? "Click to view changes" : undefined}
+                  className={`audit-row expandable ${isExpanded ? "expanded" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  onClick={() => toggleExpand(log.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toggleExpand(log.id);
+                    }
+                  }}
                 >
                   <td>{getActorDisplay(log.actor)}</td>
-                  <td>{formatEventName(log.eventName)}</td>
-                  <td style={{ color: target ? '#333' : '#aaa', fontSize: '0.85em' }}>
-                    {target || '—'}
+                  <td>
+                    <span className="audit-event-cell">
+                      <span className={`audit-caret ${isExpanded ? "open" : ""}`} aria-hidden="true">▸</span>
+                      {formatEventName(log.eventName)}
+                    </span>
                   </td>
-                  <td style={{ fontSize: '0.8em', color: '#666', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={summary || undefined}
-                  >
-                    {summary || '—'}
+                  <td className={target ? "audit-target" : "audit-muted"}>
+                    {target || "—"}
+                  </td>
+                  <td className={summary ? "audit-details-cell" : "audit-muted"} title={summary || undefined}>
+                    {summary || "No details"}
                   </td>
                   <td>{date}</td>
                   <td>{time}</td>
                   <td>
-                    <span className={`module-badge module-${getEventModule(log.eventName).toLowerCase()}`}>
-                      {getEventModule(log.eventName)}
+                    <span className={`module-badge module-${module.toLowerCase()}`}>
+                      {module}
                     </span>
                   </td>
                   <td>
@@ -478,39 +497,32 @@ const AuditLogsTable = ({
                   </td>
                 </tr>
                 {isExpanded && (
-                  <tr key={`${log.id}-details`} className="audit-detail-row">
+                  <tr className="audit-detail-row">
                     <td colSpan={8}>
-                      <div className="audit-detail-content">
-                        <div className="audit-detail-meta">
-                          {log.actorIp && (
-                            <span className="detail-chip">
-                              <strong>IP:</strong> {log.actorIp}
-                            </span>
-                          )}
-                          {log.entityType && (
-                            <span className="detail-chip">
-                              <strong>Entity:</strong> {log.entityType}
-                              {log.entityIdUuid ? ` (${log.entityIdUuid.slice(0, 8)}…)` : ""}
-                            </span>
-                          )}
-                        </div>
-                        <ChangeDiff oldValues={log.oldValues} newValues={log.newValues} />
-                      </div>
+                      <AuditDetailPanel
+                        log={log}
+                        module={module}
+                        target={target}
+                        summary={summary}
+                        date={date}
+                        time={time}
+                      />
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
       </table>
 
-      {/* Pagination */}
+      {/* Pagination — buttons stay disabled while a page is in flight so rapid
+          clicks can't queue overlapping requests. */}
       {totalPages > 1 && (
         <div className="audit-pagination">
           <button
             className="pagination-btn"
-            disabled={page <= 1}
+            disabled={page <= 1 || isFetching}
             onClick={() => onPageChange(page - 1)}
           >
             ← Prev
@@ -520,7 +532,7 @@ const AuditLogsTable = ({
           </span>
           <button
             className="pagination-btn"
-            disabled={page >= totalPages}
+            disabled={page >= totalPages || isFetching}
             onClick={() => onPageChange(page + 1)}
           >
             Next →

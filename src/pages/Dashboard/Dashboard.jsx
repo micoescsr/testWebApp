@@ -53,6 +53,7 @@ const Dashboard = () => {
               hoverContext={hoverContext}
               setHoverContext={setHoverContext}
               clearHoverContext={clearHoverContext}
+              onSelectNetwork={setViewMode}
             />
           ) : (
             <NetworkSection

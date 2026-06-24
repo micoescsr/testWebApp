@@ -57,13 +57,33 @@ function buildSeverityData(findings) {
 // 1. GET ALL NETWORKS (for the dropdown)
 // ──────────────────────────────────────────────────────────────────────
 async function getNetworksList() {
-  const { data, error } = await supabaseClient
+  // Network rows + latest risk score (from latest_scan_per_network) so the
+  // frontend selector can show metadata (encryption, risk, AP count) and group
+  // duplicate SSIDs by their distinct BSSIDs. Fields are additive — existing
+  // consumers that only read network_id/ssid are unaffected.
+  const networksP = supabaseClient
     .from("networks")
-    .select("network_id, ssid")
+    .select("network_id, ssid, bssid, channel, encryption_status, num_clients")
     .order("ssid", { ascending: true });
 
-  if (error) throw error;
-  return data || [];
+  const riskP = supabaseClient
+    .from("latest_scan_per_network")
+    .select("network_id, risk_score");
+
+  const [networksR, riskR] = await Promise.all([networksP, riskP]);
+
+  if (networksR.error) throw networksR.error;
+  if (riskR.error) throw riskR.error;
+
+  const riskMap = {};
+  (riskR.data || []).forEach((r) => {
+    if (r.network_id) riskMap[r.network_id] = r.risk_score ?? null;
+  });
+
+  return (networksR.data || []).map((n) => ({
+    ...n,
+    risk_score: riskMap[n.network_id] ?? null,
+  }));
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -233,6 +253,8 @@ async function getSummaryData() {
 
   const topRisks = Object.values(networkMap)
     .map((n) => ({
+      // network_id lets the frontend Top-5 row click switch to that network's view.
+      network_id: n.network_id,
       ssid: n.ssid || "Unknown",
       risk: latestRiskMap[n.network_id] ?? 0,
       severityCount: netSevCount[n.network_id] || 0,
@@ -240,6 +262,21 @@ async function getSummaryData() {
     }))
     .sort((a, b) => b.risk - a.risk)
     .slice(0, 5);
+
+  // Per-network directory for the dashboard metric-detail drawers (open/encrypted
+  // lists, client distribution, encryption breakdown). Carries network_id so each
+  // row can deep-link into the per-network view. Additive — separate from the
+  // report-shaped `allNetworks` below.
+  const networkDirectory = Object.values(networkMap).map((n) => ({
+    network_id: n.network_id,
+    ssid: n.ssid || "Unknown",
+    bssid: n.bssid || null,
+    channel: n.channel ?? null,
+    encryption_status: n.encryption_status || "Unknown",
+    num_clients: n.num_clients || 0,
+    risk_score: latestRiskMap[n.network_id] ?? null,
+    findings: netSevCount[n.network_id] || 0,
+  }));
 
   // Derived: encryption pie
   const networkEncryptionData = [
@@ -293,6 +330,7 @@ async function getSummaryData() {
     severityData,
     topRisks,
     networkEncryptionData,
+    networkDirectory,
     allNetworks,
     detailedFindings,
     historicalScans,
@@ -535,6 +573,27 @@ function shapeNetworkResponse(
   const riskScore = latestScan?.risk_score ?? 0;
   const riskScoreData = [{ name: "Wi-Fi Risk", value: riskScore }];
 
+  // ── Previous scan (drives the "Status as of previous scan" card) ──
+  // History is the completed-scan list (ascending). The previous scan is the
+  // most recent COMPLETED scan strictly before the current scan's finish time.
+  // Exposed as a small derived object so the frontend can decide whether the
+  // card should render a warning/critical state (see utils/scanStatus.js).
+  const previousScan = (() => {
+    if (!lastScan) return null;
+    const current = new Date(lastScan).getTime();
+    let prev = null;
+    (history || []).forEach((h) => {
+      if (!h.finished_at) return;
+      const t = new Date(h.finished_at).getTime();
+      if (t < current) prev = h; // ascending → last match is the closest prior scan
+    });
+    if (!prev) return null;
+    return {
+      riskScore: prev.scan_risk_score ?? 0,
+      finishedAt: prev.finished_at,
+    };
+  })();
+
   const ssid = networkInfo?.ssid || "Unknown";
   const bssid = networkInfo?.bssid || null;
   const channel = networkInfo?.channel ?? null;
@@ -604,6 +663,8 @@ function shapeNetworkResponse(
   return {
     lastScan,
     riskScoreData,
+    currentRiskScore: riskScore,
+    previousScan,
     riskLabel: riskLabelForReport(riskScore),
     ssid,
     bssid,

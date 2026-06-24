@@ -17,16 +17,13 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
-import { COLORS } from "../../data/dashboardData";
 import LegendForScore from "./LegendForScore";
-
-const getRiskLabel = (score) => {
-  if (score === 0 || score == null) return "None";
-  if (score >= 90) return "Critical";
-  if (score >= 70) return "High";
-  if (score >= 40) return "Medium";
-  return "Low";
-};
+import { getPreviousScanStatus } from "../../utils/scanStatus";
+import {
+  getRiskLabel,
+  riskColorForScore,
+  KIND_COLORS,
+} from "../../utils/riskColors";
 
 const NetworkSection = ({
   showLegend,
@@ -49,10 +46,26 @@ const NetworkSection = ({
     numClients,
     totalVulns,
     totalThreats,
+    currentRiskScore,
+    previousScan,
   } = data;
 
   const netRisk = riskScoreData?.[0]?.value ?? 0;
   const netRiskLabel = getRiskLabel(netRisk);
+
+  // Status-card state derived from current vs. previous scan. The card only
+  // shows a warning/critical border when the data indicates degradation/staleness.
+  const prevStatus = getPreviousScanStatus(
+    currentRiskScore ?? netRisk,
+    previousScan,
+    lastScan
+  );
+  const prevStatusClass =
+    prevStatus.level === "critical"
+      ? "stat-card--critical"
+      : prevStatus.level === "warning"
+      ? "stat-card--warning"
+      : "";
 
   // Format date for stat card
   const formatDate = (iso) => {
@@ -105,18 +118,31 @@ const NetworkSection = ({
 
         {/* Previous status Γåö Gauge/Trend */}
         <div
-          className={`stat-card stat-highlight ${
+          className={`stat-card ${prevStatusClass} ${
             isCard("net_prev_status") ? "hover-highlight" : ""
           }`}
           onMouseEnter={() =>
             setHoverContext({ dimension: "card", key: "net_prev_status" })
           }
           onMouseLeave={clearHoverContext}
+          title={prevStatus.reasons.join(" · ") || undefined}
         >
-          <div className="stat-indicator"></div>
+          {prevStatus.level !== "normal" && (
+            <div className="stat-indicator" aria-hidden="true"></div>
+          )}
           <p className="stat-label">Status as of previous scan</p>
-          <p className="stat-value">80%</p>
-          <p className="stat-sublabel">7d ago</p>
+          <p className="stat-value">
+            {prevStatus.prevRiskScore != null
+              ? `${prevStatus.prevRiskScore}%`
+              : "—"}
+          </p>
+          <p className="stat-sublabel">
+            {prevStatus.prevRiskScore == null
+              ? "No previous scan"
+              : prevStatus.daysAgo != null
+              ? `${prevStatus.daysAgo}d ago`
+              : ""}
+          </p>
         </div>
 
         {/* Encryption Γåö Threat/Vuln donut */}
@@ -213,7 +239,7 @@ const NetworkSection = ({
                     background
                     dataKey="value"
                     cornerRadius={50}
-                    fill="#f97316"
+                    fill={riskColorForScore(netRisk)}
                   />
                   <text
                     x="50%"
@@ -271,7 +297,11 @@ const NetworkSection = ({
                         {kindSplitData.map((entry, index) => (
                           <Cell
                             key={entry.name}
-                            fill={entry.name === "VULNERABILITY" ? COLORS[0] : COLORS[1]}
+                            fill={
+                              entry.name === "VULNERABILITY"
+                                ? KIND_COLORS.vulnerability
+                                : KIND_COLORS.threat
+                            }
                             opacity={
                               hoverContext &&
                               hoverContext.dimension === "kind" &&
@@ -296,7 +326,10 @@ const NetworkSection = ({
                       <span
                         className="legend-dot"
                         style={{
-                          backgroundColor: k.name === "VULNERABILITY" ? COLORS[0] : COLORS[1],
+                          backgroundColor:
+                          k.name === "VULNERABILITY"
+                            ? KIND_COLORS.vulnerability
+                            : KIND_COLORS.threat,
                         }}
                       />
                       <span className="legend-label">{k.name}</span>
@@ -340,12 +373,12 @@ const NetworkSection = ({
                 <Bar
                   dataKey="vulnerabilities"
                   name="Vulnerabilities"
-                  fill={COLORS[0]}
+                  fill={KIND_COLORS.vulnerability}
                 >
                   {severityData.map((entry) => (
                     <Cell
                       key={`vuln-${entry.severity}`}
-                      fill={COLORS[0]}
+                      fill={KIND_COLORS.vulnerability}
                       opacity={
                         hoverContext &&
                         (hoverContext.dimension === "kind" ||
@@ -375,12 +408,12 @@ const NetworkSection = ({
                 <Bar
                   dataKey="threats"
                   name="Threats"
-                  fill={COLORS[1]}
+                  fill={KIND_COLORS.threat}
                 >
                   {severityData.map((entry) => (
                     <Cell
                       key={`threat-${entry.severity}`}
-                      fill={COLORS[1]}
+                      fill={KIND_COLORS.threat}
                       opacity={
                         hoverContext &&
                         (hoverContext.dimension === "kind" ||

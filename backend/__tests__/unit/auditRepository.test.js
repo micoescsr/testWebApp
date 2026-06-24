@@ -13,6 +13,7 @@ const buildChain = ({ rangeResult, singleResult } = {}) => {
     update:    jest.fn().mockReturnThis(),
     eq:        jest.fn().mockReturnThis(),
     or:        jest.fn().mockReturnThis(),
+    not:       jest.fn().mockReturnThis(),
     gte:       jest.fn().mockReturnThis(),
     lte:       jest.fn().mockReturnThis(),
     lt:        jest.fn().mockReturnThis(),
@@ -158,6 +159,57 @@ describe("getAuditLogs — status filter", () => {
     await repo.getAuditLogs({ status: "UNKNOWN_STATUS" });
     // eq should not have been called with event_status
     expect(chain.eq).not.toHaveBeenCalledWith("event_status", expect.anything());
+  });
+});
+
+describe("getAuditLogs — event category (module) filter", () => {
+  test("AUTH → OR clause over AUTH prefix patterns (server-side)", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "AUTH" });
+    expect(chain.or).toHaveBeenCalledWith(
+      "event_name.ilike.AUTH%,event_name.ilike.LOGIN%,event_name.ilike.LOGOUT%,event_name.ilike.TOKEN_REFRESH%,event_name.ilike.PASSWORD%"
+    );
+  });
+
+  test("ACCOUNTS → OR clause on USER prefix", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "ACCOUNTS" });
+    expect(chain.or).toHaveBeenCalledWith("event_name.ilike.USER%");
+  });
+
+  test("case-insensitive value is accepted (auth → AUTH)", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "auth" });
+    expect(chain.or).toHaveBeenCalledTimes(1);
+  });
+
+  test("GENERAL → NOT ilike for every classified prefix (uncategorized only)", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "GENERAL" });
+    // No positive OR clause; excludes each known prefix instead.
+    expect(chain.or).not.toHaveBeenCalled();
+    expect(chain.not).toHaveBeenCalledWith("event_name", "ilike", "AUTH%");
+    expect(chain.not).toHaveBeenCalledWith("event_name", "ilike", "USER%");
+    expect(chain.not).toHaveBeenCalledWith("event_name", "ilike", "SCAN%");
+  });
+
+  test("unknown category → no category filter applied", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "NONSENSE" });
+    expect(chain.or).not.toHaveBeenCalled();
+    expect(chain.not).not.toHaveBeenCalled();
+  });
+
+  test("empty category → no category filter applied", async () => {
+    const chain = buildChain();
+    mockDb.from.mockReturnValue(chain);
+    await repo.getAuditLogs({ eventCategory: "" });
+    expect(chain.not).not.toHaveBeenCalled();
   });
 });
 

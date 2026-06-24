@@ -1,29 +1,144 @@
 // pages/History/History.jsx
-import { useState, useMemo, useRef, useEffect } from "react";
-import Tabs from "../../components/common/Tabs/Tabs";
+import { useState, useMemo } from "react";
 import Pagination from "../../components/common/Pagination/Pagination";
 import VulnerabilityHistoryTable from "../../components/history/VulnerabilityHistoryTable";
 import ThreatHistoryTable from "../../components/history/ThreatHistoryTable";
 import ScanDetailsDrawer from "../../components/history/ScanDetailsDrawer";
 import RawEvidenceModal from "../../components/modals/RawEvidenceModal/RawEvidenceModal";
+import Tabs from "../../components/common/Tabs/Tabs";
 import { useSAMHistory } from "../../hooks/useSAMHistory";
 import { usePagination } from "../../hooks/usePagination";
+import { enrichHistoryRow } from "../../utils/historyRows";
 import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import "./History.css";
 
-const ITEMS_PER_PAGE = 10;
+const PAGE_SIZE_OPTIONS = [15, 25, 50];
 
-// Sort option definitions — user can select multiple to combine sorts
-const SORT_OPTIONS = [
-  { key: "datetime-desc", label: "Date & Time (Newest first)" },
-  { key: "datetime-asc", label: "Date & Time (Oldest first)" },
-  { key: "summary-desc", label: "Summary Counts (Highest)" },
-  { key: "summary-asc", label: "Summary Counts (Lowest)" },
+const DATE_FILTERS = [
+  { value: "all", label: "All time" },
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
 ];
+
+const RISK_FILTERS = [
+  { value: "all", label: "All risks" },
+  { value: "none", label: "None" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
+const FINDING_FILTERS = [
+  { value: "all", label: "All records" },
+  { value: "vulns", label: "With vulnerabilities" },
+  { value: "threats", label: "With threats" },
+  { value: "either", label: "With vulns or threats" },
+  { value: "none", label: "No findings" },
+];
+
+// Default sort direction per column when first selected.
+const DEFAULT_DIR = {
+  datetime: "desc",
+  network: "asc",
+  risk: "desc",
+  vulns: "desc",
+  threats: "desc",
+};
+
+const formatDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const withinDateRange = (iso, filter) => {
+  if (filter === "all") return true;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  const now = Date.now();
+  if (filter === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return t >= start.getTime();
+  }
+  const days = filter === "7d" ? 7 : filter === "30d" ? 30 : 0;
+  return t >= now - days * 24 * 60 * 60 * 1000;
+};
+
+const matchesFinding = (row, filter) => {
+  const v = row.vulnCount > 0;
+  const t = row.threatCount > 0;
+  switch (filter) {
+    case "vulns":
+      return v;
+    case "threats":
+      return t;
+    case "either":
+      return v || t;
+    case "none":
+      return !v && !t;
+    default:
+      return true;
+  }
+};
+
+const matchesSearch = (row, q) => {
+  if (!q) return true;
+  const hay = [
+    row.ssid,
+    row.datetimeLabel,
+    row.datetime,
+    row.riskLabel,
+    `${row.riskScore}`,
+    `${row.vulnCount}`,
+    `${row.threatCount}`,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+};
+
+const compareRows = (a, b, field, dir) => {
+  let diff = 0;
+  switch (field) {
+    case "network":
+      diff = (a.ssid || "").localeCompare(b.ssid || "");
+      break;
+    case "risk":
+      diff = a.riskScore - b.riskScore;
+      break;
+    case "vulns":
+      diff = a.vulnCount - b.vulnCount;
+      break;
+    case "threats":
+      diff = a.threatCount - b.threatCount;
+      break;
+    default:
+      diff = new Date(a.datetime) - new Date(b.datetime);
+  }
+  return dir === "asc" ? diff : -diff;
+};
 
 const History = () => {
   const [activeTab, setActiveTab] = useState("vulnerabilities");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [riskFilter, setRiskFilter] = useState("all");
+  const [findingFilter, setFindingFilter] = useState("all");
+  const [sortField, setSortField] = useState("datetime");
+  const [sortDir, setSortDir] = useState("desc");
+  const [pageSize, setPageSize] = useState(15);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -33,172 +148,129 @@ const History = () => {
   // Raw Evidence Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedFinding, setSelectedFinding] = useState(null);
-  const [selectedFindingType, setSelectedFindingType] =
-    useState("vulnerability");
+  const [selectedFindingType, setSelectedFindingType] = useState("vulnerability");
 
-  // Multi-select sort: ordered list of selected sort keys (first = primary)
-  const [activeSorts, setActiveSorts] = useState(["datetime-desc"]);
-  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
-  const sortDropdownRef = useRef(null);
+  const { vulnHistory, threatHistory, loading } = useSAMHistory();
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (
-        sortDropdownRef.current &&
-        !sortDropdownRef.current.contains(e.target)
-      ) {
-        setSortDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const { vulnHistory, threatHistory } = useSAMHistory();
-
-  // Multi-level sort comparator — applies sorts in order (first selected = primary)
-  const multiSortComparator = (a, b) => {
-    for (const sortKey of activeSorts) {
-      const [field, order] = sortKey.split("-");
-      let diff = 0;
-
-      if (field === "summary") {
-        diff = (Number(a.summary) || 0) - (Number(b.summary) || 0);
-      } else {
-        diff = new Date(a.datetime) - new Date(b.datetime);
-      }
-
-      if (diff !== 0) {
-        return order === "desc" ? -diff : diff;
-      }
-    }
-    return 0;
-  };
-
-  // Format ISO datetimes into a readable local string for display in tables
-  const formatDate = (iso) => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+  // Enrich once: derived risk/counts + a preformatted datetime label (for search).
+  const enrich = (list) =>
+    (list || []).map((item) => {
+      const row = enrichHistoryRow(item);
+      return { ...row, datetimeLabel: formatDate(item.datetime) };
     });
+  const enrichedVuln = useMemo(() => enrich(vulnHistory), [vulnHistory]);
+  const enrichedThreat = useMemo(() => enrich(threatHistory), [threatHistory]);
+
+  // Filter + sort the FULL dataset (pagination happens after, so it spans all rows).
+  const processList = (list) => {
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = list.filter(
+      (row) =>
+        matchesSearch(row, q) &&
+        withinDateRange(row.datetime, dateFilter) &&
+        (riskFilter === "all" || row.riskLevel === riskFilter) &&
+        matchesFinding(row, findingFilter)
+    );
+    return [...filtered].sort((a, b) => compareRows(a, b, sortField, sortDir));
   };
 
-  // Filter + sort data
-  const filteredVulnHistory = useMemo(() => {
-    let data = vulnHistory;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      data = data.filter(
-        (item) =>
-          item.ssid?.toLowerCase().includes(q) ||
-          item.datetime?.toLowerCase().includes(q),
-      );
+  const filteredVuln = useMemo(processList.bind(null, enrichedVuln), [
+    enrichedVuln,
+    searchQuery,
+    dateFilter,
+    riskFilter,
+    findingFilter,
+    sortField,
+    sortDir,
+  ]);
+  const filteredThreat = useMemo(processList.bind(null, enrichedThreat), [
+    enrichedThreat,
+    searchQuery,
+    dateFilter,
+    riskFilter,
+    findingFilter,
+    sortField,
+    sortDir,
+  ]);
+
+  const vulnPager = usePagination(filteredVuln, pageSize);
+  const threatPager = usePagination(filteredThreat, pageSize);
+
+  const resetPages = () => {
+    vulnPager.resetPage();
+    threatPager.resetPage();
+  };
+
+  // --- Handlers ---
+  const handleSort = (field) => {
+    if (field === sortField) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(DEFAULT_DIR[field] || "desc");
     }
-    return [...data].sort(multiSortComparator);
-  }, [vulnHistory, searchQuery, activeSorts]);
+    resetPages();
+  };
 
-  const filteredThreatHistory = useMemo(() => {
-    let data = threatHistory;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      data = data.filter(
-        (item) =>
-          item.ssid?.toLowerCase().includes(q) ||
-          item.datetime?.toLowerCase().includes(q),
-      );
-    }
-    return [...data].sort(multiSortComparator);
-  }, [threatHistory, searchQuery, activeSorts]);
+  const onFilterChange = (setter) => (e) => {
+    setter(e.target.value);
+    resetPages();
+  };
 
-  // Pagination on filtered + sorted data
-  const vulnPager = usePagination(filteredVulnHistory, ITEMS_PER_PAGE);
-  const threatPager = usePagination(filteredThreatHistory, ITEMS_PER_PAGE);
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+    resetPages();
+  };
 
-  const tabs = [
-    { label: "Vulnerabilities", value: "vulnerabilities" },
-    { label: "Threats", value: "threats" },
-  ];
+  const handlePageSizeChange = (e) => {
+    setPageSize(Number(e.target.value));
+    resetPages();
+  };
 
-  // --- Drawer handlers ---
+  const clearFilters = () => {
+    setSearchQuery("");
+    setDateFilter("all");
+    setRiskFilter("all");
+    setFindingFilter("all");
+    resetPages();
+  };
+
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    closeDrawer();
+    resetPages();
+  };
+
   const openDrawer = (scanRow) => {
     setSelectedScan(scanRow);
     setActiveDrawerTab(activeTab === "threats" ? "threat" : "vuln");
     setDrawerOpen(true);
   };
-
   const closeDrawer = () => {
     setDrawerOpen(false);
     setSelectedScan(null);
   };
 
-  // --- Raw Evidence Modal handlers ---
   const openJsonModal = (finding, type) => {
     setSelectedFinding(finding);
     setSelectedFindingType(type);
     setModalOpen(true);
   };
-
   const closeModal = () => {
     setModalOpen(false);
     setSelectedFinding(null);
   };
 
-  // Toggle a sort option on/off. Prevents selecting conflicting directions for same field.
-  const handleToggleSort = (key) => {
-    const [field] = key.split("-");
+  const filtersActive =
+    searchQuery.trim() !== "" ||
+    dateFilter !== "all" ||
+    riskFilter !== "all" ||
+    findingFilter !== "all";
 
-    setActiveSorts((prev) => {
-      if (prev.includes(key)) {
-        // Remove it — but keep at least one sort active
-        const next = prev.filter((k) => k !== key);
-        return next.length > 0 ? next : ["datetime-desc"];
-      }
-      // Remove any existing sort for the same field (can't have both asc & desc)
-      const withoutConflict = prev.filter((k) => !k.startsWith(field + "-"));
-      return [...withoutConflict, key];
-    });
+  const isVuln = activeTab === "vulnerabilities";
+  const pager = isVuln ? vulnPager : threatPager;
+  const totalCount = isVuln ? filteredVuln.length : filteredThreat.length;
 
-    vulnPager.resetPage();
-    threatPager.resetPage();
-  };
-
-  const handleTabChange = (value) => {
-    setActiveTab(value);
-    setSearchQuery("");
-    setActiveSorts(["datetime-desc"]);
-    setSortDropdownOpen(false);
-    closeDrawer();
-    vulnPager.resetPage();
-    threatPager.resetPage();
-  };
-
-  const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-    vulnPager.resetPage();
-    threatPager.resetPage();
-  };
-
-  const clearSearch = () => {
-    setSearchQuery("");
-    vulnPager.resetPage();
-    threatPager.resetPage();
-  };
-
-  // Build label for the sort button
-  const sortButtonLabel = activeSorts
-    .map((k) => SORT_OPTIONS.find((o) => o.key === k)?.label)
-    .filter(Boolean)
-    .join(", ");
-
-  // Build the modal title/subtitle from the selected finding
   const modalTitle =
     selectedFindingType === "threat"
       ? "Threat Detection Payload"
@@ -207,84 +279,155 @@ const History = () => {
     ? `${selectedFinding.id || selectedFinding.code || "—"} — ${selectedFinding.name || "Unknown"}`
     : "";
 
+  // Footer: result count + rows-per-page + pagination, anchored at card bottom.
+  const footer = (
+    <>
+      <div className="history-footer-left">
+        <span className="history-result-count">
+          {totalCount} record{totalCount === 1 ? "" : "s"}
+        </span>
+        <label className="history-page-size">
+          Rows
+          <select value={pageSize} onChange={handlePageSizeChange}>
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <Pagination
+        page={pager.page}
+        totalPages={pager.totalPages}
+        onPrev={pager.goPrev}
+        onNext={pager.goNext}
+      />
+    </>
+  );
+
+  const tableData = pager.currentItems.map((item) => ({
+    ...item,
+    datetime: item.datetimeLabel,
+  }));
+
   return (
     <div className="history-page">
-      <h1 className="page-title">History</h1>
+      <div className="history-header-row">
+        <h1 className="page-title">History</h1>
+        <Tabs
+          tabs={[
+            { label: "Vulnerabilities", value: "vulnerabilities" },
+            { label: "Threats", value: "threats" },
+          ]}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+        />
+      </div>
 
-      <div className="history-top-bar">
-        {/* Search bar */}
+      {/* Filter / search / sort toolbar */}
+      <div className="history-toolbar">
         <div className="history-search-bar">
           <MagnifyingGlass className="history-search-icon" size={18} />
           <input
             type="text"
             className="history-search-input"
-            placeholder={`Search ${activeTab === "vulnerabilities" ? "vulnerabilities" : "threats"} by SSID or date...`}
+            placeholder="Search by network, date, risk, or finding count..."
             value={searchQuery}
             onChange={handleSearchChange}
           />
           {searchQuery && (
             <button
               className="history-search-clear"
-              onClick={clearSearch}
+              onClick={() => {
+                setSearchQuery("");
+                resetPages();
+              }}
               aria-label="Clear search"
             >
               <X size={16} />
             </button>
           )}
         </div>
+
+        <select
+          className="history-filter-select"
+          value={dateFilter}
+          onChange={onFilterChange(setDateFilter)}
+          aria-label="Date filter"
+        >
+          {DATE_FILTERS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="history-filter-select"
+          value={riskFilter}
+          onChange={onFilterChange(setRiskFilter)}
+          aria-label="Risk filter"
+        >
+          {RISK_FILTERS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="history-filter-select"
+          value={findingFilter}
+          onChange={onFilterChange(setFindingFilter)}
+          aria-label="Finding type filter"
+        >
+          {FINDING_FILTERS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        {filtersActive && (
+          <button className="history-clear-filters" onClick={clearFilters}>
+            <X size={14} /> Clear filters
+          </button>
+        )}
       </div>
 
-      {activeTab === "vulnerabilities" && (
-        <>
-          <VulnerabilityHistoryTable
-            data={vulnPager.currentItems.map((item) => ({
-              ...item,
-              datetime: formatDate(item.datetime),
-            }))}
-            onView={openDrawer}
-            activeSorts={activeSorts}
-            sortDropdownOpen={sortDropdownOpen}
-            sortDropdownRef={sortDropdownRef}
-            onToggleDropdown={() => setSortDropdownOpen((v) => !v)}
-            onToggleSort={handleToggleSort}
-            sortButtonLabel={sortButtonLabel}
-          />
-
-          <Pagination
-            page={vulnPager.page}
-            totalPages={vulnPager.totalPages}
-            onPrev={vulnPager.goPrev}
-            onNext={vulnPager.goNext}
-          />
-        </>
+      {isVuln ? (
+        <VulnerabilityHistoryTable
+          data={tableData}
+          onView={openDrawer}
+          sortField={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          loading={loading}
+          emptyMessage={
+            filtersActive
+              ? "No scan history records match the selected filters."
+              : "No vulnerability scan history found."
+          }
+          footer={footer}
+        />
+      ) : (
+        <ThreatHistoryTable
+          data={tableData}
+          onView={openDrawer}
+          sortField={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          loading={loading}
+          emptyMessage={
+            filtersActive
+              ? "No scan history records match the selected filters."
+              : "No threat scan history found."
+          }
+          footer={footer}
+        />
       )}
 
-      {activeTab === "threats" && (
-        <>
-          <ThreatHistoryTable
-            data={threatPager.currentItems.map((item) => ({
-              ...item,
-              datetime: formatDate(item.datetime),
-            }))}
-            onView={openDrawer}
-            activeSorts={activeSorts}
-            sortDropdownOpen={sortDropdownOpen}
-            sortDropdownRef={sortDropdownRef}
-            onToggleDropdown={() => setSortDropdownOpen((v) => !v)}
-            onToggleSort={handleToggleSort}
-            sortButtonLabel={sortButtonLabel}
-          />
-
-          <Pagination
-            page={threatPager.page}
-            totalPages={threatPager.totalPages}
-            onPrev={threatPager.goPrev}
-            onNext={threatPager.goNext}
-          />
-        </>
-      )}
-
-      {/* Right-side Scan Details Drawer */}
       <ScanDetailsDrawer
         open={drawerOpen}
         onClose={closeDrawer}
@@ -293,7 +436,6 @@ const History = () => {
         onOpenJsonModal={openJsonModal}
       />
 
-      {/* Raw Evidence Modal */}
       <RawEvidenceModal
         open={modalOpen}
         onClose={closeModal}

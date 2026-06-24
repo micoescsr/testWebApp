@@ -21,9 +21,12 @@ export const getAuditLogs = ({
   status = "",
   startDate = "",
   endDate = "",
+  sort = "created_at",
+  dir = "desc",
+  eventCategory = "",
 } = {}) => {
   return api.get("audit/logs", {
-    params: { page, limit, search, status, startDate, endDate },
+    params: { page, limit, search, status, startDate, endDate, sort, dir, eventCategory },
   });
 };
 

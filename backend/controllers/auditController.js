@@ -53,7 +53,7 @@ function shapeLogRow(row) {
  */
 async function getAuditLogs(req, res) {
   try {
-    const { page, limit, search, status, sort, dir, startDate, endDate } = req.query;
+    const { page, limit, search, status, sort, dir, startDate, endDate, eventCategory } = req.query;
 
     const result = await auditRepository.getAuditLogs({
       page: Number(page) || 1,
@@ -64,6 +64,7 @@ async function getAuditLogs(req, res) {
       sortDir: typeof dir === "string" ? dir : "desc",
       startDate: typeof startDate === "string" ? startDate : "",
       endDate: typeof endDate === "string" ? endDate : "",
+      eventCategory: typeof eventCategory === "string" ? eventCategory : "",
     });
 
     const logs = result.data.map(shapeLogRow);

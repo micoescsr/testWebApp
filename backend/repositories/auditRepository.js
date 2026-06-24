@@ -11,6 +11,51 @@ const STATUS_FILTER_MAP = {
   DENIED: "DENY", DENY: "DENY",
 };
 
+// Event-category → event_name prefix patterns (ilike). Prefixes carry no dots
+// so they're safe inside a PostgREST `.or()` string. Applied server-side, so the
+// category filter spans every page, not just the loaded one. Keep these aligned
+// with the frontend module-badge mapping (AuditLogsTable getEventModule).
+const CATEGORY_EVENT_PATTERNS = {
+  AUTH: ["AUTH%", "LOGIN%", "LOGOUT%", "TOKEN_REFRESH%", "PASSWORD%"],
+  ACCOUNTS: ["USER%"],
+  SCANS: ["SCAN%"],
+  DEVICE: ["DEVICE%", "PORTAL%"],
+  DETECTION: ["DETECTION%"],
+  SYSTEM: ["EXPORT%", "ARCHIVE%", "RISK%", "NETWORK%"],
+};
+
+// Every classified prefix — used to compute the GENERAL ("uncategorized") set.
+const ALL_CLASSIFIED_PATTERNS = Object.values(CATEGORY_EVENT_PATTERNS).flat();
+
+/** Build the PostgREST `.or()` clause for an event category, or null if unknown. */
+function categoryOrClause(eventCategory) {
+  if (!eventCategory) return null;
+  const patterns = CATEGORY_EVENT_PATTERNS[String(eventCategory).toUpperCase()];
+  if (!patterns) return null;
+  return patterns.map((p) => `event_name.ilike.${p}`).join(",");
+}
+
+/**
+ * Apply the event-category filter to a query.
+ * - Known category → OR of its prefix ilike patterns.
+ * - GENERAL → NOT ilike for every classified prefix (events in no category).
+ * - Unknown/empty → no-op.
+ * Returns the (possibly modified) query.
+ */
+function applyCategoryFilter(query, eventCategory) {
+  if (!eventCategory) return query;
+  const cat = String(eventCategory).toUpperCase();
+  if (cat === "GENERAL") {
+    // Exclude anything matching a classified prefix → leaves only uncategorized.
+    for (const pattern of ALL_CLASSIFIED_PATTERNS) {
+      query = query.not("event_name", "ilike", pattern);
+    }
+    return query;
+  }
+  const clause = categoryOrClause(cat);
+  return clause ? query.or(clause) : query;
+}
+
 // ─── SELECT columns used by both active + archive queries ───────
 const AUDIT_COLUMNS = `
   audit_log_id,
@@ -63,6 +108,7 @@ async function getAuditLogs({
   sortDir = "desc",
   startDate = "",
   endDate = "",
+  eventCategory = "",
 } = {}) {
   const safeLimit = Math.min(Math.max(1, Number(limit) || 25), 100);
   const safePage = Math.max(1, Number(page) || 1);
@@ -82,6 +128,9 @@ async function getAuditLogs({
     const dbVal = STATUS_FILTER_MAP[status.toUpperCase()];
     if (dbVal) query = query.eq("event_status", dbVal);
   }
+
+  // Event-category filter (server-side prefix match — spans all pages)
+  query = applyCategoryFilter(query, eventCategory);
 
   // Date range filter (parameterized — safe from injection)
   if (startDate) {

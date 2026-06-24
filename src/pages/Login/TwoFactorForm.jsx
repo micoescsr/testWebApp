@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ArrowLeft,
 } from "@phosphor-icons/react";
+import AuthBackdrop from "./AuthBackdrop";
 
 const DIGIT_COUNT = 6;
 
@@ -128,10 +129,7 @@ function TwoFactorForm({ factorId, email, onVerified, onCancel }) {
 
   return (
     <div className="login-page">
-      <div className="login-backdrop">
-        <div className="login-glow login-glow--one" />
-        <div className="login-glow login-glow--two" />
-      </div>
+      <AuthBackdrop />
 
       <div className="login-card">
         <div className="login-app-mark">

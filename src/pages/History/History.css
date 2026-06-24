@@ -10,22 +10,77 @@
   text-decoration: underline;
 }
 
+/* Full-height vertical layout: header → toolbar → table card (grows) */
 .history-page {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* main-content has ~80px top + 20px bottom padding; fill the rest */
+  min-height: calc(100vh - 100px);
+}
+
+.history-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .page-title {
-  margin-bottom: var(--space-5);
+  margin: 0;
   color: var(--text-primary);
 }
 
-/* Top bar layout: tabs + search + indicator */
+/* Top bar layout: tabs + search + indicator (legacy) */
 .history-top-bar {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
   flex-wrap: wrap;
+}
+
+/* Filter / search / sort toolbar */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.history-filter-select {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.history-filter-select:hover {
+  border-color: var(--border-strong);
+}
+
+.history-clear-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.history-clear-filters:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .history-tab-indicator {
@@ -101,11 +156,16 @@
   margin-bottom: var(--space-5);
 }
 
+/* Card grows to fill remaining height; body scrolls internally */
 .history-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background-color: var(--surface-1);
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .history-card-header {
@@ -114,6 +174,118 @@
   align-items: center;
   padding: var(--space-4);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Scroll region for the table; sticky header stays pinned */
+.history-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.history-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--surface-2);
+}
+
+/* Footer pinned at card bottom: result count + rows-per-page + pagination */
+.history-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.history-card-footer .pagination {
+  margin: 0;
+}
+
+.history-footer-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.history-result-count {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.history-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.history-page-size select {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+/* Sortable column header button */
+.sort-th {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  letter-spacing: inherit;
+}
+
+.sort-th:hover {
+  color: var(--text-primary);
+}
+
+.sort-th--active {
+  color: var(--accent);
+}
+
+.sort-th-icon {
+  opacity: 0.55;
+}
+
+.sort-th--active .sort-th-icon {
+  opacity: 1;
+}
+
+.th-right .sort-th {
+  flex-direction: row-reverse;
+}
+
+.history-table th.th-right,
+.history-table td.td-right {
+  text-align: right;
+}
+
+/* Row hover */
+.history-row:hover td {
+  background-color: var(--surface-2);
+}
+
+/* None-risk chip (was missing) */
+.risk-score-chip.none {
+  background-color: var(--sev-none-bg);
+  color: var(--sev-none-fg);
+  border-color: var(--sev-none-fg);
 }
 
 .history-card-header h2 {

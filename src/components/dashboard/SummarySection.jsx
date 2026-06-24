@@ -13,15 +13,43 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useState } from "react";
 import { COLORS } from "../../data/dashboardData";
 import LegendForScore from "./LegendForScore";
+import DashboardDetailDrawer from "./DashboardDetailDrawer";
+import SummaryDetailContent from "./SummaryDetailContent";
+import {
+  getRiskLabel,
+  riskColorForScore,
+  KIND_COLORS,
+} from "../../utils/riskColors";
 
-const getRiskLabel = (score) => {
-  if (score === 0 || score == null) return "None";
-  if (score >= 90) return "Critical";
-  if (score >= 70) return "High";
-  if (score >= 40) return "Medium";
-  return "Low";
+// Title/subtitle for each metric drawer.
+const DETAIL_META = {
+  open: {
+    title: "Open Networks",
+    subtitle: "Networks broadcasting without encryption",
+  },
+  encrypted: {
+    title: "Encrypted Networks",
+    subtitle: "Networks using encryption",
+  },
+  findings: {
+    title: "Vulnerabilities & Threats",
+    subtitle: "Detailed findings by category",
+  },
+  clients: {
+    title: "Client Distribution",
+    subtitle: "Connected clients per network",
+  },
+  encryptionDist: {
+    title: "Networks by Encryption",
+    subtitle: "Encryption distribution across detected networks",
+  },
+  severityKind: {
+    title: "Severity by Kind",
+    subtitle: "Vulnerabilities vs threats per severity",
+  },
 };
 
 const SummarySection = ({
@@ -31,8 +59,33 @@ const SummarySection = ({
   hoverContext,
   setHoverContext,
   clearHoverContext,
+  onSelectNetwork,
 }) => {
+  const [detailType, setDetailType] = useState(null);
+
+  // Hooks must run before any early return.
   if (!data) return null;
+
+  const openDetail = (type) => setDetailType(type);
+  const closeDetail = () => setDetailType(null);
+  const handleSelectNetwork = (networkId) => {
+    closeDetail();
+    onSelectNetwork?.(networkId);
+  };
+
+  // Props that make a card/panel keyboard-accessible and open its drawer.
+  // (className is merged by each caller so it composes with hover state.)
+  const interactive = (type) => ({
+    role: "button",
+    tabIndex: 0,
+    onClick: () => openDetail(type),
+    onKeyDown: (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openDetail(type);
+      }
+    },
+  });
   const {
     riskScoreData = [],
     severityData = [],
@@ -47,6 +100,27 @@ const SummarySection = ({
 
   const riskScore = riskScoreData?.[0]?.value ?? 0;
   const riskLabel = getRiskLabel(riskScore);
+
+  // Derived encryption distribution (same data as the donut — no new metric).
+  const encTotal = networkEncryptionData.reduce(
+    (sum, e) => sum + (e.value || 0),
+    0
+  );
+  const encWithPct = networkEncryptionData.map((e) => ({
+    ...e,
+    pct: encTotal > 0 ? Math.round((e.value / encTotal) * 100) : 0,
+  }));
+  const openPct = encWithPct.find((e) => e.name === "Open")?.pct ?? 0;
+  const encInterpretation =
+    encTotal === 0
+      ? "No networks detected in the latest scan."
+      : openPct === 0
+      ? `All ${encTotal} detected networks are encrypted — no open networks exposing unprotected traffic.`
+      : openPct >= 50
+      ? `${openPct}% of detected networks are open and transmit traffic without encryption, the larger share of this environment.`
+      : `${openPct}% of detected networks are open; the remaining ${
+          100 - openPct
+        }% use some form of encryption.`;
 
   // Format date for stat card
   const formatDate = (iso) => {
@@ -97,13 +171,14 @@ const SummarySection = ({
 
         {/* Open Networks Γåö Networks by Encryption (pie) */}
         <div
-          className={`stat-card ${
+          className={`stat-card dash-clickable ${
             isCard("open_networks") ? "hover-highlight" : ""
           }`}
           onMouseEnter={() =>
             setHoverContext({ dimension: "card", key: "open_networks" })
           }
           onMouseLeave={clearHoverContext}
+          {...interactive("open")}
         >
           <p className="stat-label">Open Networks</p>
           <p className="stat-value">{openNetworks ?? 0}</p>
@@ -111,7 +186,7 @@ const SummarySection = ({
 
         {/* Encrypted Networks Γåö Networks by Encryption (pie) */}
         <div
-          className={`stat-card ${
+          className={`stat-card dash-clickable ${
             isCard("encrypted_networks") ? "hover-highlight" : ""
           }`}
           onMouseEnter={() =>
@@ -121,6 +196,7 @@ const SummarySection = ({
             })
           }
           onMouseLeave={clearHoverContext}
+          {...interactive("encrypted")}
         >
           <p className="stat-label">Encrypted Networks</p>
           <p className="stat-value">{encryptedNetworks ?? 0}</p>
@@ -128,13 +204,14 @@ const SummarySection = ({
 
         {/* Total vulns/threats Γåö Severity by Kind */}
         <div
-          className={`stat-card ${
+          className={`stat-card dash-clickable ${
             isCard("total_findings") ? "hover-highlight" : ""
           }`}
           onMouseEnter={() =>
             setHoverContext({ dimension: "card", key: "total_findings" })
           }
           onMouseLeave={clearHoverContext}
+          {...interactive("findings")}
         >
           <p className="stat-label">Total Vulnerabilities/Threats</p>
           <p className="stat-value">{totalFindings ?? 0}</p>
@@ -142,13 +219,14 @@ const SummarySection = ({
 
         {/* Total clients Γåö Top risks table */}
         <div
-          className={`stat-card ${
+          className={`stat-card dash-clickable ${
             isCard("total_clients") ? "hover-highlight" : ""
           }`}
           onMouseEnter={() =>
             setHoverContext({ dimension: "card", key: "total_clients" })
           }
           onMouseLeave={clearHoverContext}
+          {...interactive("clients")}
         >
           <p className="stat-label">Total Clients (All Networks)</p>
           <p className="stat-value">{totalClients ?? 0}</p>
@@ -190,7 +268,7 @@ const SummarySection = ({
                     background
                     dataKey="value"
                     cornerRadius={50}
-                    fill="#f97316"
+                    fill={riskColorForScore(riskScore)}
                   />
                   <text
                     x="50%"
@@ -218,7 +296,7 @@ const SummarySection = ({
             isCard("total_findings") ? "hover-highlight" : ""
           }`}
         >
-          <div className="panel-header">
+          <div className="panel-header dash-clickable" {...interactive("severityKind")}>
             <div>
               <h2>Severity by Kind</h2>
               <span style={{ fontSize: 11, color: "#6b7280" }}>
@@ -238,7 +316,7 @@ const SummarySection = ({
                 <Bar
                   dataKey="vulnerabilities"
                   name="Vulnerabilities"
-                  fill={COLORS[0]}
+                  fill={KIND_COLORS.vulnerability}
                   onMouseOver={(data) =>
                     setHoverContext({
                       dimension: "severity_kind",
@@ -252,7 +330,7 @@ const SummarySection = ({
                 <Bar
                   dataKey="threats"
                   name="Threats"
-                  fill={COLORS[1]}
+                  fill={KIND_COLORS.threat}
                   onMouseOver={(data) =>
                     setHoverContext({
                       dimension: "severity_kind",
@@ -287,8 +365,8 @@ const SummarySection = ({
                   <div
                     key={item.ssid}
                     className={`top-row ${
-                      isHoveredNetwork(item.ssid) ? "hover-highlight" : ""
-                    }`}
+                      item.network_id ? "dash-clickable" : ""
+                    } ${isHoveredNetwork(item.ssid) ? "hover-highlight" : ""}`}
                     onMouseEnter={() =>
                       setHoverContext({
                         dimension: "network",
@@ -296,6 +374,19 @@ const SummarySection = ({
                       })
                     }
                     onMouseLeave={clearHoverContext}
+                    {...(item.network_id
+                      ? {
+                          role: "button",
+                          tabIndex: 0,
+                          onClick: () => handleSelectNetwork(item.network_id),
+                          onKeyDown: (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleSelectNetwork(item.network_id);
+                            }
+                          },
+                        }
+                      : {})}
                   >
                     <span className="col-ssid">{item.ssid}</span>
                     <span className="col-risk score-link">{item.risk}</span>
@@ -319,8 +410,8 @@ const SummarySection = ({
         </div>
       </div>
 
-      {/* Bottom row: Network Pie + metric note */}
-      <div className="dash-bottom-row">
+      {/* Bottom row: full-width Networks by Encryption (donut + breakdown) */}
+      <div className="dash-bottom-full">
         <div
           className={`panel ${
             isCard("open_networks") || isCard("encrypted_networks")
@@ -328,13 +419,13 @@ const SummarySection = ({
               : ""
           }`}
         >
-          <div className="panel-header">
+          <div className="panel-header dash-clickable" {...interactive("encryptionDist")}>
             <h2>Networks by Encryption</h2>
           </div>
-          <div className="panel-body threat-row">
+          <div className="panel-body enc-full">
             {networkEncryptionData.length > 0 ? (
               <>
-                <div className="threat-chart">
+                <div className="enc-chart">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart onMouseLeave={clearHoverContext}>
                       <Pie
@@ -343,8 +434,8 @@ const SummarySection = ({
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
+                        innerRadius={70}
+                        outerRadius={95}
                         paddingAngle={3}
                         onMouseOver={(data) =>
                           setHoverContext({
@@ -370,24 +461,42 @@ const SummarySection = ({
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="threat-legend">
-                  {networkEncryptionData.map((t, index) => (
-                    <div
-                      key={t.name}
-                      className={`threat-row-item ${
-                        isHoveredEncryption(t.name) ? "hover-highlight" : ""
-                      }`}
-                    >
-                      <span
-                        className="legend-dot"
-                        style={{
-                          backgroundColor: COLORS[index % COLORS.length],
-                        }}
-                      />
-                      <span className="legend-label">{t.name}</span>
-                      <span className="legend-value">{t.value}</span>
+
+                <div className="enc-breakdown">
+                  <div className="enc-legend">
+                    {encWithPct.map((t, index) => (
+                      <div
+                        key={t.name}
+                        className={`enc-legend-item ${
+                          isHoveredEncryption(t.name) ? "hover-highlight" : ""
+                        }`}
+                        onMouseEnter={() =>
+                          setHoverContext({
+                            dimension: "encryption",
+                            key: t.name,
+                          })
+                        }
+                        onMouseLeave={clearHoverContext}
+                      >
+                        <span
+                          className="legend-dot"
+                          style={{
+                            backgroundColor: COLORS[index % COLORS.length],
+                          }}
+                        />
+                        <span className="legend-label">{t.name}</span>
+                        <span className="enc-count">{t.value}</span>
+                        <span className="enc-pct">{t.pct}%</span>
+                      </div>
+                    ))}
+                    <div className="enc-legend-item enc-legend-total">
+                      <span className="legend-dot enc-dot-muted" />
+                      <span className="legend-label">Total networks</span>
+                      <span className="enc-count">{encTotal}</span>
+                      <span className="enc-pct">100%</span>
                     </div>
-                  ))}
+                  </div>
+                  <p className="enc-interpretation">{encInterpretation}</p>
                 </div>
               </>
             ) : (
@@ -397,19 +506,20 @@ const SummarySection = ({
             )}
           </div>
         </div>
-
-{/*         <div className="panel">
-          <div className="panel-header">
-            <h2>Metric Notes</h2>
-          </div>
-          <div className="panel-body">
-            <p style={{ fontSize: 12, color: "#6b7280" }}>
-              Wi-Fi Risk Score weights severity and vt_kind (threats vs
-              vulnerabilities) plus encryption and client counts.
-            </p>
-          </div>
-        </div> */}
       </div>
+
+      <DashboardDetailDrawer
+        open={detailType !== null}
+        title={detailType ? DETAIL_META[detailType]?.title : ""}
+        subtitle={detailType ? DETAIL_META[detailType]?.subtitle : ""}
+        onClose={closeDetail}
+      >
+        <SummaryDetailContent
+          type={detailType}
+          data={data}
+          onSelectNetwork={handleSelectNetwork}
+        />
+      </DashboardDetailDrawer>
     </>
   );
 };

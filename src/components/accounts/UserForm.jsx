@@ -196,28 +196,29 @@ const UserForm = ({
       )}
       {/* --- STATUS CONTROL (SUPER ADMIN ONLY) --- */}
       {currentUserRole === 'superadmin' && (
-        <div className="form-group status-group" style={{background: '#f9f9f9', padding: '10px', borderRadius: '8px', marginBottom: '15px'}}>
-          <label style={{fontWeight: 'bold', color: '#333'}}>Account Status</label>
+        <div className="form-group status-group">
+          <label>Account Status</label>
           <select
             name="status"
             value={isInactive ? "inactive" : formData.status}
             onChange={handleChange}
             disabled={isInactive}
             style={{
-              width: '100%',
-              padding: '8px',
-              marginTop: '5px',
-              borderColor: isInactive ? '#d1d5db' : (formData.status === 'active' ? 'green' : 'orange'),
-              backgroundColor: isInactive ? '#f3f4f6' : '#fff',
-              color: isInactive ? '#9ca3af' : '#333',
-              cursor: isInactive ? 'not-allowed' : 'pointer',
+              // Keep a theme-aware risk-cue border; background/text come from
+              // the dark .user-form select styles (no hardcoded white).
+              borderColor: isInactive
+                ? "var(--border)"
+                : formData.status === "active"
+                ? "var(--sev-low-fg)"
+                : "var(--sev-medium-fg)",
+              cursor: isInactive ? "not-allowed" : "pointer",
             }}
           >
             {isInactive && <option value="inactive">Deactivated — Account is inactive</option>}
             <option value="active">Active — Can log in normally</option>
             <option value="on_hold">On Hold — Login suspended, data preserved</option>
           </select>
-          <small style={{color: '#666'}}>
+          <small style={{ color: "var(--text-muted)" }}>
             {!isInactive && formData.status === 'active' && 'This user can log in and access the system.'}
             {!isInactive && formData.status === 'on_hold' && 'Login is suspended. The user cannot access the system until reactivated.'}
             {isInactive && 'This account is deactivated. Save your detail edits first, then use Reactivate Account to restore access.'}

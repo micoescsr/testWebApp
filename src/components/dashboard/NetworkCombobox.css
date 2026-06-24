@@ -1,0 +1,214 @@
+/* NetworkCombobox — token-driven, dark-theme aware. See NetworkCombobox.jsx. */
+
+.network-combobox {
+  position: relative;
+  min-width: 380px;
+}
+
+/* Trigger button — matches the .filter-group select look */
+.nc-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.nc-trigger:hover {
+  border-color: var(--border-strong);
+}
+
+.nc-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dropdown panel */
+.nc-panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: min(100vw - 2rem, 420px);
+  min-width: 100%;
+  z-index: 40;
+  background-color: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* Search row */
+.nc-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.nc-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.nc-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.nc-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Scrollable list */
+.nc-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.nc-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nc-option:hover,
+.nc-option:focus-visible {
+  background-color: var(--surface-2);
+  outline: none;
+}
+
+.nc-option--selected {
+  background-color: var(--accent-soft);
+}
+
+.nc-option--indent {
+  padding-left: var(--space-6);
+}
+
+.nc-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nc-option-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-check {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.nc-option-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.nc-enc-badge {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-2);
+}
+
+/* Group header (multi-AP SSID) */
+.nc-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.nc-group-header:hover {
+  background-color: var(--surface-2);
+}
+
+.nc-group-title {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-ap-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background-color: var(--surface-1);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-2);
+}
+
+.nc-empty {
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Phone: widen panel to be tappable */
+@media (max-width: 768px) {
+  .network-combobox {
+    min-width: 0;
+  }
+
+  .nc-list {
+    max-height: 260px;
+  }
+}
