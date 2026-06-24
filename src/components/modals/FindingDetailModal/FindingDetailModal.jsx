@@ -29,7 +29,6 @@ const FindingDetailModal = ({
   loading,
 }) => {
   const [expandedRecs, setExpandedRecs] = useState(new Set());
-  const [activeRecTab, setActiveRecTab] = useState("nist");
   const [showEvidence, setShowEvidence] = useState(false);
 
   const toggleRec = (index) => {
@@ -42,6 +41,96 @@ const FindingDetailModal = ({
   };
 
   const isThreat = findingType === "threat";
+
+  const renderRecommendations = () => {
+    const recs = Array.isArray(finding.recommendations)
+      ? finding.recommendations
+      : [];
+
+    return (
+      <div className="fdm-section">
+        <div className="fdm-rec-header">
+          <h3>Recommendations</h3>
+          <span className="fdm-rec-subtitle">Sourced from published standards</span>
+        </div>
+        {recs.length > 0 ? (
+          <ul className="fdm-rec-list">
+            {recs.map((rec, index) => {
+              const isExpanded = expandedRecs.has(index);
+              return (
+                <li
+                  key={index}
+                  className={`fdm-rec-item${isExpanded ? " expanded" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="fdm-rec-toggle"
+                    onClick={() => toggleRec(index)}
+                    aria-expanded={isExpanded}
+                  >
+                    <CaretRight
+                      size={14}
+                      className={`fdm-rec-chevron${isExpanded ? " rotated" : ""}`}
+                    />
+                    <span className="fdm-rec-text">{rec.text}</span>
+                  </button>
+
+                  {Array.isArray(rec.sources) && rec.sources.length > 0 && (
+                    <div className="fdm-rec-sources">
+                      {rec.sources.map((src, j) =>
+                        src.url ? (
+                          <a
+                            key={j}
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="fdm-source-badge"
+                          >
+                            {src.label}
+                          </a>
+                        ) : (
+                          <span key={j} className="fdm-source-badge">
+                            {src.label}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  )}
+
+                  {isExpanded && (
+                    <div className="fdm-rec-detail">
+                      {rec.verbatimEvidence && (
+                        <blockquote className="fdm-rec-evidence">
+                          “{rec.verbatimEvidence}”
+                        </blockquote>
+                      )}
+                      {rec.technicalMeaning && (
+                        <p className="fdm-rec-technical">{rec.technicalMeaning}</p>
+                      )}
+                      {rec.relatedThreat && (
+                        <p className="fdm-rec-related">
+                          Related threat: {rec.relatedThreat}
+                        </p>
+                      )}
+                      {isThreat && rec.fromVulnerabilityName && (
+                        <p className="fdm-rec-related">
+                          Related vulnerability: {rec.fromVulnerabilityName}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="fdm-rec-empty">
+            No recommendations available for this finding.
+          </p>
+        )}
+      </div>
+    );
+  };
 
   if (loading || !finding) {
     return (
@@ -192,6 +281,9 @@ const FindingDetailModal = ({
                 Active session in progress — first seen {formatEpoch(activeSession.firstSeen)}
               </div>
             )}
+
+            {/* Recommendations */}
+            {renderRecommendations()}
           </div>
         ) : (
           /* ─── VULNERABILITY BODY ─── */
@@ -225,62 +317,7 @@ const FindingDetailModal = ({
             </div>
 
             {/* Recommendations */}
-            {finding.recommendations && (
-              <div className="fdm-section">
-                <h3>Recommendations</h3>
-                <div className="fdm-rec-tabs">
-                  <button
-                    className={`fdm-rec-tab${activeRecTab === "nist" ? " active" : ""}`}
-                    onClick={() => { setActiveRecTab("nist"); setExpandedRecs(new Set()); }}
-                    type="button"
-                  >
-                    NIST
-                  </button>
-                  <button
-                    className={`fdm-rec-tab${activeRecTab === "owasp" ? " active" : ""}`}
-                    onClick={() => { setActiveRecTab("owasp"); setExpandedRecs(new Set()); }}
-                    type="button"
-                  >
-                    OWASP
-                  </button>
-                </div>
-
-                <ul className="fdm-rec-list">
-                  {(finding.recommendations[activeRecTab] || []).length > 0 ? (
-                    finding.recommendations[activeRecTab].map((rec, index) => {
-                      const isExpanded = expandedRecs.has(index);
-                      const isString = typeof rec === "string";
-                      const title = isString ? rec : rec?.title || rec?.text || String(rec);
-                      const detail = isString ? null : rec?.detail || rec?.description || null;
-
-                      return (
-                        <li key={index} className={`fdm-rec-item${isExpanded ? " expanded" : ""}`}>
-                          <button
-                            type="button"
-                            className="fdm-rec-toggle"
-                            onClick={() => toggleRec(index)}
-                            aria-expanded={isExpanded}
-                          >
-                            <CaretRight
-                              size={14}
-                              className={`fdm-rec-chevron${isExpanded ? " rotated" : ""}`}
-                            />
-                            <span className="fdm-rec-text">{title}</span>
-                          </button>
-                          {isExpanded && detail && (
-                            <div className="fdm-rec-detail">{detail}</div>
-                          )}
-                        </li>
-                      );
-                    })
-                  ) : (
-                    <li className="fdm-rec-empty">
-                      No {activeRecTab.toUpperCase()} recommendations available.
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
+            {renderRecommendations()}
           </div>
         )}
       </BaseModal>

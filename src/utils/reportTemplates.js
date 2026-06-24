@@ -73,6 +73,24 @@ function severityBadge(level) {
   return `<span class="severity-badge severity-${cls}">${level}</span>`;
 }
 
+/**
+ * Render source label(s) as clickable links when URLs are available.
+ * `label` is a comma-joined string of source labels; `urls` is the matching
+ * list. Falls back to plain text when no URLs exist. Anchor tags survive the
+ * print-to-PDF path used by exportReport.js.
+ */
+function renderSourceLinks(label, urls) {
+  const list = Array.isArray(urls) ? urls.filter(Boolean) : [];
+  if (list.length === 0) return label || "N/A";
+  const labels = (label || "").split(", ");
+  return list
+    .map(
+      (u, i) =>
+        `<a href="${u}" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;">${labels[i] || label}</a>`,
+    )
+    .join(", ");
+}
+
 function riskBands() {
   return `
     <div class="risk-bands">
@@ -321,8 +339,8 @@ export function generateOverallReportHTML(d) {
     <ul class="rec-list">${(rem.mediumTerm || []).map(r => `<li class="priority-short"><strong>Short term:</strong> ${r}</li>`).join("")}</ul>
     <h3>Detailed Recommendation Mapping</h3>
     <table>
-      <thead><tr><th>Finding</th><th>Action</th><th>Priority</th><th>Responsible</th></tr></thead>
-      <tbody>${(rem.detailedMapping || []).map(r => `<tr><td>${r.finding}</td><td>${r.action}</td><td>${r.priority}</td><td>${r.responsible}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>Finding</th><th>Action</th><th>Source</th><th>Priority</th><th>Responsible</th></tr></thead>
+      <tbody>${(rem.detailedMapping || []).map(r => `<tr><td>${r.finding}</td><td>${r.action}</td><td>${renderSourceLinks(r.source, r.sourceUrls)}</td><td>${r.priority}</td><td>${r.responsible}</td></tr>`).join("")}</tbody>
     </table>
   </div>
 
@@ -474,9 +492,9 @@ export function generatePerNetworkReportHTML(d) {
     <h2>Recommended Actions for This Network</h2>
     <p style="margin-bottom:20px;">These recommendations are generated from a predefined CVSS-based mapping table. They are rule-based and do not use AI.</p>
     <h3>Immediate Actions (0–30 days)</h3>
-    <ul class="rec-list">${(recs.immediate || []).map(r => `<li class="priority-immediate"><strong>Immediate:</strong> ${r.text}<br><small style="color:#666;">Reference: ${r.ref} | Responsible: ${r.responsible}</small></li>`).join("")}</ul>
+    <ul class="rec-list">${(recs.immediate || []).map(r => `<li class="priority-immediate"><strong>Immediate:</strong> ${r.text}<br><small style="color:#666;">Source: ${renderSourceLinks(r.ref, r.sourceUrls)} | Responsible: ${r.responsible}</small></li>`).join("")}</ul>
     <h3>Short-Term Actions (1–3 months)</h3>
-    <ul class="rec-list">${(recs.shortTerm || []).map(r => `<li class="priority-short"><strong>Short term:</strong> ${r.text}<br><small style="color:#666;">Reference: ${r.ref} | Responsible: ${r.responsible}</small></li>`).join("")}</ul>
+    <ul class="rec-list">${(recs.shortTerm || []).map(r => `<li class="priority-short"><strong>Short term:</strong> ${r.text}<br><small style="color:#666;">Source: ${renderSourceLinks(r.ref, r.sourceUrls)} | Responsible: ${r.responsible}</small></li>`).join("")}</ul>
   </div>
 
   <!-- RISK TREND -->

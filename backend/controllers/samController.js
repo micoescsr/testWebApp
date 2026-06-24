@@ -1,23 +1,49 @@
 const { supabaseClient } = require("../config/supabaseClient");
+const {
+  RECOMMENDATION_MAP,
+  getRecommendationsForThreat,
+  resolveSourceObjects,
+} = require("../../src/data/recommendationMap.cjs");
 
 // Heuristic: vt_code usually looks like WFVT-006, etc.
 function looksLikeVtCode(s) {
   return /^[A-Z0-9]+-\d+$/i.test(s);
 }
 
-function defaultRecommendations() {
-  return {
-    nist: [
-      "Maintain continuous monitoring of wireless infrastructure and alert on anomalies.",
-      "Segment guest and internal networks to reduce blast radius.",
-      "Enforce strong authentication and key management for wireless access.",
-    ],
-    owasp: [
-      "Enable secure configurations and disable legacy/weak security modes.",
-      "Use network monitoring / IDS to detect suspicious wireless activity.",
-      "Harden AP management interfaces and restrict admin access.",
-    ],
-  };
+/**
+ * Build the recommendations array for a finding.
+ * - For vulnerabilities: lookup RECOMMENDATION_MAP[vtCode]
+ * - For threats: reverse-map via getRecommendationsForThreat(vtCode)
+ * Returns an array of rich recommendation objects with resolved source links.
+ */
+function buildRecommendations(vtCode, vtKind) {
+  let recs = [];
+
+  if (vtKind === "threat") {
+    recs = getRecommendationsForThreat(vtCode);
+  } else {
+    const entry = RECOMMENDATION_MAP[vtCode];
+    if (entry) {
+      recs = entry.recommendations.map((r) => ({
+        ...r,
+        fromVulnerability: vtCode,
+        fromVulnerabilityName: entry.name,
+      }));
+    }
+  }
+
+  return recs.map((r) => ({
+    text: r.text,
+    sources: resolveSourceObjects(r.sources),
+    relatedThreat: r.relatedThreat || null,
+    relatedThreatId: r.relatedThreatId || null,
+    fromVulnerability: r.fromVulnerability || null,
+    fromVulnerabilityName: r.fromVulnerabilityName || null,
+    verbatimEvidence: r.verbatimEvidence || null,
+    technicalMeaning: r.technicalMeaning || null,
+    priority: r.priority || "Immediate",
+    responsible: r.responsible || "Network Administrator",
+  }));
 }
 
 function defaultDescription(vtName, vtCode) {
@@ -65,7 +91,7 @@ async function getThreatDetail(req, res) {
       cvss: detail.vt_cvss_base_score ?? "N/A",
       cvssVector: detail.vt_cvss_vector_string ?? "N/A",
       description: defaultDescription(detail.vt_name, detail.vt_code),
-      recommendations: defaultRecommendations(),
+      recommendations: buildRecommendations(detail.vt_code, "threat"),
     });
   } catch (err) {
     console.error("getThreatDetail error:", err);
@@ -105,7 +131,7 @@ async function getVulnDetail(req, res) {
         cvss: "N/A",
         cvssVector: "N/A",
         description: defaultDescription(key, null),
-        recommendations: defaultRecommendations(),
+        recommendations: [],
       });
     }
 
@@ -115,7 +141,7 @@ async function getVulnDetail(req, res) {
       cvss: detail.vt_cvss_base_score ?? "N/A",
       cvssVector: detail.vt_cvss_vector_string ?? "N/A",
       description: defaultDescription(detail.vt_name, detail.vt_code),
-      recommendations: defaultRecommendations(),
+      recommendations: buildRecommendations(detail.vt_code, detail.vt_kind || "vulnerability"),
     });
   } catch (err) {
     console.error("getVulnDetail error:", err);

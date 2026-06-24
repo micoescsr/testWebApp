@@ -662,8 +662,10 @@ Mirrors `getThreatDetail` but for vulnerabilities. Key differences:
 | Function                             | Purpose                                                              |
 | ------------------------------------ | -------------------------------------------------------------------- |
 | `looksLikeVtCode(s)`                 | Heuristic regex test to distinguish vt_codes (`WFVT-006`) from names |
-| `defaultRecommendations()`           | Returns generic NIST and OWASP recommendation arrays                 |
+| `buildRecommendations(vtCode, kind)` | Returns finding-specific recommendation objects (text, resolved source label/URL, related threat/vuln, evidence, priority) from `src/data/recommendationMap.cjs`. Replaced the former `defaultRecommendations()` generic `{ nist, owasp }` arrays. |
 | `defaultDescription(vtName, vtCode)` | Generates a default description string from the name and code        |
+
+> **Note:** The legacy `defaultRecommendations()` (generic `{ nist, owasp }` arrays) and the backend report `REMEDIATION_CATALOG` have both been replaced by the conditional mapping in `src/data/recommendationMap.cjs` (single source of truth). Modal detail responses and report remediation/recommendations now carry per-finding standards sources (NIST SP 800-97/153, ITL Bulletin) with clickable URLs.
 
 ### Exports — Updated
 

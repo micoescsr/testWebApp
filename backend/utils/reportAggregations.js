@@ -5,6 +5,11 @@
 // and joining, then hands rows here.
 
 const { categorizeFinding } = require("./findingCategory");
+const {
+  RECOMMENDATION_MAP,
+  getRecommendationsForThreat,
+  resolveSourceObjects,
+} = require("../../src/data/recommendationMap.cjs");
 
 /** Mirrors the risk bands shown in the report's "Risk Classification Bands" table. */
 function riskLabelForReport(score) {
@@ -118,88 +123,72 @@ function buildFindingsLists(findings) {
 }
 
 /**
- * Static rule-based remediation catalog keyed by vt_code — mirrors the
- * report's own claim of being "rule-based, no AI". Update when new WFVT
- * codes are catalogued (see backend/THREATS.md / vulnerability_threat_details).
+ * Collect the standards-based recommendations for a single detected vt_code,
+ * pulling from recommendationMap.cjs (the single source of truth):
+ * - vulnerability codes (WFVT-001..004) map directly to their recommendations
+ * - threat codes (WFVT-005..007) reverse-map to recommendations from the
+ *   vulnerabilities that reference them
  */
-const REMEDIATION_CATALOG = {
-  "WFVT-001": {
-    action: "Migrate to WPA3-SAE / WPA2-AES",
-    priority: "Immediate",
-    responsible: "Network Admin",
-    quickWinText: "Migrate open SSIDs to WPA3-SAE or WPA2-AES only",
-    impact: "Exposure of traffic to interception on open networks",
-  },
-  "WFVT-002": {
-    action: "Disable WPS on all access points",
-    priority: "Immediate",
-    responsible: "Network Admin",
-    quickWinText: "Disable WPS on all access points",
-    impact: "Risk of password recovery via WPS PIN brute-force",
-  },
-  "WFVT-003": {
-    action: "Migrate to WPA3-SAE / WPA2-AES, disable TKIP",
-    priority: "Immediate",
-    responsible: "Network Admin",
-    quickWinText: "Migrate weakly-encrypted SSIDs to WPA3-SAE or WPA2-AES only",
-    impact: "Exposure of traffic to interception via weak/deprecated encryption",
-  },
-  "WFVT-005": {
-    action: "Enable PMF (required mode)",
-    priority: "Immediate",
-    responsible: "Network Admin",
-    quickWinText: "Enable Protected Management Frames (PMF) in required mode",
-    impact: "Disruption of connectivity through deauthentication attacks",
-  },
-  "WFVT-006": {
-    action: "Enable rogue AP / evil twin detection",
-    priority: "Immediate",
-    responsible: "Network Admin / ITSO",
-    quickWinText: "Configure rogue AP / evil twin detection on WLAN controller",
-    impact: "Potential account takeover via evil twin hotspots",
-  },
-  "WFVT-007": {
-    action: "Deploy DAI + DHCP snooping",
-    priority: "Short term",
-    responsible: "Network Admin",
-    quickWinText: "Deploy dynamic ARP inspection (DAI) and DHCP snooping",
-    impact: "Risk of data theft and unauthorized network access via MAC spoofing",
-  },
-  "WFVT-008": {
-    action: "Deploy WIDS deauth alerts",
-    priority: "Immediate",
-    responsible: "Network Admin / SOC",
-    quickWinText: "Deploy WIDS alerts for deauthentication frame bursts",
-    impact: "Disruption of connectivity through deauthentication attacks",
-  },
-};
+function collectRecommendationsForCode(code) {
+  const out = [];
+  const entry = RECOMMENDATION_MAP[code];
+  if (entry) {
+    for (const r of entry.recommendations) {
+      out.push({ ...r, fromVulnerability: code, fromVulnerabilityName: entry.name });
+    }
+  }
+  for (const r of getRecommendationsForThreat(code)) {
+    out.push(r);
+  }
+  return out;
+}
 
 /**
  * uniqueCodes: string[] of distinct vt_codes detected across the assessed networks.
  * Returns remediation plan + executive-summary inputs, all derived from the
- * static rule-based catalog above — nothing invented per-network.
+ * standards-based recommendation map (NIST SP 800-97/153, ITL Bulletin) — only
+ * for codes actually detected. Unknown codes are ignored.
+ *
+ * detailedMapping rows carry source label(s) + URL(s) so report templates can
+ * render clickable standard references.
  */
 function buildRemediationPlan(uniqueCodes) {
-  const entries = (uniqueCodes || [])
-    .map((code) => ({ code, def: REMEDIATION_CATALOG[code] }))
-    .filter((e) => e.def);
+  const recs = [];
+  for (const code of uniqueCodes || []) {
+    for (const r of collectRecommendationsForCode(code)) recs.push(r);
+  }
 
-  const detailedMapping = entries.map(({ code, def }) => ({
-    finding: code,
-    action: def.action,
-    priority: def.priority,
-    responsible: def.responsible,
-  }));
+  // De-duplicate by recommendation text (same action across findings/threats).
+  const seen = new Set();
+  const deduped = recs.filter((r) => {
+    if (seen.has(r.text)) return false;
+    seen.add(r.text);
+    return true;
+  });
 
-  const quickWins = entries
-    .filter((e) => e.def.priority === "Immediate")
-    .map((e) => e.def.quickWinText);
+  const detailedMapping = deduped.map((r) => {
+    const sourceObjs = resolveSourceObjects(r.sources);
+    return {
+      finding: r.fromVulnerabilityName || r.fromVulnerability || "—",
+      action: r.text,
+      source: sourceObjs.map((s) => s.label).join(", "),
+      sourceUrls: sourceObjs.map((s) => s.url).filter(Boolean),
+      priority: r.priority || "Immediate",
+      responsible: r.responsible || "Network Administrator",
+    };
+  });
 
-  const mediumTerm = entries
-    .filter((e) => e.def.priority === "Short term")
-    .map((e) => e.def.quickWinText);
+  const quickWins = detailedMapping
+    .filter((r) => r.priority === "Immediate")
+    .map((r) => r.action);
 
-  const keyBusinessImpacts = [...new Set(entries.map((e) => e.def.impact))];
+  const mediumTerm = detailedMapping
+    .filter((r) => r.priority !== "Immediate")
+    .map((r) => r.action);
+
+  const keyBusinessImpacts = [
+    ...new Set(deduped.map((r) => r.technicalMeaning).filter(Boolean)),
+  ];
 
   const topActions = [...quickWins, ...mediumTerm].slice(0, 5);
 

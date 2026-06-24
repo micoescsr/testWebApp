@@ -191,10 +191,7 @@ export const useVulnerabilities = (bssid) => {
               cvssVector: res.data.cvssVector ?? "N/A",
               description:
                 res.data.description ?? defaultVulnDescription(vulnRow),
-              recommendations: res.data.recommendations ?? {
-                nist: [],
-                owasp: [],
-              },
+              recommendations: res.data.recommendations ?? [],
               observedConfig: vulnRow?.observedConfig ?? "N/A",
               detectedTime: vulnRow?.detectedTime ?? null,
             });
@@ -215,7 +212,7 @@ export const useVulnerabilities = (bssid) => {
         cvss: vulnRow?.score ?? "N/A",
         cvssVector: "N/A",
         description: defaultVulnDescription(vulnRow),
-        recommendations: { nist: [], owasp: [] },
+        recommendations: [],
         observedConfig: vulnRow?.observedConfig ?? "N/A",
         detectedTime: vulnRow?.detectedTime ?? null,
       });

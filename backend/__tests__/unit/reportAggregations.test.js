@@ -171,35 +171,68 @@ describe("buildFindingsLists", () => {
 });
 
 describe("buildRemediationPlan", () => {
-  test("maps known codes to detailedMapping rows with action/priority/responsible", () => {
-    const result = buildRemediationPlan(["WFVT-002"]);
-    expect(result.detailedMapping).toEqual([
-      { finding: "WFVT-002", action: "Disable WPS on all access points", priority: "Immediate", responsible: "Network Admin" },
-    ]);
+  test("vulnerability code maps to its recommendations with source label + URL", () => {
+    const result = buildRemediationPlan(["WFVT-001"]);
+    // WFVT-001 has 2 recommendations, both sourced from NIST SP 800-97
+    expect(result.detailedMapping).toHaveLength(2);
+    result.detailedMapping.forEach((row) => {
+      expect(row.finding).toBe("Open System Authentication");
+      expect(row.source).toBe("NIST SP 800-97");
+      expect(row.sourceUrls).toEqual(["https://csrc.nist.gov/pubs/sp/800/97/final"]);
+      expect(typeof row.action).toBe("string");
+      expect(row.action.length).toBeGreaterThan(0);
+    });
   });
 
-  test("splits quickWins (Immediate) from mediumTerm (Short term) actions", () => {
-    const result = buildRemediationPlan(["WFVT-002", "WFVT-007"]);
-    expect(result.quickWins).toContain("Disable WPS on all access points");
-    expect(result.mediumTerm).toContain("Deploy dynamic ARP inspection (DAI) and DHCP snooping");
+  test("WFVT-004 yields 3 recommendations across NIST 800-97, ITL, NIST 800-153", () => {
+    const result = buildRemediationPlan(["WFVT-004"]);
+    expect(result.detailedMapping).toHaveLength(3);
+    const sources = result.detailedMapping.map((r) => r.source);
+    expect(sources).toEqual(
+      expect.arrayContaining([
+        "NIST SP 800-97",
+        "ITL Bulletin – WLAN Security",
+        "NIST SP 800-153",
+      ]),
+    );
   });
 
-  test("derives keyBusinessImpacts from detected codes, deduplicated", () => {
-    const result = buildRemediationPlan(["WFVT-006"]);
-    expect(result.keyBusinessImpacts).toEqual([
-      "Potential account takeover via evil twin hotspots",
-    ]);
+  test("threat codes reverse-map to related vulnerability recommendations", () => {
+    expect(buildRemediationPlan(["WFVT-005"]).detailedMapping).toHaveLength(4);
+    expect(buildRemediationPlan(["WFVT-006"]).detailedMapping).toHaveLength(2);
+    expect(buildRemediationPlan(["WFVT-007"]).detailedMapping).toHaveLength(3);
   });
 
-  test("topActions caps at 5 and prioritizes Immediate first", () => {
+  test("de-duplicates recommendations shared across detected codes by action text", () => {
+    // WFVT-001 (vuln) and WFVT-007 (threat reverse-mapping to WFVT-001's 2nd rec)
+    // share the "Implement strong authentication mechanisms" recommendation.
+    const result = buildRemediationPlan(["WFVT-001", "WFVT-007"]);
+    const actions = result.detailedMapping.map((r) => r.action);
+    expect(new Set(actions).size).toBe(actions.length);
+  });
+
+  test("all map recommendations are Immediate priority → quickWins, no mediumTerm", () => {
+    const result = buildRemediationPlan(["WFVT-001"]);
+    expect(result.quickWins).toHaveLength(2);
+    expect(result.mediumTerm).toHaveLength(0);
+  });
+
+  test("derives keyBusinessImpacts (technical meaning) deduplicated", () => {
+    const result = buildRemediationPlan(["WFVT-001"]);
+    expect(result.keyBusinessImpacts.length).toBeGreaterThan(0);
+    expect(new Set(result.keyBusinessImpacts).size).toBe(result.keyBusinessImpacts.length);
+  });
+
+  test("topActions caps at 5", () => {
     const result = buildRemediationPlan([
-      "WFVT-001", "WFVT-002", "WFVT-003", "WFVT-005", "WFVT-006", "WFVT-007", "WFVT-008",
+      "WFVT-001", "WFVT-002", "WFVT-003", "WFVT-004", "WFVT-005", "WFVT-006", "WFVT-007",
     ]);
     expect(result.topActions.length).toBeLessThanOrEqual(5);
   });
 
   test("unknown code is ignored, not throw", () => {
     expect(() => buildRemediationPlan(["WFVT-999"])).not.toThrow();
+    expect(buildRemediationPlan(["WFVT-999"]).detailedMapping).toEqual([]);
   });
 
   test("empty input returns empty plan", () => {

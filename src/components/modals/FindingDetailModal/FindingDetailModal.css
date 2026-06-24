@@ -164,35 +164,76 @@
   font-family: var(--font-mono, monospace);
 }
 
-/* ─── VULNERABILITY: Recommendation tabs ─── */
+/* ─── Recommendation header ─── */
 
-.fdm-rec-tabs {
+.fdm-rec-header {
   display: flex;
-  gap: 0;
-  margin-bottom: var(--space-4);
-  border-bottom: 2px solid var(--border);
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
 }
 
-.fdm-rec-tab {
-  padding: var(--space-2) var(--space-5);
-  border: none;
-  background: none;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
+.fdm-rec-header h3 {
+  margin: 0;
+}
+
+.fdm-rec-subtitle {
+  font-size: var(--text-xs);
   color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  transition: color 0.15s, border-color 0.15s;
+  font-style: italic;
 }
 
-.fdm-rec-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+/* ─── Recommendation source badges ─── */
+
+.fdm-rec-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 0 var(--space-3) var(--space-5);
 }
 
-.fdm-rec-tab:hover:not(.active) {
+.fdm-source-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  background: var(--surface-2);
   color: var(--text-secondary);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+a.fdm-source-badge:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-1);
+}
+
+/* ─── Recommendation expanded detail ─── */
+
+.fdm-rec-evidence {
+  margin: 0 0 var(--space-2) 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.fdm-rec-technical {
+  margin: 0 0 var(--space-2) 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.fdm-rec-related {
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 /* ─── VULNERABILITY: Recommendation list (accordion) ─── */
@@ -458,11 +499,6 @@
 
   .fdm-cvss-score {
     font-size: var(--text-base);
-  }
-
-  .fdm-rec-tab {
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-xs);
   }
 
   .fdm-observed-config {
