@@ -4,8 +4,10 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import Sidebar from "./layouts/Sidebar";
+import ErrorBoundary from "./components/common/ErrorBoundary";
 
 // Route-level code splitting — each page ships in its own chunk, loaded on demand.
 const Dashboard = lazy(() => import("./pages/Dashboard/Dashboard"));
@@ -33,6 +35,14 @@ import Spinner from "./components/common/Spinner/Spinner";
 const TestAuth = import.meta.env.DEV
   ? lazy(() => import("./pages/TestAuth/TestAuth"))
   : null;
+
+// Wraps the active page in an error boundary that resets on navigation, so a
+// crash (or a failed lazy-chunk load) in one page shows a fallback instead of
+// blanking the whole app — and moving to another page recovers automatically.
+function PageErrorBoundary({ children }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -132,6 +142,7 @@ function App() {
                     <Sidebar />
                     <UserMenu />
                     <main className="main-content">
+                      <PageErrorBoundary>
                       <Routes>
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/security-assessment" element={<SAM />} />
@@ -156,6 +167,7 @@ function App() {
                           />
                         )}
                       </Routes>
+                      </PageErrorBoundary>
                     </main>
                   </div>
                 </ThreatDetectionProvider>

@@ -105,8 +105,6 @@ const SAM = () => {
   const {
     detectionStatus,
     setDetectionStatus,
-    detectionResults,
-    liveThreats,
     displayThreats,
     failureReason,
     shouldShowDetectionError,
@@ -350,8 +348,7 @@ const SAM = () => {
     }
 
     try {
-      //const res = await fetch("/api/networks", {
-      const res = await api.post("/rasPi/networks", {
+      await api.post("/rasPi/networks", {
         ssid: selectedNetwork.ssid,
         bssid: selectedNetwork.bssid,
         channel: selectedNetwork.channel,
@@ -470,7 +467,7 @@ const SAM = () => {
           <div className="status-banner redirect-banner">
             <span>
               Switching to <strong>Threats</strong> tab in{" "}
-              <strong>{redirectCountdown}s</strong>\u2026
+              <strong>{redirectCountdown}s</strong>&hellip;
             </span>
             <button
               className="dismiss-banner-btn"

@@ -4,11 +4,13 @@
 // docs/feature-notes/SAM_EXPORT_IMPLEMENTATION_PLAN.md for the field mapping.
 
 import { getDashboardSummary, getDashboardForNetwork } from "../api/dashboardApi";
+// ESM mirror of the recommendation map (the backend uses the .cjs twin). Vite
+// can't transform the CommonJS .cjs from src/, so the frontend imports the .js.
 import {
   RECOMMENDATION_MAP,
   SOURCES,
   getRecommendationsForThreat,
-} from "../data/recommendationMap.cjs";
+} from "../data/recommendationMap.js";
 
 /** Resolve source keys → label string + url list for report rendering. */
 function recToReportItem(r) {

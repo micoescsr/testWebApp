@@ -54,8 +54,6 @@ const SAMSidebar = ({
     : filteredNetworks.slice(0, DEFAULT_VISIBLE);
   const hasMore = !networkSearch && filteredNetworks.length > DEFAULT_VISIBLE;
 
-  const hasMeta = locationMeta.city || locationMeta.province || locationMeta.notes;
-
   return (
     <div className="sam-sidebar">
       <div className="sidebar-section">
