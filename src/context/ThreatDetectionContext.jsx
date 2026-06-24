@@ -56,6 +56,8 @@ export const ThreatDetectionProvider = ({ children }) => {
     liveThreats: detection.liveThreats,
     displayThreats: detection.displayThreats,
     failureReason: detection.failureReason,
+    shouldShowDetectionError: detection.shouldShowDetectionError,
+    markScanStarted: detection.markScanStarted,
     backendState: detection.backendState,
     refreshStatus: detection.refreshStatus,
     resetDetection: detection.resetDetection,

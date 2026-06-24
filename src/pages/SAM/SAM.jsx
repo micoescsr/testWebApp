@@ -51,6 +51,17 @@ const SAM = () => {
   // Track whether we attempted to restore from session (run once)
   const restoredRef = useRef(false);
 
+  // Clear the tab-redirect countdown interval on unmount so it can't fire
+  // (and call setState) after the page has been navigated away from.
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearInterval(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [findingType, setFindingType] = useState(null); // 'threat' | 'vulnerability'
   const [rawFinding, setRawFinding] = useState(null);
@@ -98,6 +109,8 @@ const SAM = () => {
     liveThreats,
     displayThreats,
     failureReason,
+    shouldShowDetectionError,
+    markScanStarted,
     refreshStatus,
     resetDetection,
     lastUpdated,
@@ -232,6 +245,9 @@ const SAM = () => {
   };
 
   const handleScan = async () => {
+    // Guard against rapid double-clicks creating overlapping scan requests.
+    if (detectionStatus === "SCANNING") return;
+
     if (!selectedNetwork) {
       showToast("Please select a network first", "error");
       return;
@@ -257,6 +273,7 @@ const SAM = () => {
     // results from any prior scan so they don't linger on screen while
     // the new scan is in flight.
     resetDetection();
+    markScanStarted(); // mark this session as having an active scan attempt
     setDetectionStatus("SCANNING");
     reloadVulnerabilities(null);
 
@@ -427,7 +444,7 @@ const SAM = () => {
     };
   } else if (detectionStatus === "SCANNING") {
     statusPillConfig = { label: "Starting\u2026", cls: "starting" };
-  } else if (detectionStatus === "FAILED") {
+  } else if (shouldShowDetectionError) {
     statusPillConfig = { label: "Failed", cls: "failed" };
   } else if (isOutOfRange) {
     // Only show "Paused" when detection is NOT actively running
@@ -441,10 +458,11 @@ const SAM = () => {
       <div className="sam-main">
         <h1 className="page-title">Security Assessment Management</h1>
 
-        {detectionStatus === "FAILED" && (
+        {shouldShowDetectionError && (
           <div className="status-banner failed">
-            Detection failed: {failureReason || "Unknown error"}. Run a new scan
-            to restart.
+            {/^.*timeout.*$/i.test(failureReason || "")
+              ? "Detection timed out. Start a new scan to continue."
+              : "Detection failed. Start a new scan to continue."}
           </div>
         )}
 

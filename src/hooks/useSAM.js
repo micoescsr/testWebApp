@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import api from "../api/axios";
 import { getThreatDetail, getVulnerabilityDetail } from "../api/samApi";
 import { useApiResource } from "./useApiResource";
+import { useSessionState } from "./useSessionState";
 
 export const useNetworks = () => {
   const [networks, setNetworks] = useState([]);
@@ -254,6 +255,17 @@ export const useThreatDetection = () => {
   const [detectionResults, setDetectionResults] = useState(null);
   const [failureReason, setFailureReason] = useState(null);
 
+  // Tracks whether the user has actually started a scan in THIS browser
+  // session. Session-scoped (sessionStorage via wf: prefix) so it survives a
+  // refresh but resets on a fresh session/logout. Used to distinguish a real
+  // current-session failure from a stale FAILED row left over on the backend
+  // from a previous run — the latter must NOT surface as a page-level error.
+  const [hasStartedScan, setHasStartedScan] = useSessionState(
+    "wf:hasStartedScan",
+    false,
+  );
+  const markScanStarted = () => setHasStartedScan(true);
+
   // 1) live snapshot from the latest poll
   const [liveThreats, setLiveThreats] = useState([]);
 
@@ -283,7 +295,10 @@ export const useThreatDetection = () => {
         if (row.status === "RUNNING") {
           setStatus("DETECTING");
           setFailureReason(null);
-        } else if (row.status === "FAILED") {
+        } else if (row.status === "FAILED" && hasStartedScan) {
+          // Only surface a backend FAILED row if the user actually started a
+          // scan this session. Otherwise it's a stale failure from a prior run
+          // and should be treated as historical (idle), not a current error.
           setStatus("FAILED");
           setFailureReason(row.failure_reason || "Unknown failure");
         } else {
@@ -535,6 +550,11 @@ export const useThreatDetection = () => {
     failureReason,
     backendState,
     refreshStatus,
+    hasStartedScan,
+    markScanStarted,
+    // Page-level error visibility: only true for a failure tied to a scan the
+    // user started this session — never for a stale backend FAILED row.
+    shouldShowDetectionError: status === "FAILED" && hasStartedScan,
     resetDetection: () => {
       stopPolling();
       setStatus("IDLE");
