@@ -25,10 +25,16 @@ const devCsp = [
 ].join("; ");
 
 // Built bundle has no HMR, so no eval needed.
+// style-src split: 'self' for <style>/<link> elements (app injects none at runtime —
+// Vite ships CSS as same-origin <link>), 'unsafe-inline' confined to style-ATTRIBUTES
+// only (React style={{}} + recharts SVG style=), which can't be nonced/hashed.
+// This keeps unsafe-inline out of script-src AND style-src-elem.
 const previewCsp = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self'",
+  "style-src-elem 'self'",
+  "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.supabase.co",

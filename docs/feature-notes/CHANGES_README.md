@@ -10,6 +10,54 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## CSP style-src split — unsafe-inline confined to style attributes — June 25, 2026
+
+### Problem
+
+ZAP scan of `http://localhost:5173` (Vite **dev** server) reported 3 Medium CSP alerts:
+`script-src unsafe-eval`, `script-src unsafe-inline`, `style-src unsafe-inline`. The two
+`script-src` ones are dev-only (Vite HMR / React Fast Refresh) and already absent from the
+production policy. `style-src unsafe-inline` was present in dev **and** prod because the app
+uses ~103 inline `style={{}}` attributes (13 prod files) + recharts SVG `style=` attributes.
+
+### Fix
+
+Split `style-src` in the three **production** policies so `unsafe-inline` is confined to
+**style attributes** only, never element-level styles or scripts:
+
+- `vite.config.js` → `preview.headers` (`vite preview`, :4173)
+- `public/serve.json` (→ `dist/serve.json`, Railway `serve -s dist`)
+- `backend/server.js` Helmet (`styleSrc`/`styleSrcElem`/`styleSrcAttr`)
+
+New prod directives: `style-src 'self'; style-src-elem 'self'; style-src-attr 'unsafe-inline'`.
+Safe because the live app injects **no** `<style>` elements (CSS ships as same-origin `<link>`;
+recharts sets styles via the CSSOM `.style` API, which CSP does not govern — see
+`node_modules/recharts/es6/util/DOMUtils.js`). Dev policy (`server.headers`) left unchanged —
+HMR injects `<style>` blocks and genuinely needs `style-src 'unsafe-inline'`; dev is not the
+prod scan target.
+
+### Added: focused safe security tests (XSS / SQLi / brute-force)
+
+New `backend/scripts/sec-xss-sqli-bruteforce.ps1` — controlled, non-destructive probes
+against local `:3000` login route, documenting field/route, payload, expected, actual,
+verdict + mitigation status. Output: `reports/security_xss_sqli_bruteforce.md`. First run
+(2026-06-25): 6/6 PASS — SQLi rejected at validation (400, no leak), XSS not reflected
+(JSON 400), brute-force 429 at attempt 6 (`loginLimiter` max 10/15min). Complements the
+broad `run-security-tests.ps1`; all three mitigations confirmed already implemented.
+
+### Verification
+
+`npm run build && npm run preview`; header on :4173 confirmed
+`script-src 'self'` (no unsafe-eval/inline) and `unsafe-inline` only in `style-src-attr`.
+Headless Playwright load of :4173 → React mounted, **0 CSP violations**. Auth-gated Dashboard
+(recharts) not runtime-verified through login — low risk (style attributes + CSSOM only).
+
+> **ZAP retest:** scan the **prod build (:4173)**, not the dev server. Both `script-src`
+> alerts will be gone. Whether ZAP still raises a `style-src-attr unsafe-inline` alert is
+> ZAP-version-dependent; if it does, the only true fix is the inline-style refactor (Option 2).
+
+---
+
 ## Auth UI Redesign + Recovery-Link Hardening — June 25, 2026
 
 ### Problem

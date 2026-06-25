@@ -95,7 +95,12 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc:  ["'self'"],
-      styleSrc:   ["'self'", "'unsafe-inline'"],
+      // unsafe-inline confined to style ATTRIBUTES (React style={{}} + recharts SVG
+      // style=); element-level styles ('self') need no inline. Keeps unsafe-inline out
+      // of style-src-elem so scanners don't flag the broad style-src unsafe-inline.
+      styleSrc:     ["'self'"],
+      styleSrcElem: ["'self'"],
+      styleSrcAttr: ["'unsafe-inline'"],
       connectSrc: connectSources,
       imgSrc:     ["'self'", "data:", "blob:"],
     },

@@ -79,3 +79,34 @@ Re-scan confirmed alerts **10038, 10020, 10021 are gone**. It surfaced 4 new Med
 | CSP: style-src unsafe-inline | **Accepted risk, dev + prod** — required for inline `style={{}}` attributes used throughout the React app (incl. recharts). Removing requires a nonce/hash-based CSP rewrite of all inline styles — out of scope for this remediation. |
 
 Net result: 3/7 alerts fully resolved by header config alone; 1/7 resolved via added directives; 3/7 are documented accepted risks inherent to the dev tooling / inline-style usage, not exploitable beyond what CSP already restricts (`default-src 'self'`, `connect-src` allowlist, `frame-ancestors 'none'`).
+
+## Update (2026-06-25): retest prod build + style-src split
+
+The earlier "accepted risk" alerts were re-examined. Two corrections:
+
+1. **`script-src` alerts are dev-only.** ZAP had scanned port 5173 (Vite dev). The production
+   policies (`preview.headers`, `serve.json`, Helmet) already use `script-src 'self'` — no
+   `unsafe-eval`/`unsafe-inline`. **Retest against the prod build (`npm run preview`, :4173)**
+   and both `script-src` alerts disappear with no code change.
+
+2. **`style-src unsafe-inline` narrowed via directive split.** In the three production policies
+   only, `style-src 'self' 'unsafe-inline'` became:
+
+   ```
+   style-src 'self'; style-src-elem 'self'; style-src-attr 'unsafe-inline'
+   ```
+
+   `unsafe-inline` is now confined to **style attributes** (React `style={{}}` + recharts SVG
+   `style=`), which cannot be nonced/hashed. Element-level styles (`<style>`, `<link>`) get no
+   inline allowance. Verified safe: the app injects no runtime `<style>` (CSS = same-origin
+   `<link>`; recharts uses the CSP-exempt CSSOM `.style` API). Headless load of :4173 → React
+   mounted, 0 CSP violations.
+
+   Dev policy (`server.headers`) unchanged — Vite HMR injects `<style>` blocks and needs
+   `style-src 'unsafe-inline'`; dev is not the prod scan target.
+
+**Remaining uncertainty:** whether ZAP's plugin 10055 still raises a `style-src-attr
+unsafe-inline` alert is ZAP-version-dependent. If it does, the broad `style-src unsafe-inline`
+Medium is still cleared, but full 0/0/0 requires the inline-style refactor (Option 2): migrate
+~102 prod `style={{}}` usages across 13 files to CSS classes/modules and wrap recharts so it
+emits no `style=` attributes — large surface, recharts is the hard blocker.
