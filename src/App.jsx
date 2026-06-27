@@ -166,6 +166,11 @@ function App() {
                             }
                           />
                         )}
+                        {/* Unknown authenticated path → Dashboard (no blank screen) */}
+                        <Route
+                          path="*"
+                          element={<Navigate to="/dashboard" replace />}
+                        />
                       </Routes>
                       </PageErrorBoundary>
                     </main>

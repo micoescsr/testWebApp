@@ -10,6 +10,32 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Bug-hunt pass: 404 route, updateUser self-protection, effect deps — June 28, 2026
+
+### BUG-01 — blank screen on unknown authenticated path
+
+- `src/App.jsx`: added trailing `<Route path="*" element={<Navigate to="/dashboard" replace />} />`
+  inside the authenticated inner `<Routes>`. Previously an unmatched path (typo,
+  stale link, or prod `/test-auth` which is dev-only) rendered an empty
+  `.main-content`. No new page created.
+
+### BUG-02 — `updateUser` allowed self role/status change
+
+- `backend/controllers/userController.js` (`updateUser`): block changing your own
+  `role` or `status` via the generic update endpoint (`403`), mirroring the
+  existing self-targeting guards in `deleteUser`/`deactivateUser`. Prevents the
+  only superadmin from self-demoting or self-locking-out.
+
+### BUG-04 — ThreatDetectionContext effect deps
+
+- `src/context/ThreatDetectionContext.jsx`: added `activeNetworkOverride` and
+  `setActiveNetworkOverride` to the sync effect's dep array (behavior-neutral;
+  setter is a stable `useCallback` from `useSessionState`, effect stays guarded by
+  the `ssid !== activeNetworkOverride` check). No lint suppression.
+
+Held: BUG-03 (refresh-persistent dashboard subviews) — dashboard stays
+intentionally state-based. Drawer breadcrumb behavior untouched.
+
 ## Dashboard breadcrumb + Back button — June 28, 2026
 
 ### Problem

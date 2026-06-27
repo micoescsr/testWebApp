@@ -106,6 +106,17 @@ async function updateUser(req, res) {
     }
 
     const id = req.params.id;
+
+    // Self-protection: block a superadmin from changing their own role or
+    // status via the generic update endpoint — consistent with the
+    // self-targeting guards in deleteUser/deactivateUser. Prevents accidental
+    // self-demotion or self-lockout.
+    if (id === currentUser.id && (req.body.role !== undefined || req.body.status !== undefined)) {
+      return res
+        .status(403)
+        .json({ error: "Cannot change your own role or status" });
+    }
+
     // Phase 5-B: Field allowlist — only accept known fields to prevent mass assignment.
     const { first_name, last_name, username, email, role, status } = req.body;
     const updates = {};

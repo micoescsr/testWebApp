@@ -43,7 +43,7 @@ export const ThreatDetectionProvider = ({ children }) => {
     if (ssid && ssid !== activeNetworkOverride) {
       setActiveNetworkOverride(ssid);
     }
-  }, [detection.backendState?.ssid]);
+  }, [detection.backendState?.ssid, activeNetworkOverride, setActiveNetworkOverride]);
 
   // Resolved activeNetwork: backend truth first, session cache as fallback
   const resolvedActiveNetwork =
