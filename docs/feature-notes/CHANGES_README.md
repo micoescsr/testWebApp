@@ -10,6 +10,29 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Backend-local copy of recommendationMap — fix Railway MODULE_NOT_FOUND — June 28, 2026
+
+### Problem
+
+Railway backend crashed on startup: `Cannot find module '../../src/data/recommendationMap.cjs'`
+from `backend/controllers/samController.js` (require stack → `samRoutes.js` → `server.js`).
+`backend/controllers/samController.js` and `backend/utils/reportAggregations.js` both required
+`../../src/data/recommendationMap.cjs`, which resolves to the **frontend** `src/data/` directory
+outside `backend/`. Works locally (monorepo has both dirs) but Railway deploys only `backend/`
+as `/app`, so the frontend `src/` is absent. Not a casing issue.
+
+### Fix
+
+- Added backend-local copies `backend/src/data/recommendationMap.cjs` + `recommendationData.json`
+  (copied from `src/data/`) so the Railway backend service has no dependency on frontend-only
+  source files. Frontend keeps its own ESM mirror (`src/data/recommendationMap.js`) + JSON.
+- Updated both requires from `../../src/data/...` → `../src/data/recommendationMap.cjs`.
+- Header comment in the backend copy flags the keep-in-sync requirement with the frontend mirror.
+
+Data is now duplicated frontend/backend — intentional, to decouple the deployed backend.
+
+---
+
 ## CSP style-src split — unsafe-inline confined to style attributes — June 25, 2026
 
 ### Problem

@@ -3,7 +3,7 @@ const {
   RECOMMENDATION_MAP,
   getRecommendationsForThreat,
   resolveSourceObjects,
-} = require("../../src/data/recommendationMap.cjs");
+} = require("../src/data/recommendationMap.cjs");
 
 // Heuristic: vt_code usually looks like WFVT-006, etc.
 function looksLikeVtCode(s) {

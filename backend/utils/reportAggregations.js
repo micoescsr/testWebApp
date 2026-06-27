@@ -9,7 +9,7 @@ const {
   RECOMMENDATION_MAP,
   getRecommendationsForThreat,
   resolveSourceObjects,
-} = require("../../src/data/recommendationMap.cjs");
+} = require("../src/data/recommendationMap.cjs");
 
 /** Mirrors the risk bands shown in the report's "Risk Classification Bands" table. */
 function riskLabelForReport(score) {
