@@ -10,6 +10,28 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## HSTS header on both services — fix ZAP "Strict-Transport-Security Header Not Set" — June 28, 2026
+
+### Problem
+
+OWASP ZAP flagged missing `Strict-Transport-Security` header. Backend already had
+Helmet HSTS but only via the default (which adds `includeSubDomains`); the frontend
+`serve` static server emitted no HSTS at all.
+
+### Fix
+
+- `backend/server.js`: HSTS explicit/conservative — `{ maxAge: 31536000,
+  includeSubDomains: false, preload: false }`. Gated by a new `enableHsts` flag
+  (`ENABLE_HSTS=true` || `RAILWAY_ENVIRONMENT_NAME` || `RAILWAY_PROJECT_ID` ||
+  `NODE_ENV==='production'`) — decoupled from `APP_ENV` so it works on Railway while
+  `APP_ENV=staging` (production branch-safety blocker). Off in local dev unless `ENABLE_HSTS=true`.
+- `public/serve.json`: added `Strict-Transport-Security: max-age=31536000` header
+  (copied to `dist/` at build, applied by `serve -s dist` in prod). No subdomains, no preload.
+
+No auth/route/DB/Supabase/secret changes. `trust proxy` already set (line 42).
+
+---
+
 ## Backend-local copy of recommendationMap — fix Railway MODULE_NOT_FOUND — June 28, 2026
 
 ### Problem

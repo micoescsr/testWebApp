@@ -90,6 +90,16 @@ if (appEnv === 'production') {
   connectSources.push('http://localhost:*', 'ws://localhost:*');
 }
 
+// HSTS gate is independent of APP_ENV so it works on Railway even when
+// APP_ENV=staging (the production branch-safety blocker). Explicit ENABLE_HSTS
+// wins; Railway-injected vars / NODE_ENV=production are fallbacks. Stays off in
+// local dev unless ENABLE_HSTS=true.
+const enableHsts =
+  process.env.ENABLE_HSTS === 'true' ||
+  Boolean(process.env.RAILWAY_ENVIRONMENT_NAME) ||
+  Boolean(process.env.RAILWAY_PROJECT_ID) ||
+  process.env.NODE_ENV === 'production';
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -105,7 +115,11 @@ app.use(helmet({
       imgSrc:     ["'self'", "data:", "blob:"],
     },
   },
-  hsts: appEnv === 'production',
+  // HSTS gated by enableHsts (see above). Conservative: 1-year max-age, no
+  // includeSubDomains (Railway subdomains not all owned), no preload.
+  hsts: enableHsts
+    ? { maxAge: 31536000, includeSubDomains: false, preload: false }
+    : false,
 }));
 
 // ── CORS (Phase 4-A) ────────────────────────────────────────────────
