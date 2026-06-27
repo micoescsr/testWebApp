@@ -56,11 +56,12 @@ const Dashboard = () => {
         piStatus={piStatus}
       />
 
-      <DashboardBreadcrumb
-        isSummary={isSummary}
-        networkName={networkName}
-        onGoSummary={goSummary}
-      />
+      {!isSummary && (
+        <DashboardBreadcrumb
+          currentLabel={networkName}
+          onGoSummary={goSummary}
+        />
+      )}
 
       {loading && <Spinner label="Loading dashboard data..." />}
       {error && <p className="error-text">{error}</p>}

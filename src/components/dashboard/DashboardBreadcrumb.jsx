@@ -4,32 +4,31 @@
 // React state (useDashboard -> viewMode), not routing, so the breadcrumb is
 // derived from that state rather than the URL.
 //
-//   Summary view : Dashboard / Summary
-//   Network view : Dashboard / Summary / <NetworkName>   [← Back to Summary]
+// Only rendered on a network drill-down view (the caller gates on !isSummary).
+// Summary is the dashboard's starting point, so "Dashboard / Summary" alone is
+// redundant and not shown.
+//
+//   Dashboard / Summary / <NetworkName>   [← Back to Summary]
 //
 // "Dashboard" and "Summary" return to the Summary view. The trailing crumb is
-// the current location (non-interactive, highlighted). Drawer drill-downs keep
-// their own title + close button and are not reflected here.
+// the current location (non-interactive, highlighted, aria-current). Drawer
+// drill-downs keep their own title + close button and are not reflected here.
 import { ArrowLeft, CaretRight } from "@phosphor-icons/react";
 import "./DashboardBreadcrumb.css";
 
-const DashboardBreadcrumb = ({ isSummary, networkName, onGoSummary }) => {
+const DashboardBreadcrumb = ({ currentLabel, onGoSummary }) => {
   return (
     <div className="dash-breadcrumb-bar">
       <nav className="dash-breadcrumb" aria-label="Breadcrumb">
         <ol className="dash-crumb-list">
           <li className="dash-crumb">
-            {isSummary ? (
-              <span className="dash-crumb-text">Dashboard</span>
-            ) : (
-              <button
-                type="button"
-                className="dash-crumb-link"
-                onClick={onGoSummary}
-              >
-                Dashboard
-              </button>
-            )}
+            <button
+              type="button"
+              className="dash-crumb-link"
+              onClick={onGoSummary}
+            >
+              Dashboard
+            </button>
           </li>
 
           <li className="dash-crumb-sep" aria-hidden="true">
@@ -37,46 +36,31 @@ const DashboardBreadcrumb = ({ isSummary, networkName, onGoSummary }) => {
           </li>
 
           <li className="dash-crumb">
-            {isSummary ? (
-              <span className="dash-crumb-current" aria-current="page">
-                Summary
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="dash-crumb-link"
-                onClick={onGoSummary}
-              >
-                Summary
-              </button>
-            )}
+            <button
+              type="button"
+              className="dash-crumb-link"
+              onClick={onGoSummary}
+            >
+              Summary
+            </button>
           </li>
 
-          {!isSummary && (
-            <>
-              <li className="dash-crumb-sep" aria-hidden="true">
-                <CaretRight size={12} weight="bold" />
-              </li>
-              <li className="dash-crumb">
-                <span className="dash-crumb-current" aria-current="page">
-                  {networkName || "Network"}
-                </span>
-              </li>
-            </>
-          )}
+          <li className="dash-crumb-sep" aria-hidden="true">
+            <CaretRight size={12} weight="bold" />
+          </li>
+
+          <li className="dash-crumb">
+            <span className="dash-crumb-current" aria-current="page">
+              {currentLabel || "Network"}
+            </span>
+          </li>
         </ol>
       </nav>
 
-      {!isSummary && (
-        <button
-          type="button"
-          className="dash-back-btn"
-          onClick={onGoSummary}
-        >
-          <ArrowLeft size={14} weight="bold" />
-          Back to Summary
-        </button>
-      )}
+      <button type="button" className="dash-back-btn" onClick={onGoSummary}>
+        <ArrowLeft size={14} weight="bold" />
+        Back to Summary
+      </button>
     </div>
   );
 };

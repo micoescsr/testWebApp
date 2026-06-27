@@ -22,14 +22,16 @@ network combobox could return them to Summary.
 ### Fix
 
 - New `src/components/dashboard/DashboardBreadcrumb.jsx` (+ `.css`): state-derived
-  path nav. Renders `Dashboard / Summary` on the summary view and
-  `Dashboard / Summary / <NetworkName>` on a network view. "Dashboard" and "Summary"
-  are buttons that return to Summary; the trailing crumb is the current location
-  (`aria-current="page"`, brighter/heavier). A `← Back to Summary` button shows only
-  in network view. `<nav aria-label="Breadcrumb">` + `<ol>`, keyboard/focus-visible.
+  path nav, rendered only on a network drill-down view. Shows
+  `Dashboard / Summary / <NetworkName>`. "Dashboard" and "Summary" are buttons that
+  return to Summary; the trailing crumb is the current location (`aria-current="page"`,
+  brighter/heavier). A `← Back to Summary` button sits alongside.
+  `<nav aria-label="Breadcrumb">` + `<ol>`, keyboard/focus-visible.
 - `src/pages/Dashboard/Dashboard.jsx`: mounts the breadcrumb directly below
-  `DashboardHeader`. Derives `networkName` via the existing `groupNetworksBySsid`
-  util (matches the combobox label) and wires `onGoSummary` to `setViewMode("Summary")`.
+  `DashboardHeader`, gated on `!isSummary` — the Summary view (the dashboard's
+  starting point) renders no breadcrumb/back button so cards sit directly under the
+  header. Derives `networkName` via the existing `groupNetworksBySsid` util (matches
+  the combobox label) and wires `onGoSummary` to `setViewMode("Summary")`.
 
 ### Scope notes
 
