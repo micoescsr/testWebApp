@@ -1,0 +1,111 @@
+/* components/dashboard/DashboardBreadcrumb.css
+   Path nav + back button. Sits between the dashboard header and content.
+   Tokens mirror the rest of the dashboard so it inherits the dark theme. */
+
+.dash-breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--section-gap);
+}
+
+.dash-breadcrumb {
+  min-width: 0;
+}
+
+.dash-crumb-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-crumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.dash-crumb-sep {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+/* Static, non-link crumb (e.g. "Dashboard" while on Summary). */
+.dash-crumb-text {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Clickable crumb -> returns to Summary. */
+.dash-crumb-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease;
+}
+
+.dash-crumb-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.dash-crumb-link:focus-visible {
+  outline: 2px solid var(--accent, var(--text-primary));
+  outline-offset: 2px;
+}
+
+/* Current location: brighter + heavier so users see where they are. */
+.dash-crumb-current {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+/* Back button */
+.dash-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dash-back-btn:hover {
+  background-color: var(--surface-3, var(--surface-1));
+  color: var(--text-primary);
+}
+
+.dash-back-btn:focus-visible {
+  outline: 2px solid var(--accent, var(--text-primary));
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .dash-back-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}

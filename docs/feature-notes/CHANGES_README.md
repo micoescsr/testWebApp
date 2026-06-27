@@ -10,6 +10,35 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Dashboard breadcrumb + Back button — June 28, 2026
+
+### Problem
+
+Dashboard switches between the Summary view and a per-network drill-down view via
+React state (`useDashboard` → `viewMode`), with no routing. When a user opened a
+network there was no visible "where am I / how do I get back" affordance — only the
+network combobox could return them to Summary.
+
+### Fix
+
+- New `src/components/dashboard/DashboardBreadcrumb.jsx` (+ `.css`): state-derived
+  path nav. Renders `Dashboard / Summary` on the summary view and
+  `Dashboard / Summary / <NetworkName>` on a network view. "Dashboard" and "Summary"
+  are buttons that return to Summary; the trailing crumb is the current location
+  (`aria-current="page"`, brighter/heavier). A `← Back to Summary` button shows only
+  in network view. `<nav aria-label="Breadcrumb">` + `<ol>`, keyboard/focus-visible.
+- `src/pages/Dashboard/Dashboard.jsx`: mounts the breadcrumb directly below
+  `DashboardHeader`. Derives `networkName` via the existing `groupNetworksBySsid`
+  util (matches the combobox label) and wires `onGoSummary` to `setViewMode("Summary")`.
+
+### Scope notes
+
+- Stat-card / panel drill-downs (Open Networks, Encrypted, Vulns/Threats, Clients,
+  Severity by Kind, Networks by Encryption) open `DashboardDetailDrawer` overlays
+  (own title + close) — Summary stays mounted, so they are intentionally NOT in the
+  breadcrumb. Only the real `viewMode` switch (network view) is reflected.
+- Presentation-only change; no business logic, data, or backend contract touched.
+
 ## HSTS header on both services — fix ZAP "Strict-Transport-Security Header Not Set" — June 28, 2026
 
 ### Problem
