@@ -10,6 +10,32 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Device Management AP/risk follow-up — live override + always-on poll — June 29, 2026
+
+Follow-up to the BUG-1/BUG-3 fix below; first pass didn't fully hold in testing.
+All changes in `src/hooks/useDevice.js`; no backend/AP-control/portal changes.
+
+- BUG-1 (toggle still showed enabled): the post-`await` guard in
+  `reconcileLiveAp` relied on `mountedRef`, which dev/StrictMode double-mount
+  left `false` (cleanup ran, never re-armed) → reconciliation silently no-oped.
+  Now re-arm `mountedRef.current = true` on mount.
+- BUG-1 (clobber): live-"off" is now a separate `liveApConfirmedOff` override
+  instead of mutating `apEnabled`, so the periodic DB poll can refresh
+  `apEnabled` without re-showing a stale ON. Effective toggle =
+  `apEnabled && !liveApConfirmedOff`; reconciler sets the override from live
+  `DISABLED`/`ENABLED` (downgrade-only; UNKNOWN/transitioning leave it as-is).
+  Toggle/`effectiveAccessPoint`/`handleUpdatePortal` use the effective value;
+  user-initiated toggle clears the override.
+- BUG-3 (risk lag): the low-frequency admin-state poll now runs whenever the
+  page is open (was AP-enabled-only), so a risk change landing *after* mount
+  (detection auto-start / threat elevation) is reflected without a refocus.
+  DB-only `fetchAdminState` at the existing 12s interval; live AP still
+  reconciled separately on mount/focus.
+
+Verified: `src/hooks/useDevice.js` eslint clean.
+
+---
+
 ## Device Management AP-state reconciliation + risk refresh (BUG-1, BUG-3) — June 29, 2026
 
 Fixed two Device Management bugs where the page trusted stale DB state instead of

@@ -21,6 +21,15 @@ export const useDevice = (networkId, scanId) => {
   const [apEnabled, setApEnabled] = useState(false);
   const [portalInitialized, setPortalInitialized] = useState(false);
 
+  // BUG-1: live-AP reconciliation override. The DB `ap_enabled` is an intent
+  // flag refreshed freely by polling; this separate flag records when the live
+  // device (/ap/poll) clearly reports the AP is OFF, so a stale DB `true` can't
+  // re-show "enabled" between reconciliations. Downgrade-only, never auto-ON.
+  const [liveApConfirmedOff, setLiveApConfirmedOff] = useState(false);
+
+  // Effective toggle state = DB intent AND not contradicted by live "off".
+  const effectiveApEnabled = apEnabled && !liveApConfirmedOff;
+
   // UI states
   const [loading, setLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
@@ -90,9 +99,13 @@ export const useDevice = (networkId, scanId) => {
       const res = await pollApLive();
       const live = res?.data;
       if (!mountedRef.current) return;
-      if (live?.ok && live.ap_status === 'DISABLED' && !live.is_transitioning) {
-        setApEnabled(false);
+      if (!live?.ok) return; // unreachable / not ok — keep DB value, no flip
+      if (live.ap_status === 'DISABLED') {
+        setLiveApConfirmedOff(true);   // live confirms off → suppress stale ON
+      } else if (live.ap_status === 'ENABLED') {
+        setLiveApConfirmedOff(false);  // live confirms on → clear any override
       }
+      // UNKNOWN / TRANSITIONING → leave override unchanged
     } catch {
       // Live unreachable — keep DB value, do not flip the toggle.
     }
@@ -138,8 +151,12 @@ export const useDevice = (networkId, scanId) => {
     };
   }, [networkId, fetchAdminState, reconcileLiveAp]);
 
-  // Cleanup reconciliation timers on unmount
+  // Cleanup reconciliation timers on unmount.
+  // Reset mountedRef on (re)mount too — StrictMode/dev double-mounts run the
+  // cleanup once, and without re-arming this flag the post-await guards in the
+  // async effects (e.g. reconcileLiveAp) would silently no-op on remount.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       reconcilingTimersRef.current.forEach(t => clearTimeout(t));
@@ -147,9 +164,12 @@ export const useDevice = (networkId, scanId) => {
     };
   }, []);
 
-  // ─── Low-frequency poll when AP is enabled ───────────────────
-  // Keeps risk badge, portal_out_of_date, and scan freshness current
-  // without requiring user interaction. Stops when AP is off or unmounted.
+  // ─── Low-frequency admin-state poll ──────────────────────────
+  // Keeps risk badge, portal_out_of_date, and scan freshness current without
+  // user interaction. Runs whenever the page is open — not only when the AP is
+  // on — so a scan/threat that changes risk *after* mount is reflected while the
+  // user stays on the page (BUG-3). DB-only (cheap state endpoint); live AP is
+  // reconciled separately on mount/focus, so this poll can't clobber the toggle.
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -160,7 +180,7 @@ export const useDevice = (networkId, scanId) => {
     }
 
     // Suspend normal polling during timeout reconciliation or active async job
-    if (apEnabled && networkId && !isReconcilingToggle && !isJobActive) {
+    if (networkId && !isReconcilingToggle && !isJobActive) {
       pollRef.current = setInterval(() => {
         fetchAdminState();
       }, STATE_POLL_INTERVAL);
@@ -172,7 +192,7 @@ export const useDevice = (networkId, scanId) => {
         pollRef.current = null;
       }
     };
-  }, [apEnabled, networkId, fetchAdminState, isReconcilingToggle, isJobActive]);
+  }, [networkId, fetchAdminState, isReconcilingToggle, isJobActive]);
 
   // ─── Async job: clear all job state ────────────────────────────
   const clearJobState = useCallback(() => {
@@ -307,7 +327,7 @@ export const useDevice = (networkId, scanId) => {
 
   // ─── Portal update helper (for "Update Portal" button) ───────
   const handleUpdatePortal = async () => {
-    if (!networkId || !apEnabled) return;
+    if (!networkId || !effectiveApEnabled) return;
     try {
       setLoading(true);
       setError(null);
@@ -400,14 +420,16 @@ export const useDevice = (networkId, scanId) => {
 
   // ─── Toggle AP → sends only IDs + password to backend ────────
   const handleToggleAccessPoint = async (apPassword = "") => {
-    const nextState = !apEnabled;
+    const nextState = !effectiveApEnabled;
     const apStatus = nextState ? "enable" : "disable";
 
     // Clear previous scan errors
     setScanError(null);
 
-    // Optimistic UI flip
+    // Optimistic UI flip. Clear the live-off override so an intentional
+    // user action isn't suppressed by a prior live reconciliation.
     setApEnabled(nextState);
+    setLiveApConfirmedOff(false);
     setLoading(true);
     setError(null);
 
@@ -584,7 +606,7 @@ export const useDevice = (networkId, scanId) => {
   };
 
   // ─── Effective access-point object for the panel ──────────────
-  const effectiveAccessPoint = apEnabled
+  const effectiveAccessPoint = effectiveApEnabled
     ? {
         currentNetwork: networkConfig.ssid || "N/A",
         accessPointNetwork: networkConfig.ssid || "N/A",
