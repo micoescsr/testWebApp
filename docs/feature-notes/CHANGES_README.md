@@ -10,6 +10,29 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Dashboard metric-drawer filter/sort controls — June 29, 2026
+
+Added compact, local filter + sort controls inside the four list-type dashboard
+metric drawers. No layout, routing, or backend changes; filtering is local to the
+open drawer and does not affect summary totals. Aggregate drawers
+(`encryptionDist`, `severityKind`) are unchanged (distributions, not record lists).
+
+- `src/utils/drawerFilters.js` (new): pure config-driven engine — `filterAndSort`,
+  `activeFilterCount`, `distinctOptions`, `riskLevelOptions`, plus `severityRank`
+  and `encryptionRank` (keyword-based "weakest security first" ordering).
+- `src/components/dashboard/DrawerFilterBar.jsx` + `.css` (new): reusable,
+  token-styled toolbar (search box, filter dropdowns, sort dropdown, active-count
+  + clear button). Sized for the 440px drawer; all controls labelled.
+- `src/components/dashboard/SummaryDetailContent.jsx`: wired the toolbar into the
+  `open` / `encrypted` / `clients` / `findings` drawers via per-type configs.
+  Findings buckets are flattened into one filterable list (category preserved as
+  a filter + row sub-line). Filters reset on metric switch (render-time reset,
+  not an effect). Filtered-empty state added.
+  - Defaults: open = risk desc; encrypted = weakest security first → risk desc;
+    clients = clients desc; findings = severity desc → CVSS desc.
+  - Skipped (fields absent from summary payload): WPS/PMF status, finding
+    timestamps. No backend change required.
+
 ## Bug-hunt pass: 404 route, updateUser self-protection, effect deps — June 28, 2026
 
 ### BUG-01 — blank screen on unknown authenticated path
