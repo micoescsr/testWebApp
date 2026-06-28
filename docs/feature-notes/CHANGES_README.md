@@ -10,6 +10,36 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Device Management AP-state reconciliation + risk refresh (BUG-1, BUG-3) — June 29, 2026
+
+Fixed two Device Management bugs where the page trusted stale DB state instead of
+live device/scan truth. Scope-limited to AP-state display and admin-state refresh;
+no AP control behavior, DB writes, or portal cooldown/auto-patch logic changed.
+(BUG-2 "portal out of date" intentionally deferred — observe after these land.)
+
+- `backend/routes/deviceMgmtRoutes.js` (`GET /api/device/ap-live`): the normalizer
+  ignored the real Pi `/ap/poll` envelope shape `{ ap_up, ap: { ap_mode, ... } }`
+  and read only non-existent `ap_status`/`ap_enabled`, so it always returned
+  `UNKNOWN`. Now derives `ap_status` from `ap_up` (coarse, primary) then
+  `ap.ap_mode` (detailed), with the prior string/bool fields kept as fallbacks.
+  Response contract unchanged (`ap_status` enum). Also makes the async job-confirm
+  live poll actually confirm instead of timing out.
+- `src/hooks/useDevice.js` (BUG-1): added `reconcileLiveAp()` — on mount, after
+  `fetchAdminState`, calls existing `pollApLive()`; if live clearly reports
+  `DISABLED` (not transitioning), downgrades the local toggle so the UI and
+  AP-dependent banners stop trusting a stale `ap_enabled=true`. Downgrade-only:
+  no DB write, no enable/disable control call, no physical AP change; ambiguous
+  results (UNKNOWN/transitioning/unreachable) leave the DB value untouched.
+- `src/hooks/useDevice.js` (BUG-3): added a `focus` / `visibilitychange` listener
+  that re-runs `fetchAdminState` (then `reconcileLiveAp`) even when the AP is off,
+  so Risk Level refreshes after a scan when the page is already open or the user
+  returns to the tab. Reuses existing fetch; no new polling loop.
+
+Verified: `backend` jest `deviceMgmt` suite 27/27 pass (incl. ap-live
+ENABLED/DISABLED/UNKNOWN); `src/hooks/useDevice.js` eslint clean.
+
+---
+
 ## Dashboard metric-drawer filter/sort controls — June 29, 2026
 
 Added compact, local filter + sort controls inside the four list-type dashboard

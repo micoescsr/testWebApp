@@ -1334,18 +1334,31 @@ router.get('/ap-live', authJWT, requireActiveProfile, requireAAL2, async (req, r
 			});
 		}
 
-		// Normalize AP status from upstream fields
+		// Normalize AP status from upstream fields.
+		// The Pi /ap/poll envelope is { status, ts, ap_up, ap: { ap_mode, link_up, ... } }
+		// — it has no top-level ap_status/ap_enabled, so `ap_up` (coarse) and
+		// `ap.ap_mode` (detailed) are the authoritative on/off signals. Legacy
+		// string/boolean fields are kept as fallbacks for other response shapes.
 		let apStatus = 'UNKNOWN';
-		const rawApStatus = (piData.ap_status || piData.ap_enabled || '').toString().toLowerCase();
+		const ap = piData.ap || {};
+		const rawApStatus = (piData.ap_status || '').toString().toLowerCase();
 		const rawUplink = piData.uplink || {};
 		const uplinkConnected = (rawUplink.status || '').toLowerCase() === 'connected';
 
-		if (rawApStatus === 'enabled' || rawApStatus === 'on' || rawApStatus === 'true' || piData.ap_enabled === true) {
+		if (rawApStatus === 'transitioning' || rawApStatus === 'starting' || rawApStatus === 'stopping') {
+			apStatus = 'TRANSITIONING';
+		} else if (piData.ap_up === true) {
+			apStatus = 'ENABLED';
+		} else if (piData.ap_up === false) {
+			apStatus = 'DISABLED';
+		} else if (ap.ap_mode === true) {
+			apStatus = 'ENABLED';
+		} else if (ap.ap_mode === false) {
+			apStatus = 'DISABLED';
+		} else if (rawApStatus === 'enabled' || rawApStatus === 'on' || rawApStatus === 'true' || piData.ap_enabled === true) {
 			apStatus = 'ENABLED';
 		} else if (rawApStatus === 'disabled' || rawApStatus === 'off' || rawApStatus === 'false' || piData.ap_enabled === false) {
 			apStatus = 'DISABLED';
-		} else if (rawApStatus === 'transitioning' || rawApStatus === 'starting' || rawApStatus === 'stopping') {
-			apStatus = 'TRANSITIONING';
 		}
 
 		const isTransitioning = apStatus === 'TRANSITIONING';

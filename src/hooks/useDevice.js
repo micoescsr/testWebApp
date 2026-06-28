@@ -76,12 +76,67 @@ export const useDevice = (networkId, scanId) => {
     }
   }, [networkId]);
 
-  // On mount: fetch config + admin state
+  // ─── BUG-1: reconcile DB intent flag with live AP truth ──────
+  // The DB `ap_enabled` is a last-applied INTENT flag, not live device
+  // state. If the device (via /ap/poll → /device/ap-live) clearly reports
+  // the AP is OFF, trust live and downgrade the local toggle so the UI
+  // doesn't lie (and AP-dependent banners like "portal out of date" stay
+  // hidden). Downgrade-only: never claims enabled, never writes the DB,
+  // never calls enable/disable control endpoints. Ambiguous live results
+  // (UNKNOWN / transitioning / unreachable) leave the DB value untouched.
+  const reconcileLiveAp = useCallback(async () => {
+    if (!networkId) return;
+    try {
+      const res = await pollApLive();
+      const live = res?.data;
+      if (!mountedRef.current) return;
+      if (live?.ok && live.ap_status === 'DISABLED' && !live.is_transitioning) {
+        setApEnabled(false);
+      }
+    } catch {
+      // Live unreachable — keep DB value, do not flip the toggle.
+    }
+  }, [networkId]);
+
+  // On mount: fetch config + admin state, then reconcile against live AP
   useEffect(() => {
+    let cancelled = false;
     fetchNetworkConfig();
-    fetchAdminState();
     setScanError(null);
-  }, [fetchNetworkConfig, fetchAdminState]);
+    (async () => {
+      await fetchAdminState();
+      if (cancelled) return;
+      await reconcileLiveAp();
+    })();
+    return () => { cancelled = true; };
+  }, [fetchNetworkConfig, fetchAdminState, reconcileLiveAp]);
+
+  // ─── BUG-3: refresh admin state on tab focus / visibility ────
+  // The AP-enabled poll below only runs when the AP is on. When the AP is
+  // off (normal after a fresh scan), nothing re-fetches risk/portal state.
+  // Refresh on focus/visibility so the Risk Level reflects the latest scan
+  // when the user returns to the page. Reconcile live AP again afterward so
+  // the focus refresh doesn't re-show a stale `ap_enabled=true`.
+  useEffect(() => {
+    if (!networkId) return;
+
+    const refresh = async () => {
+      await fetchAdminState();
+      if (!mountedRef.current) return;
+      await reconcileLiveAp();
+    };
+    const onFocus = () => { refresh(); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [networkId, fetchAdminState, reconcileLiveAp]);
 
   // Cleanup reconciliation timers on unmount
   useEffect(() => {
