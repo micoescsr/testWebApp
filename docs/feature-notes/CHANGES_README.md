@@ -10,6 +10,28 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Report export Chrome formatting fix + chart fallback (RPT-EXPORT-001) — June 29, 2026
+
+Frontend-only. No API/backend changes. Fixes both Summary/Overall and per-network exports.
+
+- Root cause: `exportReport()` used `window.open("")` + `document.write()`. The
+  resulting `about:blank` document inherits the opener's CSP. In production/preview
+  the CSP is strict (`style-src 'self'`, `script-src 'self'`), so the report's
+  inline `<style>` and inline/CDN `<script>` were blocked — Chrome rendered raw
+  default HTML (Times New Roman, no layout, no charts). Dev worked because devCsp
+  allows `'unsafe-inline'`.
+- `src/utils/exportReport.js`: now builds a `Blob` and opens a `blob:` URL. A
+  blob document has no CSP, so the self-contained HTML (inline CSS + Plotly)
+  renders correctly. Revokes the object URL after print.
+- `src/utils/reportTemplates.js`: hardened `sharedCSS` print block — `@page { size:A4 }`,
+  `break-inside: avoid` on cards/tables/sections, `print-color-adjust: exact`
+  (+`-webkit-`) so badges/backgrounds print, table word-wrapping.
+- Chart fallback (shared): new `chartContainer()` seeds each chart div with a
+  print-friendly note ("Chart unavailable. Please check the tabular findings
+  below."); new `safePlot()` wrapper replaces `Plotly.newPlot` calls and restores
+  the note if Plotly is unavailable or a render throws. CDN kept as-is; no local
+  bundling. Tables/text remain source of truth.
+
 ## SAM + Device Management UI/timestamp fixes (BUG-A..E) — June 29, 2026
 
 Frontend-only. No API contract, backend, or AP control-flow changes.

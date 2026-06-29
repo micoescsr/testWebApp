@@ -62,7 +62,47 @@ tbody tr:hover { background: #f7fafc; }
 .status-high { background: #ed8936; }
 .status-medium { background: #ecc94b; }
 .status-low { background: #48bb78; }
-@media print { .report-container { max-width: 100%; } .section { page-break-inside: avoid; } }
+.chart-fallback { display: flex; align-items: center; justify-content: center; min-height: 120px; padding: 20px; text-align: center; color: #4a5568; font-size: 0.95em; font-style: italic; background: #f7fafc; border: 1px dashed #cbd5e0; border-radius: 8px; }
+img, svg, .js-plotly-plot { max-width: 100%; }
+td, th { word-break: break-word; overflow-wrap: anywhere; }
+@page { size: A4; margin: 14mm; }
+@media print {
+  body { background: #fff; }
+  .report-container { max-width: 100%; padding: 0; }
+  .cover-page, .section, table, tr, .summary-card, .risk-band, .info-box, .rec-list li { break-inside: avoid; page-break-inside: avoid; }
+  .section h2, .section h3 { break-after: avoid; page-break-after: avoid; }
+  thead { display: table-header-group; }
+  /* Force background colors/badges to print even when "Background graphics" is off-by-default. */
+  .cover-page, .summary-card, .risk-gauge, .risk-gauge-large, .severity-badge, .badge-none,
+  .info-box, .risk-band, .rec-list li, thead, .status-indicator {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+`;
+
+// ─── Chart fallback (shared) ────────────────────────────────────
+// Default content placed inside every chart container. If Plotly loads and
+// renders, newPlot() replaces this content. If the CDN is blocked/offline or a
+// render throws, the print-friendly note remains instead of a blank area.
+const CHART_FALLBACK_MSG = "Chart unavailable. Please check the tabular findings below.";
+
+function chartContainer(id, style) {
+  return `<div id="${id}" style="${style}"><div class="chart-fallback">${CHART_FALLBACK_MSG}</div></div>`;
+}
+
+// Safe wrapper around Plotly.newPlot — restores the fallback note on any failure.
+// Injected once into each report's <script> block.
+const chartHelperScript = `
+function safePlot(id, traces, layout){
+  var el = document.getElementById(id);
+  if(!el) return;
+  try {
+    if (typeof Plotly === "undefined") throw new Error("Plotly unavailable");
+    Plotly.newPlot(id, traces, layout);
+  } catch (e) {
+    el.innerHTML = '<div class="chart-fallback">${CHART_FALLBACK_MSG}</div>';
+  }
+}
 `;
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -272,7 +312,7 @@ export function generateOverallReportHTML(d) {
   <!-- ENVIRONMENT OVERVIEW -->
   <div class="section">
     <h2>Environment Overview</h2>
-    <div id="clients-per-ssid" style="width:100%;max-width:800px;height:300px;"></div>
+    ${chartContainer("clients-per-ssid", "width:100%;max-width:800px;height:300px;")}
     <h3>Detected Networks</h3>
     <table>
       <thead><tr><th>SSID</th><th>BSSID</th><th>Channel</th><th>Encryption</th><th>Clients</th></tr></thead>
@@ -288,7 +328,7 @@ export function generateOverallReportHTML(d) {
   <!-- RISK DISTRIBUTION -->
   <div class="section">
     <h2>Risk Distribution</h2>
-    <div id="findings-by-severity" style="width:100%;max-width:800px;height:300px;"></div>
+    ${chartContainer("findings-by-severity", "width:100%;max-width:800px;height:300px;")}
     <h3>Vulnerabilities vs Threats</h3>
     <table>
       <thead><tr><th>Severity</th><th>Vulnerabilities</th><th>Threats</th><th>Total</th></tr></thead>
@@ -303,8 +343,8 @@ export function generateOverallReportHTML(d) {
       <thead><tr><th>SSID</th><th>Risk %</th><th>Risk Label</th><th># Findings</th><th>Clients</th></tr></thead>
       <tbody>${nets.map(n => `<tr><td>${n.ssid}</td><td>${n.riskPercent}%</td><td>${severityBadge(n.riskLabel)}</td><td>${n.findings}</td><td>${n.clients}</td></tr>`).join("")}</tbody>
     </table>
-    <div id="risk-trend" style="width:100%;max-width:800px;height:300px;"></div>
-    <div id="risk-by-ssid" style="width:100%;max-width:800px;height:300px;margin-bottom:20px;"></div>
+    ${chartContainer("risk-trend", "width:100%;max-width:800px;height:300px;")}
+    ${chartContainer("risk-by-ssid", "width:100%;max-width:800px;height:300px;margin-bottom:20px;")}
   </div>
 
   <!-- DETAILED FINDINGS -->
@@ -359,17 +399,18 @@ export function generateOverallReportHTML(d) {
 
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"><\/script>
 <script>
+${chartHelperScript}
 // Clients per SSID
-Plotly.newPlot("clients-per-ssid",[{x:${clientsPerSSID_X},y:${clientsPerSSID_Y},type:"bar",text:${clientsPerSSID_Y},textposition:"auto"}],{title:"Clients per SSID",yaxis:{title:"Number of clients"}});
+safePlot("clients-per-ssid",[{x:${clientsPerSSID_X},y:${clientsPerSSID_Y},type:"bar",text:${clientsPerSSID_Y},textposition:"auto"}],{title:"Clients per SSID",yaxis:{title:"Number of clients"}});
 
 // Risk % by SSID
-Plotly.newPlot("risk-by-ssid",[{x:${riskBySSID_X},y:${riskBySSID_Y},type:"bar",text:${riskBySSID_Y}.map(v=>v+"%"),textposition:"auto",marker:{color:${riskBySSID_Colors}}}],{title:"Risk Percentage by SSID",yaxis:{title:"Risk score (%)"}});
+safePlot("risk-by-ssid",[{x:${riskBySSID_X},y:${riskBySSID_Y},type:"bar",text:${riskBySSID_Y}.map(v=>v+"%"),textposition:"auto",marker:{color:${riskBySSID_Colors}}}],{title:"Risk Percentage by SSID",yaxis:{title:"Risk score (%)"}});
 
 // Findings by Severity
-Plotly.newPlot("findings-by-severity",[{x:${sevLabels},y:${sevVulns},name:"Vulnerabilities",type:"bar"},{x:${sevLabels},y:${sevThreats},name:"Threats",type:"bar"},{x:${sevLabels},y:${sevTotals},name:"Total",type:"bar"}],{title:"Findings by Severity",barmode:"group",yaxis:{title:"Count"}});
+safePlot("findings-by-severity",[{x:${sevLabels},y:${sevVulns},name:"Vulnerabilities",type:"bar"},{x:${sevLabels},y:${sevThreats},name:"Threats",type:"bar"},{x:${sevLabels},y:${sevTotals},name:"Total",type:"bar"}],{title:"Findings by Severity",barmode:"group",yaxis:{title:"Count"}});
 
 // Risk Trend
-Plotly.newPlot("risk-trend",[${trendTraces}],{title:"Risk Score Trend Over Time",xaxis:{title:"Scan date/time"},yaxis:{title:"Risk score"}});
+safePlot("risk-trend",[${trendTraces}],{title:"Risk Score Trend Over Time",xaxis:{title:"Scan date/time"},yaxis:{title:"Risk score"}});
 <\/script>
 </body></html>`;
 }
@@ -471,7 +512,7 @@ export function generatePerNetworkReportHTML(d) {
     <div class="info-box warning">
       <p><strong>Summary:</strong> This network has <strong>${totalCritical} critical</strong> and <strong>${totalHigh} high</strong> severity findings. ${net.encryption === "Open" ? "The open encryption configuration exposes all client traffic to interception, and active attack indicators suggest ongoing threat activity." : "Active attack indicators suggest ongoing threat activity."}</p>
     </div>
-    <div id="finding-severity-bar" style="width:100%;max-width:800px;height:300px;margin:20px auto 0;"></div>
+    ${chartContainer("finding-severity-bar", "width:100%;max-width:800px;height:300px;margin:20px auto 0;")}
   </div>
 
   <!-- FINDING DETAILS -->
@@ -505,7 +546,7 @@ export function generatePerNetworkReportHTML(d) {
       <thead><tr><th>Scan Date</th><th>Scan Time</th><th>Risk Score</th><th>Risk Level</th></tr></thead>
       <tbody>${trend.map(t => `<tr><td>${t.date}</td><td>${t.time}</td><td>${t.score}</td><td>${severityBadge(t.level)}</td></tr>`).join("")}</tbody>
     </table>
-    <div id="risk-trend-line" style="width:100%;max-width:800px;height:300px;margin:20px auto;"></div>
+    ${chartContainer("risk-trend-line", "width:100%;max-width:800px;height:300px;margin:20px auto;")}
     <div class="info-box warning">
       <p><strong>Trend Analysis:</strong> Risk score increased from ${trend[0]?.score} to ${trend[trend.length - 1]?.score} over the assessment period, indicating security changes over time.</p>
     </div>
@@ -526,11 +567,12 @@ export function generatePerNetworkReportHTML(d) {
 
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"><\/script>
 <script>
+${chartHelperScript}
 // Finding severity bar
-Plotly.newPlot("finding-severity-bar",[{x:${findingSevX},y:${findingSevY},type:"bar",text:${findingSevY},textposition:"auto"}],{title:"Findings by Severity (This Network)",yaxis:{title:"Count"}});
+safePlot("finding-severity-bar",[{x:${findingSevX},y:${findingSevY},type:"bar",text:${findingSevY},textposition:"auto"}],{title:"Findings by Severity (This Network)",yaxis:{title:"Count"}});
 
 // Risk trend line
-Plotly.newPlot("risk-trend-line",[{x:${trendDates},y:${trendScores},mode:"lines+markers",name:"Risk Score"}],{title:"Risk Score Trend Over Time",xaxis:{title:"Scan date/time"},yaxis:{title:"Risk score"}});
+safePlot("risk-trend-line",[{x:${trendDates},y:${trendScores},mode:"lines+markers",name:"Risk Score"}],{title:"Risk Score Trend Over Time",xaxis:{title:"Scan date/time"},yaxis:{title:"Risk score"}});
 <\/script>
 </body></html>`;
 }
