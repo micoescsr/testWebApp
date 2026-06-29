@@ -141,12 +141,71 @@ describe("POST /api/detect/stop — stopDetection", () => {
 
   test("stops detection and returns state", async () => {
     mockDetectService.stop.mockResolvedValueOnce({ status: "IDLE", active_scan_id: null, active_network_id: null });
+    piFetch.mockResolvedValueOnce({ ok: true, status: 200, data: {} });
     const res = await request(app)
       .post("/api/detect/stop")
       .set("Authorization", AUTH)
       .send({ reason_code: "MAINTENANCE" });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("IDLE");
+  });
+
+  test("calls Pi /detect/control with disable payload and surfaces success", async () => {
+    mockDetectService.stop.mockResolvedValueOnce({ status: "IDLE", active_scan_id: null, active_network_id: "net-1" });
+    piFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { detection_stopped: true, thread_exited: true, was_running: true, queue_drained: true, running: false },
+    });
+
+    const res = await request(app)
+      .post("/api/detect/stop")
+      .set("Authorization", AUTH)
+      .send({ reason_code: "MAINTENANCE" });
+
+    expect(res.status).toBe(200);
+    expect(piFetch).toHaveBeenCalledWith(
+      "/detect/control",
+      expect.objectContaining({
+        method: "POST",
+        jsonBody: { action: "disable", drain_queue: true },
+      }),
+    );
+    expect(res.body.pi_control).toEqual(
+      expect.objectContaining({ ok: true, detection_stopped: true, thread_exited: true }),
+    );
+  });
+
+  test("Pi /detect/control non-OK does not break the stop flow and is surfaced", async () => {
+    mockDetectService.stop.mockResolvedValueOnce({ status: "IDLE", active_scan_id: null, active_network_id: "net-1" });
+    piFetch.mockResolvedValueOnce({ ok: false, status: 429, data: null });
+
+    const res = await request(app)
+      .post("/api/detect/stop")
+      .set("Authorization", AUTH)
+      .send({ reason_code: "MAINTENANCE" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("IDLE");
+    expect(res.body.pi_control).toEqual(
+      expect.objectContaining({ ok: false, status: 429, error: "device_control_failed" }),
+    );
+  });
+
+  test("Pi /detect/control unreachable does not crash the stop flow", async () => {
+    mockDetectService.stop.mockResolvedValueOnce({ status: "IDLE", active_scan_id: null, active_network_id: "net-1" });
+    piFetch.mockRejectedValueOnce(new Error("network down"));
+
+    const res = await request(app)
+      .post("/api/detect/stop")
+      .set("Authorization", AUTH)
+      .send({ reason_code: "MAINTENANCE" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("IDLE");
+    expect(res.body.pi_control).toEqual(
+      expect.objectContaining({ ok: false, error: "device_unreachable" }),
+    );
   });
 });
 

@@ -10,6 +10,34 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Stop Detection actually stops the Pi detector (SAM-BUGFIX-002) — June 30, 2026
+
+Backend-only. Frontend unchanged — still calls `POST /api/detect/stop`.
+
+- Root cause: the web-app stop flow only transitioned `detection_state` to
+  `STOPPED` in our DB; it never told the Pi to stop, so the FastAPI detector
+  thread kept running (and its queue was never drained). `/detect/control` —
+  the documented Pi control endpoint — was unused.
+- `backend/controllers/detectController.js`: after the governed DB stop, the
+  controller now calls the Pi via `piFetch("/detect/control", { method:"POST",
+  jsonBody:{ action:"disable", drain_queue:true } })` (signed server-side, per
+  `API_PY_AND_PUBLIC_PROXY_CONTEXT.md`). New `stopPiDetection()` helper never
+  throws — timeout / 429 / non-2xx / logical error / network failure all map to
+  a safe status object. Single attempt, 8s timeout, no aggressive retry.
+- Best-effort but visible: result returned as an additive `pi_control` field on
+  the stop response (existing callers that ignore it are unaffected). On Pi
+  failure a `DETECTION.STOP` audit event (status FAILED, `meta.stage:"pi_control"`)
+  is written so the failure isn't buried in logs.
+- `pi_control` shape: success → `{ ok:true, status, detection_stopped,
+  thread_exited, was_running, queue_drained, running }`; failure →
+  `{ ok:false, status, error }` where error ∈
+  `device_control_failed | device_control_rejected | device_unreachable`.
+- Tests: `backend/__tests__/integration/detectController.test.js` adds disable-payload
+  assertion + Pi success/non-OK/unreachable cases. No Pi secrets exposed to the
+  frontend. No heartbeat-timeout or rate-limit changes in this commit.
+
+---
+
 ## SAM Threats/modals safe-fix set (SAM-BUGFIX-001) — June 30, 2026
 
 Targeted bug fixes on the Security Assessment Management page. Mostly frontend;

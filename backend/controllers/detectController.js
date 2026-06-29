@@ -246,6 +246,58 @@ async function persistThreatRows(threatRows, scanId, activeNetworkId) {
   }
 }
 
+/**
+ * Best-effort: tell the Pi detector to actually stop.
+ *
+ * The web-app stop flow only transitions our detection_state row to STOPPED;
+ * that alone does NOT stop the detector thread running on the Pi. This sends
+ * the documented control command (POST /detect/control { action:"disable",
+ * drain_queue:true }) through piFetch so HMAC signing stays server-side.
+ *
+ * Never throws — a Pi outage must not break the governed web-app stop. Returns
+ * an additive status object surfaced to the caller as `pi_control` so a failure
+ * is visible to the operator instead of being buried in logs.
+ */
+async function stopPiDetection() {
+  try {
+    // Short timeout + single attempt — no aggressive retry (Pi proxy throttles
+    // state routes via state_zone burst=5).
+    const { ok, status, data } = await piFetch("/detect/control", {
+      method: "POST",
+      jsonBody: { action: "disable", drain_queue: true },
+      timeoutMs: 8000,
+    });
+
+    if (!ok) {
+      console.warn(`[detect/stop] Pi /detect/control returned non-OK: ${status}`);
+      return { ok: false, status: status ?? null, error: "device_control_failed" };
+    }
+
+    const d = data && typeof data === "object" ? data : {};
+
+    // The Pi returns HTTP 200 even for logical errors, signalling them via an
+    // `error` field (e.g. unsupported action, control exception).
+    if (d.error) {
+      console.warn(`[detect/stop] Pi /detect/control logical error: ${d.error}`);
+      return { ok: false, status: status ?? 200, error: "device_control_rejected" };
+    }
+
+    return {
+      ok: true,
+      status: status ?? 200,
+      detection_stopped: d.detection_stopped ?? null,
+      thread_exited: d.thread_exited ?? null,
+      was_running: d.was_running ?? null,
+      queue_drained: d.queue_drained ?? null,
+      running: d.running ?? null,
+    };
+  } catch (err) {
+    // Timeout / abort / network failure — Pi unreachable. Non-fatal.
+    console.warn("[detect/stop] Pi /detect/control unreachable:", err.message);
+    return { ok: false, status: err.status ?? null, error: "device_unreachable" };
+  }
+}
+
 // ─── Route handlers ─────────────────────────────────────────────
 
 /**
@@ -385,6 +437,22 @@ async function stopDetection(req, res) {
       reason_note: reason_note || null,
     });
 
+    // Actually stop the detector on the Pi (best-effort, non-fatal). Surfaced
+    // to the caller via the additive `pi_control` field — existing callers that
+    // ignore it are unaffected.
+    const piControl = await stopPiDetection();
+    if (!piControl.ok) {
+      logAuditEvent({
+        req,
+        actorId,
+        eventName: "DETECTION.STOP",
+        eventStatus: "FAILED",
+        entityType: "DETECTION_STATE",
+        entityIdBigint: row.active_scan_id || null,
+        meta: { stage: "pi_control", pi_control: piControl },
+      }).catch(() => {});
+    }
+
     // Finalization: recompute risk one last time + stamp scan_end + update network risk (best-effort)
     if (row.active_scan_id) {
       try {
@@ -444,7 +512,8 @@ async function stopDetection(req, res) {
         );
     }
 
-    return res.json(row);
+    // Additive field — does not change the existing row contract.
+    return res.json({ ...row, pi_control: piControl });
   } catch (err) {
     console.error("[detect/stop] error:", err);
 
