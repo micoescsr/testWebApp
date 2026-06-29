@@ -3,7 +3,7 @@
 // Governed stop-detection modal. Shows a reason_code dropdown,
 // optional reason_note, and a confirmation input (type "STOP").
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BaseModal from "../../common/Modal/BaseModal";
 import "./StopDetectionModal.css";
 
@@ -23,6 +23,17 @@ const StopDetectionModal = ({ isOpen, onClose, onConfirm, isProcessing }) => {
   const [confirmText, setConfirmText] = useState("");
   const [error, setError] = useState(null);
 
+  // Synchronous in-flight guard. `isProcessing` arrives a render later, so a
+  // fast double-click or Enter+click could fire onConfirm twice before the
+  // button disables — sending duplicate /detect/stop requests (BUG-T5a).
+  const submittingRef = useRef(false);
+
+  // Release the guard once the parent finishes processing, so a retry is
+  // possible if the stop request failed and the modal stayed open.
+  useEffect(() => {
+    if (!isProcessing) submittingRef.current = false;
+  }, [isProcessing]);
+
   const noteRequired = reasonCode === "OTHER";
   const canConfirm =
     reasonCode &&
@@ -31,6 +42,7 @@ const StopDetectionModal = ({ isOpen, onClose, onConfirm, isProcessing }) => {
     !isProcessing;
 
   const handleConfirm = () => {
+    if (submittingRef.current || isProcessing) return;
     if (!reasonCode) {
       setError("Please select a reason.");
       return;
@@ -44,6 +56,7 @@ const StopDetectionModal = ({ isOpen, onClose, onConfirm, isProcessing }) => {
       return;
     }
     setError(null);
+    submittingRef.current = true;
     onConfirm(reasonCode, reasonNote.trim() || undefined);
   };
 

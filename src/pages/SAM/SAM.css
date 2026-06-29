@@ -145,6 +145,103 @@
   background: var(--surface-2);
 }
 
+/* Threat id sub-label under the threat name (was hardcoded #666) */
+.threat-id-sub {
+  color: var(--text-muted);
+}
+
+/* Latest-only notice on the Vulnerabilities table (BUG-V1/V2) */
+.sam-latest-hint {
+  margin: 0 var(--space-4, 16px) var(--space-2, 8px);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.sam-latest-hint-link {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.sam-latest-hint-link:hover {
+  color: var(--text-primary);
+}
+
+/* ── Expanded threat session panel (BUG-T1) ──────────────────────
+   Theme-token driven so it reads correctly in both dark and light
+   mode. The expanded <tr> spans all parent columns; its inner table
+   uses a fixed layout with a truncating State cell so long status
+   text can't overflow or break the column alignment. */
+.expanded-row > td {
+  padding: 0;
+  background: var(--surface-2);
+}
+
+.expanded-row:hover {
+  background: transparent;
+}
+
+.session-panel {
+  padding: var(--space-3, 12px);
+  margin: var(--space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+
+.session-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2, 8px);
+  color: var(--text-primary);
+}
+
+.session-active-flag {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.inner-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.inner-table th,
+.inner-table td {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inner-table th {
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+  background: var(--surface-2);
+}
+
+.inner-table th:nth-child(1),
+.inner-table td:nth-child(1) {
+  width: 8%;
+}
+
+.inner-table th:nth-child(5),
+.inner-table td:nth-child(5) {
+  width: 18%;
+}
+
+/* State cell: allow wrap so long status text stays readable rather
+   than being clipped, but never overflow its column. */
+.session-state-cell {
+  white-space: normal;
+  word-break: break-word;
+}
+
 /* Severity rendering moved to the shared <SeverityBadge> component
    (components/common/SeverityBadge). The old .severity classes were
    removed to eliminate duplicated/conflicting severity colors. */

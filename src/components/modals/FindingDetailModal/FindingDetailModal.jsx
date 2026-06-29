@@ -27,6 +27,7 @@ const FindingDetailModal = ({
   rawFinding,
   findingType = "vulnerability",
   loading,
+  error,
 }) => {
   const [expandedRecs, setExpandedRecs] = useState(new Set());
   const [showEvidence, setShowEvidence] = useState(false);
@@ -132,7 +133,7 @@ const FindingDetailModal = ({
     );
   };
 
-  if (loading || !finding) {
+  if (loading) {
     return (
       <BaseModal
         isOpen={true}
@@ -150,6 +151,45 @@ const FindingDetailModal = ({
         }
       >
         <div className="fdm-loading">Loading details, please wait.</div>
+      </BaseModal>
+    );
+  }
+
+  // Loading finished but no detail resolved (fetch failed / not found / empty).
+  // Show a clear error-empty state with a working Close instead of an infinite
+  // spinner (BUG-T2).
+  if (!finding) {
+    const fallbackName = rawFinding?.name;
+    return (
+      <BaseModal
+        isOpen={true}
+        onClose={onClose}
+        className="finding-detail-modal"
+        header={
+          <div className="fdm-header">
+            <div className="fdm-title-row">
+              <h2>{fallbackName || "Details unavailable"}</h2>
+            </div>
+            <button className="fdm-close" onClick={onClose} aria-label="Close">
+              <X size={20} />
+            </button>
+          </div>
+        }
+        footer={
+          <button
+            className="fdm-btn fdm-btn-primary"
+            onClick={onClose}
+            type="button"
+          >
+            Close
+          </button>
+        }
+      >
+        <div className="fdm-loading">
+          {error
+            ? "Could not load details for this finding. Please try again."
+            : "No additional details are available for this finding."}
+        </div>
       </BaseModal>
     );
   }

@@ -10,6 +10,46 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## SAM Threats/modals safe-fix set (SAM-BUGFIX-001) — June 30, 2026
+
+Targeted bug fixes on the Security Assessment Management page. Mostly frontend;
+one safe backend bug fix. No DB/schema changes, no API contract changes.
+
+- **BUG-T1 — Threat expanded row dark-mode layout.** `src/components/sam/ThreatsTable.jsx`
+  dropped hardcoded inline colors (`#fafafa`/`#eee`/`#666`/`#555`) and the inner
+  empty-row `colSpan={7}` (table has 5 cols → now `5`). New theme-token CSS in
+  `src/pages/SAM/SAM.css` (`.expanded-row`, `.session-panel`, `.inner-table`,
+  `.session-state-cell`, `.threat-id-sub`) using `--surface-*`/`--border`/`--text-*`
+  so it reads in dark and light mode; `table-layout:fixed` + truncation so the
+  State column can't overflow.
+- **BUG-T2 — Threat detail stuck on "Loading…".** `loading` for the detail modal
+  was `detailLoading || !currentDetail`, so any 404/empty (e.g. threat key not a
+  `vt_code` / `vt_kind !== "threat"`) left it spinning forever. `src/pages/SAM/SAM.jsx`
+  now passes `loading={detailLoading}` plus `error`; `FindingDetailModal` renders a
+  clear error/empty state (with a working Close) when loading is done and no detail
+  resolved.
+- **BUG-T6 — Stop modal focus/cursor jumping.** `src/hooks/useFocusTrap.js` kept
+  `onEscape` in a ref and now depends on `[active]` only, so the global 3s detection
+  poll re-rendering the page no longer re-runs the trap and steals focus mid-typing.
+  `src/components/common/Modal/BaseModal.jsx` also memoizes `handleEscape`.
+- **BUG-R1 — Raw Evidence JSON View reverting.** `RawEvidenceModal` reset effect now
+  keys on a stable `finding.id`/`code` instead of the per-render object identity, so
+  poll-driven re-renders no longer snap JSON View back to Formatted.
+- **BUG-T5a — Duplicate Stop Detection submit.** `StopDetectionModal` adds a
+  synchronous `submittingRef` guard (released when `isProcessing` clears) so a fast
+  double-click / Enter+click can't fire `/detect/stop` twice before the button disables.
+- **BUG-T4a — `detectController.js` poll crash path.** Non-OK FastAPI branch referenced
+  undefined `r.status`. Destructured `status: piStatus` from `piFetch` and used it.
+- **BUG-V1/V2 — latest-only clarity.** `VulnerabilitiesTable` adds a small notice with a
+  link to History ("Showing the latest scan only. Previous results are saved in History.").
+  No behavior change — old scans were never deleted; SAM remains latest-only by design.
+
+Deferred (not in this set): backend rehydrate endpoint for persisted threats after
+refresh (BUG-T3), heartbeat timeout policy (BUG-T4), backend rate-limit/poll changes
+(BUG-T5), and SAM scan-history grouping (BUG-V1/V2).
+
+---
+
 ## Report export Chrome formatting fix + chart fallback (RPT-EXPORT-001) — June 29, 2026
 
 Frontend-only. No API/backend changes. Fixes both Summary/Overall and per-network exports.

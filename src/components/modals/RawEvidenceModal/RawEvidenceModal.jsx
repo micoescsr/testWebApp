@@ -148,13 +148,17 @@ const RawEvidenceModal = ({
   const [activeTab, setActiveTab] = useState("formatted");
   const [copySuccess, setCopySuccess] = useState(false);
 
-  // Reset tab and copy state when modal opens with a new finding
+  // Reset tab and copy state when the modal opens with a DIFFERENT finding.
+  // Keying on a stable id (not the `finding` object identity) prevents the
+  // parent's per-render object literal — re-created on every 3s detection
+  // poll — from resetting the user's JSON View back to Formatted (BUG-R1).
+  const findingKey = finding?.id || finding?.code || null;
   useEffect(() => {
     if (open) {
       setActiveTab("formatted");
       setCopySuccess(false);
     }
-  }, [open, finding]);
+  }, [open, findingKey]);
 
   if (!open) return null;
 

@@ -158,7 +158,7 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
                       <td>
                         <div style={{ display: "flex", flexDirection: "column" }}>
                           <strong>{t.name}</strong>
-                          <small style={{ color: "#666" }}>{t.id}</small>
+                          <small className="threat-id-sub">{t.id}</small>
                         </div>
                       </td>
                       <td>{formatEpoch(t.detectedTime)}</td>
@@ -196,38 +196,38 @@ const ThreatsTable = ({ threats = [], onView, detectionStatus }) => {
                     {isExpanded && (
                       <tr className="expanded-row">
                         <td colSpan={7}>
-                          <div className="session-panel" style={{ padding: 12, border: "1px solid #eee", borderRadius: 6, background: "#fafafa" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <div className="session-panel">
+                            <div className="session-panel-head">
                               <strong>Sessions</strong>
-                              <div style={{ fontSize: "0.9em", color: "#555" }}>
+                              <div className="session-active-flag">
                                 {t.activeCount ? "Active now: Yes" : "Active now: No"}
                               </div>
                             </div>
 
-                            <table className="inner-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <table className="inner-table">
                               <thead>
                                 <tr>
-                                  <th style={{ textAlign: "left" }}>#</th>
-                                  <th style={{ textAlign: "left" }}>First seen</th>
-                                  <th style={{ textAlign: "left" }}>Last seen</th>
-                                  <th style={{ textAlign: "left" }}>Duration</th>
-                                  <th style={{ textAlign: "left" }}>State</th>
+                                  <th>#</th>
+                                  <th>First seen</th>
+                                  <th>Last seen</th>
+                                  <th>Duration</th>
+                                  <th>State</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {Array.isArray(t.sessions) && t.sessions.length > 0 ? (
                                   t.sessions.map((s, idx) => (
-                                    <tr key={`${t.id}-session-${idx}`}> 
-                                      <td style={{ padding: "6px 8px" }}>{t.sessions.length - idx}</td>
-                                      <td style={{ padding: "6px 8px" }}>{formatEpoch(s.firstSeen)}</td>
-                                      <td style={{ padding: "6px 8px" }}>{s.lastSeen ? formatEpoch(s.lastSeen) : "—"}</td>
-                                      <td style={{ padding: "6px 8px" }}>{formatDuration(s.durationSeconds)}</td>
-                                          <td style={{ padding: "6px 8px" }}>{s.state}</td>
+                                    <tr key={`${t.id}-session-${idx}`}>
+                                      <td>{t.sessions.length - idx}</td>
+                                      <td>{formatEpoch(s.firstSeen)}</td>
+                                      <td>{s.lastSeen ? formatEpoch(s.lastSeen) : "—"}</td>
+                                      <td>{formatDuration(s.durationSeconds)}</td>
+                                      <td className="session-state-cell">{s.state}</td>
                                     </tr>
                                   ))
                                 ) : (
                                   <tr>
-                                    <td colSpan={7} style={{ padding: 8 }}>No session data available.</td>
+                                    <td colSpan={5}>No session data available.</td>
                                   </tr>
                                 )}
                               </tbody>

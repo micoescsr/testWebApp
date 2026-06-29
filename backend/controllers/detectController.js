@@ -502,7 +502,7 @@ async function poll(req, res) {
     const maxItems = Number(req.query.max_items ?? 50);
 
     // Query string is included in the signature (matches Pi verifier).
-    const { ok: piOk, data } = await piFetch("/detect/poll", {
+    const { ok: piOk, status: piStatus, data } = await piFetch("/detect/poll", {
       query: `max_items=${encodeURIComponent(maxItems)}`,
     });
 
@@ -546,7 +546,7 @@ async function poll(req, res) {
       running: true,
       results: [],
       threatRows: [],
-      last_error: `FastAPI error: ${r.status}`,
+      last_error: `FastAPI error: ${piStatus}`,
     });
   } catch (err) {
     console.error("Poll Proxy Exception:", err.message);

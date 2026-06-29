@@ -1,5 +1,6 @@
 // components/sam/VulnerabilitiesTable.jsx
 import { useState, useMemo, Fragment } from "react";
+import { Link } from "react-router-dom";
 import { useSeverityTableControls } from "../../hooks/useSeverityTableControls";
 import SeverityBadge from "../../components/common/SeverityBadge/SeverityBadge";
 import Pagination from "../../components/common/Pagination/Pagination";
@@ -136,6 +137,16 @@ const VulnerabilitiesTable = ({ vulnerabilities = [], onView, onClear }) => {
           </div>
         </div>
       </div>
+
+      {/* Latest-only notice: SAM shows the most recent scan for the selected
+          network; prior scans are preserved and viewable on History. */}
+      <p className="sam-latest-hint">
+        Showing the latest scan only. Previous results are saved in{" "}
+        <Link to="/history" className="sam-latest-hint-link">
+          History
+        </Link>
+        .
+      </p>
 
       <div className="filters-row">
         {allSeverities.map((sev) => {

@@ -89,7 +89,7 @@ const SAM = () => {
     ssid: null,
   });
 
-  const { fetchThreatDetail, threatDetail, threatDetailLoading } =
+  const { fetchThreatDetail, threatDetail, threatDetailLoading, threatError } =
     useThreats();
 
   const {
@@ -97,6 +97,7 @@ const SAM = () => {
     fetchVulnDetail,
     vulnDetail,
     vulnDetailLoading,
+    vulnError,
     reloadVulnerabilities,
     clearVulnerabilities,
   } = useVulnerabilities(null); // don't auto-load on select; load after explicit scan
@@ -422,6 +423,7 @@ const SAM = () => {
   const currentDetail = findingType === "threat" ? threatDetail : vulnDetail;
   const detailLoading =
     findingType === "threat" ? threatDetailLoading : vulnDetailLoading;
+  const detailError = findingType === "threat" ? threatError : vulnError;
 
   const tabs = [
     { label: "Threats", value: "threats" },
@@ -603,7 +605,8 @@ const SAM = () => {
           finding={currentDetail}
           rawFinding={rawFinding}
           findingType={findingType}
-          loading={detailLoading || !currentDetail}
+          loading={detailLoading}
+          error={detailError}
         />
       )}
 
