@@ -294,7 +294,10 @@ async function saveNetworkMetadataScan(req, res) {
     if (vulnScanRow?.scan_id) {
       try {
         const { onScanCompleted } = require("../utils/riskPipeline");
-        await onScanCompleted(vulnScanRow.scan_id, req);
+        // Pass the legacy public.scans BIGINT id so the risk pipeline can call
+        // compute_scan_risk(p_scan_id bigint) directly (vulnerabilities_threat
+        // is keyed by this id). scanRow.scan_id is that BIGINT.
+        await onScanCompleted(vulnScanRow.scan_id, req, { legacyScanId: scanRow?.scan_id ?? null });
         console.log("[saveNetworkMetadataScan] riskPipeline.onScanCompleted triggered for", vulnScanRow.scan_id);
       } catch (pipeErr) {
         console.error("[saveNetworkMetadataScan] riskPipeline error (non-fatal):", pipeErr.message);

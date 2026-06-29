@@ -32,7 +32,7 @@ jest.mock('../../utils/portalTipResolver', () => {
 
 const { piFetch } = require('../../utils/piFetch');
 const { buildPortalPayloadFromDB } = require('../../controllers/captivePortalController');
-const { resolveFinalPortalTipsForNetwork, computePortalTipsetHash } = require('../../utils/portalTipResolver');
+const { resolveFinalPortalTipsForNetwork } = require('../../utils/portalTipResolver');
 const { updateNetworkRisk } = require('../../utils/riskPipeline');
 
 function makeChain({ maybeSingleResult, singleResult, defaultResult, onUpdate } = {}) {
@@ -160,9 +160,9 @@ describe('riskPipeline tipset-driven portal patching', () => {
 
 		expect(stampedUpdate).toBeTruthy();
 		expect(stampedUpdate.portal_last_patched_version).toBe(1);
-		expect(stampedUpdate.portal_tipset_hash).toBe(
-			computePortalTipsetHash(payload.patch.portal_content.tips.items)
-		);
+		// BUG-2A fix: advisory patch now stamps the resolver hash (the value the
+		// state endpoint compares against), not the string-array payload hash.
+		expect(stampedUpdate.portal_tipset_hash).toBe('desired-hash');
 	});
 
 	test('risk change triggers risk-only patch when tipset did not change', async () => {

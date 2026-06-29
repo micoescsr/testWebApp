@@ -308,7 +308,10 @@ async function autoPortalAdvisoryPatch(networkId, lastPatchedAt, req = null) {
 
 		const payload = await buildPortalPayloadFromDB(networkId, preNet.bssid, preNet.ssid);
 		const tips = payload?.patch?.portal_content?.tips?.items || [];
-		const tipsetHash = computePortalTipsetHash(tips);
+		// Stamp the resolver hash so it matches the state endpoint's freshness
+		// comparison; fall back to the payload-items hash only if resolution fails.
+		const resolvedTipset = await resolveFinalPortalTipsForNetwork(supabaseClient, networkId);
+		const tipsetHash = resolvedTipset?.tipsetHash || computePortalTipsetHash(tips);
 
 		console.log(`[riskPipeline] Auto portal/patch (advisory) network=${networkId} version=${patchVersion} bucket=${patchBucket} tips=${Array.isArray(tips) ? tips.length : 0}`);
 
@@ -475,7 +478,9 @@ async function autoPortalRiskPatch(networkId, bucket, lastPatchedAt, req = null)
  * @param {object} [req] – Express req for audit context (null if server-side)
  * @returns {{ changed, portalPatched, oldBucket, newBucket }}
  */
-async function onScanCompleted(scanId, req = null) {
+async function onScanCompleted(scanId, req = null, opts = {}) {
+	const { legacyScanId = null } = opts;
+
 	// Load scan row
 	const { data: scan, error: scanErr } = await supabaseClient
 		.from('vulnerability_scans')
@@ -493,8 +498,40 @@ async function onScanCompleted(scanId, req = null) {
 		return { changed: false, portalPatched: false };
 	}
 
-	// Derive bucket from scan data
-	const scanBucket = deriveBucketFromScanData(scan.scan_data);
+	// Authoritative risk source: compute_scan_risk(p_scan_id bigint) RPC
+	// (noisy-OR over vulnerabilities_threat, returns 0–100 → bucketize).
+	// The RPC keys on the legacy public.scans BIGINT id, while this function
+	// receives the vulnerability_scans UUID. Prefer the BIGINT id passed by the
+	// scan-save path; otherwise resolve the latest scans row for the network.
+	// deriveBucketFromScanData remains only as a defensive fallback because it
+	// cannot read severity (which lives in vulnerability_threat_details).
+	let bigintScanId = legacyScanId;
+	if (bigintScanId === null || bigintScanId === undefined) {
+		const { data: legacy } = await supabaseClient
+			.from('scans')
+			.select('scan_id')
+			.eq('network_id', scan.network_id)
+			.order('created_at', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+		bigintScanId = legacy?.scan_id ?? null;
+	}
+
+	let scanScore = 0;
+	let scanBucket = 'LOW';
+	if (bigintScanId !== null && bigintScanId !== undefined) {
+		const { data: rpcScore, error: rpcErr } = await supabaseClient.rpc('compute_scan_risk', { p_scan_id: bigintScanId });
+		if (rpcErr) {
+			console.warn('[riskPipeline] compute_scan_risk RPC failed; falling back to scan_data heuristic:', rpcErr.message);
+			scanBucket = deriveBucketFromScanData(scan.scan_data);
+		} else {
+			scanScore = Number(rpcScore) || 0;
+			scanBucket = bucketize(scanScore);
+		}
+	} else {
+		console.warn('[riskPipeline] onScanCompleted: no legacy scan id resolvable; using scan_data heuristic for', scanId);
+		scanBucket = deriveBucketFromScanData(scan.scan_data);
+	}
 
 	// Factor in recent threats: if last_threat_at within 5 min, elevate
 	const { data: net } = await supabaseClient
@@ -514,7 +551,7 @@ async function onScanCompleted(scanId, req = null) {
 
 	return updateNetworkRisk(scan.network_id, {
 		newBucket: effectiveBucket,
-		newScore: 0, // bucket-only phase
+		newScore: scanScore, // authoritative RPC score (0 when fallback/unavailable)
 		reason: 'scan_completed',
 		scanId: scan.scan_id,
 		finishedAt: scan.finished_at,

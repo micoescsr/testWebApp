@@ -10,6 +10,44 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Device Management backend fixes — risk source + portal freshness (BUG-3B, BUG-2A, BUG-2B) — June 29, 2026
+
+Backend-only. No API contract, AP enable/disable control, or auto-patch cooldown
+changes (except the manual-update stamping required by BUG-2B). Frontend risk
+source unchanged — Device Management still reads `networks.risk_bucket`.
+
+- BUG-3B (risk stuck LOW): `backend/utils/riskPipeline.js` `onScanCompleted` now
+  uses the authoritative `compute_scan_risk(p_scan_id bigint)` RPC → `bucketize`
+  as the scan risk source and persists the real score/bucket via
+  `updateNetworkRisk`. The RPC keys on the legacy `public.scans` BIGINT id, so
+  `backend/controllers/rasPiController.js` passes `scanRow.scan_id` as
+  `opts.legacyScanId`; the webhook path resolves the latest `scans` row for the
+  network. `deriveBucketFromScanData` is kept only as a defensive fallback (it
+  can't read severity, which lives in `vulnerability_threat_details`). Thresholds
+  (existing `bucketize`): ≤0/1–39 LOW, 40–69 MEDIUM, 70–89 HIGH, 90–100 CRITICAL.
+- BUG-2A (portal falsely "out of date"): every `portal_tipset_hash` stamp now
+  uses `resolveFinalPortalTipsForNetwork(...).tipsetHash` — the exact value the
+  state endpoint compares against — instead of
+  `computePortalTipsetHash(payload…tips.items)` (string array with re-indexed
+  sort_order, which never matched). Fixed in the enable INIT path, post-enable
+  fire-and-forget, `finalizeJob`, `recoverOrphanedJob`
+  (`backend/routes/deviceMgmtRoutes.js`, new `resolverTipsetHash` helper) and
+  `autoPortalAdvisoryPatch` (`riskPipeline.js`).
+- BUG-2B (Update Portal didn't clear staleness): manual `POST /device/portal/update`
+  now, on a successful Pi patch, stamps both `portal_last_patched_version`
+  (current `risk_score_version`) and the resolver `portal_tipset_hash` regardless
+  of `update_type`. The risk debounce skips only when BOTH version and tipset are
+  already current. Pi patch failure still returns 502 and stamps nothing (never
+  falsely marks fresh).
+- Tests: `__tests__/unit/riskPipeline.onScanCompleted.test.js` (new — RPC bucket
+  persisted, HIGH/CRITICAL not LOW, fallback on RPC error);
+  `__tests__/integration/deviceMgmt.test.js` (new — manual update stamps
+  version+resolver hash; 502 leaves no stamp; AP-not-enabled 409);
+  `riskPipeline.portalTipset.test.js` advisory assertion updated to the resolver
+  hash. Full backend suite: 485 passing.
+
+---
+
 ## Device Management AP/risk follow-up — live override + always-on poll — June 29, 2026
 
 Follow-up to the BUG-1/BUG-3 fix below; first pass didn't fully hold in testing.

@@ -10,7 +10,7 @@ const {
 	buildPortalPatchPayload,
 } = require('../utils/scanValidation');
 const { seedDefaultContent, buildPortalPayloadFromDB } = require('../controllers/captivePortalController');
-const { computePortalTipsetHash, resolveFinalPortalTipsForNetwork } = require('../utils/portalTipResolver');
+const { resolveFinalPortalTipsForNetwork } = require('../utils/portalTipResolver');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { onScanCompleted } = require('../utils/riskPipeline');
 const { validateUUID } = require('../middleware/validateUUID');
@@ -36,6 +36,23 @@ const KEYS_BY_UPDATE_TYPE = {
 	active: new Set(['is_active']),
 	bulk: ALLOWED_PAYLOAD_KEYS, // all allowed
 };
+
+// ─── Helper: canonical portal tipset hash ────────────────────────
+// Returns the SAME hash value the state endpoint compares against
+// (resolveFinalPortalTipsForNetwork().tipsetHash). Every portal_tipset_hash
+// stamp must use this — never computePortalTipsetHash(payload…tips.items),
+// which hashes a string-only array with re-indexed sort_order and therefore
+// never matches the object-based resolver hash (caused permanent
+// portal_out_of_date). Returns null on failure so callers can skip stamping.
+async function resolverTipsetHash(networkId) {
+	try {
+		const resolved = await resolveFinalPortalTipsForNetwork(supabaseClient, networkId);
+		return resolved?.tipsetHash || null;
+	} catch (e) {
+		console.warn('[deviceMgmt] resolver tipset hash failed (non-fatal) for', networkId, e.message);
+		return null;
+	}
+}
 
 // ─── Helper: release the AP apply lock ───────────────────────────
 async function releaseApLock(networkId) {
@@ -540,7 +557,9 @@ router.post('/enable-ap', authJWT, requireActiveProfile, requireAAL2, deviceEnab
 			const patchPayload = await buildPortalPayloadFromDB(
 				network_id, net.bssid, net.ssid
 			);
-			const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+			// Stamp the resolver hash (matches the state endpoint comparison), not
+			// the string-array hash of the payload items. See resolverTipsetHash.
+			const tipsetHash = await resolverTipsetHash(network_id);
 
 			const portalUrl = '/portal/patch';
 			logFastApiCall('portal/patch (INIT)', portalUrl, patchPayload, null);
@@ -776,7 +795,7 @@ router.post('/enable-ap', authJWT, requireActiveProfile, requireAAL2, deviceEnab
 					});
 					if (patchOk) {
 						const nowIso = new Date().toISOString();
-						const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+						const tipsetHash = await resolverTipsetHash(network_id);
 						const { data: latestNet } = await supabaseClient
 							.from('networks')
 							.select('risk_score_version')
@@ -1025,7 +1044,7 @@ async function finalizeJob(job, piResult) {
 						timeoutMs: 15_000,
 					});
 					if (patchOk) {
-						const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+						const tipsetHash = await resolverTipsetHash(networkId);
 						const { data: latestNet } = await supabaseClient
 							.from('networks')
 							.select('risk_score_version')
@@ -1145,7 +1164,7 @@ async function recoverOrphanedJob(jobId, piTerminalStatus, piResult) {
 							timeoutMs: 15_000,
 						});
 						if (patchOk) {
-							const tipsetHash = computePortalTipsetHash(patchPayload?.patch?.portal_content?.tips?.items || []);
+							const tipsetHash = await resolverTipsetHash(net.network_id);
 							const { data: latestNet } = await supabaseClient
 								.from('networks')
 								.select('risk_score_version')
@@ -1514,7 +1533,7 @@ router.post('/portal/update', authJWT, requireActiveProfile, requireAAL2, device
 		// ── Load network row ───────────────────────────────────────
 		const { data: net, error: netErr } = await supabaseClient
 			.from('networks')
-			.select('ap_enabled, risk_score_version, portal_last_patched_version')
+			.select('ap_enabled, risk_score_version, portal_last_patched_version, portal_tipset_hash')
 			.eq('network_id', network_id)
 			.maybeSingle();
 
@@ -1526,14 +1545,25 @@ router.post('/portal/update', authJWT, requireActiveProfile, requireAAL2, device
 			return res.status(409).json({ error: 'AP_NOT_ENABLED', message: 'AP must be enabled before updating the portal.' });
 		}
 
+		// ── Resolve the freshness target (same value the state endpoint uses) ──
+		const desiredTipsetHash = await resolverTipsetHash(network_id);
+
 		// ── Risk patch debounce ────────────────────────────────────
-		if (update_type === 'risk' && Number(net.portal_last_patched_version) >= Number(net.risk_score_version)) {
-			await logAuditEvent({
-				req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SKIPPED',
-				entityType: 'NETWORK', entityIdUuid: network_id,
-				meta: { request_id: requestId, update_type, reason: 'already_up_to_date' },
-			});
-			return res.json({ ok: true, skipped: true, reason: 'already_up_to_date' });
+		// Only skip a risk update when BOTH the risk version AND the tipset hash
+		// are already current. Skipping on version alone would leave a
+		// tipset-driven staleness uncleared, making the Update Portal button
+		// appear broken (BUG-2B).
+		if (update_type === 'risk') {
+			const versionCurrent = Number(net.portal_last_patched_version) >= Number(net.risk_score_version);
+			const tipsetCurrent = !desiredTipsetHash || desiredTipsetHash === net.portal_tipset_hash;
+			if (versionCurrent && tipsetCurrent) {
+				await logAuditEvent({
+					req, actorId, eventName: 'PORTAL_UPDATE', eventStatus: 'SKIPPED',
+					entityType: 'NETWORK', entityIdUuid: network_id,
+					meta: { request_id: requestId, update_type, reason: 'already_up_to_date' },
+				});
+				return res.json({ ok: true, skipped: true, reason: 'already_up_to_date' });
+			}
 		}
 
 		// ── Build FastAPI payload (only validated fields) ───────────
@@ -1566,24 +1596,26 @@ router.post('/portal/update', authJWT, requireActiveProfile, requireAAL2, device
 		}
 
 		// ── DB stamping ────────────────────────────────────────────
-		const stampUpdate = { portal_last_patched_at: new Date().toISOString() };
-		let stampedVersion = null;
-		let stampedTipsetHash = null;
+		// A successful manual update must fully clear staleness so the state
+		// endpoint stops reporting portal_out_of_date (BUG-2B). Re-read the
+		// current risk_score_version (avoid a stale stamp) and stamp both the
+		// version and the resolver tipset hash — the exact values the state
+		// endpoint compares against — regardless of update_type.
+		const { data: latestNet } = await supabaseClient
+			.from('networks')
+			.select('risk_score_version')
+			.eq('network_id', network_id)
+			.single();
 
-		if (patch.tips) {
-			stampedTipsetHash = computePortalTipsetHash(patch.tips);
+		const stampedVersion = Number(latestNet?.risk_score_version ?? net.risk_score_version);
+		const stampedTipsetHash = desiredTipsetHash;
+
+		const stampUpdate = {
+			portal_last_patched_at: new Date().toISOString(),
+			portal_last_patched_version: stampedVersion,
+		};
+		if (stampedTipsetHash) {
 			stampUpdate.portal_tipset_hash = stampedTipsetHash;
-		}
-
-		if (patch.risk) {
-			// Re-read current risk_score_version to avoid stale stamp
-			const { data: latestNet } = await supabaseClient
-				.from('networks')
-				.select('risk_score_version')
-				.eq('network_id', network_id)
-				.single();
-			stampedVersion = Number(latestNet?.risk_score_version ?? net.risk_score_version);
-			stampUpdate.portal_last_patched_version = stampedVersion;
 		}
 
 		await supabaseClient

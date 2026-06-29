@@ -764,3 +764,94 @@ describe("GET /api/device/ap-live", () => {
     expect(res.body.ap_status).toBe("UNKNOWN");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────
+// H. POST /api/device/portal/update — manual Update Portal (BUG-2B)
+// ─────────────────────────────────────────────────────────────────
+
+describe("POST /api/device/portal/update — manual Update Portal", () => {
+  const UUID_NET = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+  const riskUpdateBody = {
+    network_id: UUID_NET,
+    update_type: "risk",
+    reason: "manual_update",
+    payload: { risk: { bucket: "HIGH" } },
+  };
+
+  test("successful update stamps current version + resolver tipset hash (clears staleness)", async () => {
+    // Stale: portal version behind risk version, old tipset hash
+    const netChain = chain({
+      singleResult: {
+        data: {
+          ap_enabled: true,
+          risk_score_version: 2,
+          portal_last_patched_version: 1,
+          portal_tipset_hash: "old-hash",
+        },
+        error: null,
+      },
+      updateResult: { data: { network_id: UUID_NET }, error: null },
+    });
+    setupSupabase({ networks: netChain });
+    mockFetch({}); // /portal/patch → success
+
+    const res = await authPost("/api/device/portal/update").send(riskUpdateBody);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.patched).toBe(true);
+    // Version stamped up to the current risk_score_version → riskOutOfDate clears
+    expect(res.body.stamped.portal_last_patched_version).toBe(2);
+    // Tipset hash stamped from the resolver (the value the state endpoint
+    // compares against) → tipsetOutOfDate clears. Must be a real hash, not null.
+    expect(typeof res.body.stamped.portal_tipset_hash).toBe("string");
+    expect(res.body.stamped.portal_tipset_hash.length).toBeGreaterThan(0);
+  });
+
+  test("does NOT falsely mark fresh when Pi patch fails (502, no stamp)", async () => {
+    const netChain = chain({
+      singleResult: {
+        data: {
+          ap_enabled: true,
+          risk_score_version: 2,
+          portal_last_patched_version: 1,
+          portal_tipset_hash: "old-hash",
+        },
+        error: null,
+      },
+    });
+    setupSupabase({ networks: netChain });
+
+    // /portal/patch fails on the Pi
+    global.fetch = jest.fn(async (url) => {
+      fetchCalls.push({ url });
+      return {
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve(JSON.stringify({ detail: "Pi patch failed" })),
+      };
+    });
+
+    const res = await authPost("/api/device/portal/update").send(riskUpdateBody);
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("FASTAPI_PORTAL_PATCH_FAILED");
+    expect(res.body.ok).toBeUndefined();
+    expect(res.body.stamped).toBeUndefined();
+  });
+
+  test("409 when AP is not enabled", async () => {
+    const netChain = chain({
+      singleResult: {
+        data: { ap_enabled: false, risk_score_version: 2, portal_last_patched_version: 1 },
+        error: null,
+      },
+    });
+    setupSupabase({ networks: netChain });
+
+    const res = await authPost("/api/device/portal/update").send(riskUpdateBody);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("AP_NOT_ENABLED");
+  });
+});
