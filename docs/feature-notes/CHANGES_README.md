@@ -10,6 +10,36 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Expire stale AP apply locks on Device Management state read (DM-BUGFIX-001) — June 30, 2026
+
+Backend-only. No frontend changes. No schema change (`ap_apply_locked_at`
+already exists from migration `002_ap_lock_ttl.sql`). No API contract change
+beyond stale locks now reporting as not-in-progress.
+
+- Root cause: `ap_apply_in_progress` is a DB lock set only by `/enable-ap` and
+  released by the async job poller (`finalizeJob`/`recoverOrphanedJob`). If
+  finalization never runs (crash, restart, lost job poller), the lock stays
+  `true` forever. `GET /network/:networkId/state` returned it raw, so Device
+  Management showed "Applying AP configuration…" and disabled the toggle — and
+  because the lock disables the toggle, the UI could never reach `/enable-ap`
+  (the only path with the C11 TTL auto-expiry), making it unrecoverable. Scanning
+  was incidental: navigation to DM merely surfaced the pre-existing stale lock.
+  The scan path never touches the lock (verified: `rasPiController` has no
+  reference; `/scan-completed` only does risk/portal).
+- `backend/routes/deviceMgmtRoutes.js`: `GET /network/:networkId/state` now
+  selects `ap_apply_locked_at` and applies the same TTL check used by
+  `/enable-ap`. If `ap_apply_in_progress === true` and `ap_apply_locked_at` is
+  older than `AP_LOCK_TTL_SECONDS` (default 120s) — or is null while the lock is
+  held — the response reports `ap_apply_in_progress: false` and best-effort
+  releases the lock via the existing `releaseApLock()` helper. Fresh locks still
+  report `true`; real async AP jobs are unaffected (separate `job_id` flow).
+- Stale-lock condition: `ap_apply_in_progress === true && (ap_apply_locked_at == null || ageMs > AP_LOCK_TTL_SECONDS * 1000)`.
+- Tests: `backend/__tests__/integration/deviceMgmt.test.js` adds fresh→true (no
+  release), stale→false (+release), null-locked_at→false (+release), no-lock→false
+  (no release). Added `is()` to the shared chain mock helper for the state query.
+
+---
+
 ## Stop Detection actually stops the Pi detector (SAM-BUGFIX-002) — June 30, 2026
 
 Backend-only. Frontend unchanged — still calls `POST /api/detect/stop`.

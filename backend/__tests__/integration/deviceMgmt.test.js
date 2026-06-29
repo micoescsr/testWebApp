@@ -142,6 +142,7 @@ function chain({ singleResult = { data: null, error: null }, listResult = { data
     upsert: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     gte: jest.fn().mockReturnThis(),
+    is: jest.fn().mockReturnThis(),
     order: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     single: jest.fn().mockResolvedValue(singleResult),
@@ -853,5 +854,93 @@ describe("POST /api/device/portal/update — manual Update Portal", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("AP_NOT_ENABLED");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// I. GET /api/device/network/:networkId/state — stale AP lock TTL (BUG-DM-AP1/AP2)
+// ─────────────────────────────────────────────────────────────────
+
+describe("GET /api/device/network/:networkId/state — stale AP lock expiry", () => {
+  const RELEASE_PAYLOAD = { ap_apply_in_progress: false, ap_apply_locked_at: null };
+
+  // Network row with AP off so the endpoint skips live tipset resolution.
+  const baseNet = (overrides) => ({
+    network_id: NETWORK_ID,
+    ap_enabled: false,
+    portal_initialized: true,
+    risk_score: 0,
+    risk_bucket: "LOW",
+    risk_score_version: 0,
+    portal_last_patched_version: 0,
+    portal_last_patched_at: null,
+    portal_tipset_hash: null,
+    last_threat_at: null,
+    last_scan_id: null,
+    last_scan_finished_at: null,
+    ssid: "TestNet",
+    bssid: "30:40:74:8E:8D:2A",
+    channel: 6,
+    ...overrides,
+  });
+
+  const setup = (netOverrides) => {
+    const netChain = chain({ singleResult: { data: baseNet(netOverrides), error: null } });
+    const scanChain = chain({ singleResult: { data: null, error: null } }); // no scan
+    setupSupabase({ networks: netChain, vulnerability_scans: scanChain });
+    return netChain;
+  };
+
+  test("fresh lock returns ap_apply_in_progress: true and does not release", async () => {
+    const netChain = setup({
+      ap_apply_in_progress: true,
+      ap_apply_locked_at: new Date().toISOString(), // just now → fresh
+    });
+
+    const res = await authGet(`/api/device/network/${NETWORK_ID}/state`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ap_apply_in_progress).toBe(true);
+    expect(netChain.update).not.toHaveBeenCalled();
+  });
+
+  test("stale lock returns ap_apply_in_progress: false and releases the lock in DB", async () => {
+    const staleAt = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago > 120s TTL
+    const netChain = setup({
+      ap_apply_in_progress: true,
+      ap_apply_locked_at: staleAt,
+    });
+
+    const res = await authGet(`/api/device/network/${NETWORK_ID}/state`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ap_apply_in_progress).toBe(false);
+    expect(netChain.update).toHaveBeenCalledWith(RELEASE_PAYLOAD);
+  });
+
+  test("lock held with null locked_at is treated as stale (UI not stuck) and released", async () => {
+    const netChain = setup({
+      ap_apply_in_progress: true,
+      ap_apply_locked_at: null,
+    });
+
+    const res = await authGet(`/api/device/network/${NETWORK_ID}/state`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ap_apply_in_progress).toBe(false);
+    expect(netChain.update).toHaveBeenCalledWith(RELEASE_PAYLOAD);
+  });
+
+  test("no lock (e.g. after a scan) returns ap_apply_in_progress: false without releasing", async () => {
+    const netChain = setup({
+      ap_apply_in_progress: false,
+      ap_apply_locked_at: null,
+    });
+
+    const res = await authGet(`/api/device/network/${NETWORK_ID}/state`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ap_apply_in_progress).toBe(false);
+    expect(netChain.update).not.toHaveBeenCalled();
   });
 });

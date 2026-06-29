@@ -887,6 +887,7 @@ router.get('/network/:networkId/state', authJWT, requireActiveProfile, requireAA
 				'network_id',
 				'ap_enabled',
 				'ap_apply_in_progress',
+				'ap_apply_locked_at',
 				'portal_initialized',
 				'risk_score',
 				'risk_bucket',
@@ -907,6 +908,26 @@ router.get('/network/:networkId/state', authJWT, requireActiveProfile, requireAA
 		if (netErr) throw netErr;
 		if (!net) {
 			return res.status(404).json({ ok: false, error: 'NETWORK_NOT_FOUND', message: 'Network not found.' });
+		}
+
+		// C11 fix (read path): expire stale/orphaned AP apply locks.
+		// `ap_apply_in_progress` is set only by /enable-ap and released by the
+		// async job poller. If finalization never runs (crash, restart, lost job
+		// poller), the lock stays true forever and — because it also disables the
+		// toggle — the UI can never reach /enable-ap to auto-expire it. Apply the
+		// same TTL check here so navigating/refreshing Device Management self-heals.
+		// A missing locked_at while the lock is held is treated as stale (invalid
+		// state — no way to know when it was acquired).
+		let apApplyInProgress = !!net.ap_apply_in_progress;
+		if (apApplyInProgress) {
+			const lockedAtMs = net.ap_apply_locked_at ? new Date(net.ap_apply_locked_at).getTime() : null;
+			const staleCutoff = Date.now() - (AP_LOCK_TTL_SECONDS * 1000);
+			const isStale = lockedAtMs === null || lockedAtMs < staleCutoff;
+			if (isStale) {
+				console.warn(`[network/state] Stale AP lock for ${networkId} (locked_at=${net.ap_apply_locked_at}). Auto-releasing.`);
+				apApplyInProgress = false;
+				await releaseApLock(networkId); // best-effort; helper swallows its own errors
+			}
 		}
 
 		// 2) Load latest eligible scan (completed, no errors)
@@ -951,7 +972,7 @@ router.get('/network/:networkId/state', authJWT, requireActiveProfile, requireAA
 			ok: true,
 			network_id: net.network_id,
 			ap_enabled: !!net.ap_enabled,
-			ap_apply_in_progress: !!net.ap_apply_in_progress,
+			ap_apply_in_progress: apApplyInProgress,
 			portal_initialized: !!net.portal_initialized,
 			scan_state: {
 				has_scan: hasScan,
