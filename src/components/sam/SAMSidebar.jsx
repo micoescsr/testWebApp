@@ -1,6 +1,7 @@
 // components/sam/SAMSidebar.jsx
 import { useState, useMemo } from "react";
 import { ArrowClockwise, MagnifyingGlass, PencilSimple, Check, X } from "@phosphor-icons/react";
+import { formatManila } from "../../utils/datetime";
 
 // Compact relative-time label for the auto-refresh indicator.
 const formatUpdatedAgo = (ts) => {
@@ -29,21 +30,7 @@ const SAMSidebar = ({
   scanning = false,
 }) => {
 
-  const formatLastScan = (scan) => {
-    if (!scan?.scan_end) return null;
-    const d = new Date(scan.scan_end);
-    return new Intl.DateTimeFormat("en-PH", {
-      timeZone: "Asia/Manila",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(d);
-  };
-
-  const lastScanLabel = formatLastScan(lastScan);
+  const lastScanLabel = formatManila(lastScan?.scan_end);
 
   // --- Network search filter ---
   const [networkSearch, setNetworkSearch] = useState("");

@@ -11,6 +11,7 @@ import {
   getAnnouncement,
   publishAnnouncement,
 } from "../../api/deviceApi";
+import { formatManila } from "../../utils/datetime";
 
 const DeviceManagement = () => {
   // ─── Resolve network_id + scan_id: context first, URL param fallback
@@ -141,11 +142,9 @@ const DeviceManagement = () => {
     }
   };
 
-  const formatDate = (iso) => {
-    if (!iso) return "-- --";
-    const d = new Date(iso);
-    return d.toLocaleDateString();
-  };
+  // Published On: full date + time in Philippine time (BUG-D). created_at is a
+  // UTC ISO timestamp; show "N/A" when absent.
+  const formatDate = (iso) => formatManila(iso) || "N/A";
 
   return (
     <div className="device-page">

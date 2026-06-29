@@ -10,6 +10,31 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## SAM + Device Management UI/timestamp fixes (BUG-A..E) — June 29, 2026
+
+Frontend-only. No API contract, backend, or AP control-flow changes.
+
+- New `src/utils/datetime.js` → `formatManila(value, { dateOnly })`: single
+  source for user-facing timestamps, always `Asia/Manila`, `en-PH`, format
+  `MM/DD/YYYY, hh:mm:ss AM/PM`. Returns `null` on missing/invalid input.
+- BUG-A: `src/components/sam/SAMSidebar.jsx` Last Scan now uses `formatManila`
+  (replaces inline `Intl.DateTimeFormat`); consistent Manila time.
+- BUG-B: `src/pages/SAM/SAM.jsx` persists the scan timestamp
+  (`wf:lastScanSummary` sessionState) on scan and rehydrates `lastScan` in the
+  restore effect, so "Last Scan" survives a refresh instead of resetting to N/A.
+  (Per-network last-scan lookup for *selecting* an already-scanned network still
+  needs a backend endpoint — flagged, not implemented; N/A acceptable meanwhile.)
+- BUG-C (Connected Clients N/A): left as honest N/A by decision —
+  `/device/ap-live` exposes no client count and DB `num_clients` is a different
+  semantic. No change.
+- BUG-D: `src/pages/DeviceManagement/DeviceManagement.jsx` Published On now uses
+  `formatManila` (date + time, Manila); `N/A` when absent.
+- BUG-E: `src/components/device/AccessPointPanel.jsx` AP enable/disable
+  (`job_active`/`job_confirming`) banners now render the shared `Spinner`. Toggle
+  was already locked during the job via `toggleDisabled`/`isJobActive`.
+
+---
+
 ## Device Management backend fixes — risk source + portal freshness (BUG-3B, BUG-2A, BUG-2B) — June 29, 2026
 
 Backend-only. No API contract, AP enable/disable control, or auto-patch cooldown

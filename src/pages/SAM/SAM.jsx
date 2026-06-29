@@ -43,6 +43,13 @@ const SAM = () => {
     "wf:lastScannedNetwork",
     null,
   );
+  // Persist a minimal scan summary (scan_end) so "Last Scan" survives a page
+  // refresh — the live scan result object is otherwise in-memory only and
+  // resets to N/A on reload even though the scan was saved (BUG-B).
+  const [lastScanSnapshot, setLastScanSnapshot] = useSessionState(
+    "wf:lastScanSummary",
+    null,
+  );
 
   // Full in-memory objects (hydrated from snapshot or user selection)
   const [selectedNetwork, setSelectedNetworkRaw] = useState(null);
@@ -180,6 +187,12 @@ const SAM = () => {
       }
     }
 
+    // Restore the last scan timestamp so "Last Scan" doesn't reset to N/A
+    // after a refresh when a scan actually exists (BUG-B).
+    if (lastScanSnapshot?.scan_end) {
+      setLastScan({ scan_end: lastScanSnapshot.scan_end });
+    }
+
     // Auto-fetch vulnerabilities for the persisted bssid
     if (networkSnapshot?.bssid) {
       const normalizedBssid = networkSnapshot.bssid.toUpperCase();
@@ -281,6 +294,8 @@ const SAM = () => {
       // 2. Trigger Scan
       const result = await triggerScan(selectedNetwork);
       setLastScan(result);
+      // Persist just the timestamp so it restores after a refresh (BUG-B).
+      setLastScanSnapshot(result?.scan_end ? { scan_end: result.scan_end } : null);
       setLastScannedNetwork(selectedNetwork);
 
       // Push active network SSID into global context for sidebar/pill

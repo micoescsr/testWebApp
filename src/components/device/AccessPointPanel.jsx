@@ -1,5 +1,6 @@
 // components/device/AccessPointPanel.jsx - deterministic banners from admin state
 import { useNavigate } from "react-router-dom";
+import Spinner from "../common/Spinner/Spinner";
 
 /**
  * Compute the single highest-priority banner to show.
@@ -149,14 +150,14 @@ const AccessPointPanel = ({
 
         {banner === "job_active" && (
           <div className="state-message info-state">
-            <p>{targetApStatus === 'enable' ? 'Enabling' : 'Disabling'} access point…</p>
+            <Spinner label={`${targetApStatus === 'enable' ? 'Enabling' : 'Disabling'} access point…`} />
             <small>This may take up to a minute. Do not close this tab.</small>
           </div>
         )}
 
         {banner === "job_confirming" && (
           <div className="state-message info-state">
-            <p>Verifying device state…</p>
+            <Spinner label="Verifying device state…" />
             <small>Confirming the access point {targetApStatus === 'enable' ? 'is active' : 'has stopped'}.</small>
           </div>
         )}
