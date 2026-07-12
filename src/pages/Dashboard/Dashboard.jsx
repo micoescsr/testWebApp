@@ -27,6 +27,8 @@ const Dashboard = () => {
     scanList,
     selectedScanId,
     setSelectedScanId,
+    summaryDate,
+    setSummaryDate,
     piStatus,
   } = useDashboard();
 
@@ -53,6 +55,9 @@ const Dashboard = () => {
         scanList={scanList}
         selectedScanId={selectedScanId}
         onScanChange={setSelectedScanId}
+        summaryDate={summaryDate}
+        onSummaryDateChange={setSummaryDate}
+        availableScanDates={summary?.availableScanDates || []}
         piStatus={piStatus}
       />
 

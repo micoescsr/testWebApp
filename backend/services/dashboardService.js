@@ -19,6 +19,11 @@ const {
   buildRemediationPlan,
   riskLabelForReport,
 } = require("../utils/reportAggregations");
+const {
+  manilaEndOfDay,
+  latestScanPerNetwork,
+  distinctScanDates,
+} = require("../utils/asOfAggregation");
 
 // ─── Severity buckets (always include all four, even if count is 0) ──
 const SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"];
@@ -106,7 +111,13 @@ async function getScansForNetwork(networkId) {
 // ──────────────────────────────────────────────────────────────────────
 // 3. SUMMARY DATA (all networks aggregated) — Queries #11-#18
 // ──────────────────────────────────────────────────────────────────────
-async function getSummaryData() {
+async function getSummaryData(asOfDate = null) {
+  // Historical "as-of" summary: latest completed scan per network at or
+  // before the end of the selected date (Manila time). Latest mode keeps the
+  // existing view-backed path below untouched.
+  if (asOfDate) {
+    return getSummaryDataAsOf(asOfDate);
+  }
   // --- Query #11: last scan date (global) ---
   const lastScanP = supabaseClient
     .from("vulnerability_scans")
@@ -161,8 +172,16 @@ async function getSummaryData() {
     .order("finished_at", { ascending: false })
     .limit(20);
 
+  // --- Completed legacy-scan dates (Summary Date selector options) ---
+  const scanDatesP = supabaseClient
+    .from("scans")
+    .select("scan_end")
+    .not("scan_end", "is", null)
+    .order("scan_end", { ascending: false })
+    .limit(1000);
+
   // Execute all in parallel
-  const [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR] =
+  const [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR, scanDatesR] =
     await Promise.all([
       lastScanP,
       openP,
@@ -172,10 +191,11 @@ async function getSummaryData() {
       findingsP,
       networksP,
       historicalScansP,
+      scanDatesP,
     ]);
 
   // Throw on any critical error
-  for (const r of [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR]) {
+  for (const r of [lastScanR, openR, encR, clientsR, riskR, findingsR, networksR, historicalScansR, scanDatesR]) {
     if (r.error) throw r.error;
   }
 
@@ -335,6 +355,167 @@ async function getSummaryData() {
     detailedFindings,
     historicalScans,
     remediation,
+    availableScanDates: distinctScanDates(scanDatesR.data),
+    summaryContext: {
+      mode: "latest",
+      isHistorical: false,
+      selectedDate: null,
+      asOf: null,
+      effectiveLatestScanAt: lastScan,
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// 3b. HISTORICAL SUMMARY — latest completed scan per network as of the
+//     end of the selected date (Manila time). Built from the legacy
+//     `scans` table (BIGINT ids — the same key vulnerabilities_threat and
+//     compute_scan_risk use), not the UUID vulnerability_scans table.
+//
+//     Per-scan client counts and encryption state are NOT stored
+//     historically (networks.num_clients / encryption_status are
+//     current-state), so those metrics are returned as null/empty and the
+//     frontend renders explicit "historical snapshot unavailable" states.
+// ──────────────────────────────────────────────────────────────────────
+async function getSummaryDataAsOf(asOfDate) {
+  const asOfIso = manilaEndOfDay(asOfDate);
+  if (!asOfIso) {
+    const err = new Error("Invalid asOf date");
+    err.status = 400;
+    throw err;
+  }
+
+  // All completed legacy scans (also feeds the date selector options).
+  const scansP = supabaseClient
+    .from("scans")
+    .select("scan_id, network_id, scan_end, risk_score")
+    .not("scan_end", "is", null)
+    .order("scan_end", { ascending: false })
+    .limit(1000);
+
+  // Network labels (SSIDs). NOTE: SSID/BSSID are current-state labels — the
+  // historical roster keeps only networks that had a completed scan by asOf.
+  const networksP = supabaseClient
+    .from("networks")
+    .select("network_id, ssid");
+
+  const [scansR, networksR] = await Promise.all([scansP, networksP]);
+  for (const r of [scansR, networksR]) {
+    if (r.error) throw r.error;
+  }
+
+  const allScans = scansR.data || [];
+  const availableScanDates = distinctScanDates(allScans);
+
+  // Latest completed scan per network with scan_end <= asOf. One scan per
+  // network — repeated scans of the same network are never summed.
+  const eligible = allScans.filter(
+    (s) => new Date(s.scan_end).getTime() <= new Date(asOfIso).getTime()
+  );
+  const latestByNetwork = latestScanPerNetwork(eligible);
+  const selectedScans = [...latestByNetwork.values()];
+  const scanIds = selectedScans.map((s) => s.scan_id);
+
+  const networkMap = {};
+  (networksR.data || []).forEach((n) => {
+    networkMap[n.network_id] = n;
+  });
+
+  // Findings for the selected scan set (row semantics identical to the
+  // latest summary: one vulnerabilities_threat row per finding, joined to
+  // the details table for code/severity/kind — same join as historyController).
+  let findings = [];
+  if (scanIds.length > 0) {
+    const { data: vtRows, error: vtErr } = await supabaseClient
+      .from("vulnerabilities_threat")
+      .select(
+        "vt_detail_id, vt_name, vt_kind, scan_id, severity_score, detail:vulnerability_threat_details (vt_code, vt_name, vt_severity_rating, vt_kind, vt_cvss_base_score)"
+      )
+      .in("scan_id", scanIds);
+    if (vtErr) throw vtErr;
+
+    const scanToNetwork = {};
+    selectedScans.forEach((s) => {
+      scanToNetwork[s.scan_id] = s.network_id;
+    });
+
+    findings = (vtRows || []).map((v) => ({
+      vt_detail_id: v.vt_detail_id,
+      vt_code: v.detail?.vt_code || null,
+      vt_name: v.detail?.vt_name || v.vt_name,
+      vt_severity_rating: v.detail?.vt_severity_rating || null,
+      vt_kind: v.detail?.vt_kind || v.vt_kind,
+      vt_cvss_base_score: v.detail?.vt_cvss_base_score ?? v.severity_score ?? null,
+      network_id: scanToNetwork[v.scan_id] || null,
+    }));
+  }
+
+  // Aggregations — same formulas as the latest summary.
+  const severityData = buildSeverityData(findings);
+  const totalFindings = findings.length;
+
+  const avgRisk =
+    selectedScans.length > 0
+      ? Math.round(
+          selectedScans.reduce((s, r) => s + (r.risk_score || 0), 0) /
+            selectedScans.length
+        )
+      : 0;
+  const riskScoreData = [{ name: "Wi-Fi Risk", value: avgRisk }];
+
+  const netFindingCount = {};
+  findings.forEach((f) => {
+    if (!f.network_id) return;
+    netFindingCount[f.network_id] = (netFindingCount[f.network_id] || 0) + 1;
+  });
+
+  const topRisks = selectedScans
+    .map((s) => ({
+      network_id: s.network_id,
+      ssid: networkMap[s.network_id]?.ssid || "Unknown",
+      risk: s.risk_score ?? 0,
+      severityCount: netFindingCount[s.network_id] || 0,
+      clients: null, // per-scan client snapshots are not stored
+    }))
+    .sort((a, b) => b.risk - a.risk)
+    .slice(0, 5);
+
+  const detailedFindings = buildDetailedFindings(
+    findings.map((f) => ({
+      ...f,
+      network: networkMap[f.network_id]?.ssid || "Unknown",
+    }))
+  );
+
+  // Latest scan_end in the selected set = the effective summary timestamp
+  // (same authoritative field the aggregation itself uses).
+  const lastScan = selectedScans.reduce((max, s) => {
+    return !max || new Date(s.scan_end) > new Date(max) ? s.scan_end : max;
+  }, null);
+
+  return {
+    lastScan,
+    // Historically unavailable — current-state only (networks table).
+    // Frontend must render explicit unavailable states, never current values.
+    openNetworks: null,
+    encryptedNetworks: null,
+    totalClients: null,
+    networkEncryptionData: [],
+    networkDirectory: [],
+    totalFindings,
+    riskScoreData,
+    severityData,
+    topRisks,
+    detailedFindings,
+    networksRepresented: selectedScans.length,
+    availableScanDates,
+    summaryContext: {
+      mode: "historical",
+      isHistorical: true,
+      selectedDate: asOfDate,
+      asOf: asOfIso,
+      effectiveLatestScanAt: lastScan,
+    },
   };
 }
 

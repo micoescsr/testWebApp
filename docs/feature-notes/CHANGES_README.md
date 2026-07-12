@@ -10,6 +10,112 @@ This document describes the specific and explicit changes made across chat sessi
 
 ---
 
+## Historical "as-of" Dashboard Summary + threat terminology fix (DASH-REVISION-002) — July 13, 2026
+
+Full-stack, no schema change and no migration: aggregation stays on the
+existing Supabase JS SDK pattern (zero raw SQL), reduced in the service layer.
+
+- Semantics: for a selected date, the Summary shows the **latest completed
+  scan per network** whose `scans.scan_end` is at or before end-of-day
+  Asia/Manila (the app-wide display timezone). One scan per network — repeated
+  same-day scans are never summed. Default (no param) preserves the existing
+  latest-view behavior byte-for-byte plus additive fields.
+- `backend/utils/asOfAggregation.js` (new, pure + unit-tested in
+  `__tests__/unit/asOfAggregation.test.js`): strict `YYYY-MM-DD` validation,
+  Manila end-of-day conversion, latest-scan-per-network reduction, distinct
+  Manila scan dates.
+- `backend/services/dashboardService.js`: `getSummaryData(asOfDate)` —
+  historical path queries legacy `scans` (BIGINT ids, the same key
+  `vulnerabilities_threat`/`compute_scan_risk` use; NOT the UUID
+  `vulnerability_scans`), joins findings via `vulnerabilities_threat` →
+  `vulnerability_threat_details` (same join as historyController), risk =
+  average of the selected `scans.risk_score`, `lastScan` = max `scan_end` of
+  the selected set (aligned with the aggregation source, unlike the latest
+  view which reads `vulnerability_scans.finished_at` — documented
+  inconsistency left unchanged in latest mode). Historically unavailable
+  metrics returned as null/empty: `openNetworks`, `encryptedNetworks`,
+  `totalClients`, `networkEncryptionData`, `networkDirectory` — never
+  current-state values. Adds `summaryContext {mode, isHistorical,
+  selectedDate, asOf, effectiveLatestScanAt}`, `availableScanDates`,
+  `networksRepresented`; latest mode gains the same additive fields.
+- `backend/controllers/dashboardController.js`: `GET /api/dashboard/summary`
+  accepts optional `?asOf=YYYY-MM-DD`; invalid values → 400 before any DB
+  access (tests incl. injection-shaped input). Auth chain unchanged
+  (authJWT + requireActiveProfile + requireAAL2). Note: the global summary
+  has always been unscoped service-role for all authenticated users (unlike
+  role-scoped /history); `asOf` only narrows that set — access model
+  unchanged, inconsistency documented.
+- Frontend: `dashboardApi.getDashboardSummary(asOfDate)`;
+  `useDashboard` gains `summaryDate` state (reset to Latest on view switch);
+  `DashboardHeader` gains a SUMMARY DATE select ("Latest — <date>" + distinct
+  scan dates from `availableScanDates`). `SummarySection`: historical context
+  banner ("Showing the latest available scan for each network as of …"),
+  per-card temporal scope sublabels ("Latest available scans" / "As of
+  <date>"), historical mode renames Total Networks → "Networks Represented",
+  Total Clients and Networks by Encryption render explicit
+  snapshot-unavailable states (muted, non-error), Top-5 CLIENTS shows "—"
+  historically, FINDINGS header gains tooltip "Includes vulnerability and
+  threat findings."
+- Terminology correction (counting semantics unchanged — values count
+  `vulnerabilities_threat` rows with `vt_kind = threat`, not
+  `vulnerability_threat_events` records): "Threat Events Detected" →
+  "Detected Threats", "Threat Events by Type" → "Threat Findings by Type",
+  "Recent Threat Activity" → "Recent Threat Findings"; trends chart renamed
+  "Threat Findings History" with per-chart empty messages. Trends period
+  selector stays independent of the Summary Date.
+- Tests: backend 34 suites / 510 pass (incl. new asOf unit + controller 400
+  tests); frontend vitest 25 pass; vite build OK; eslint clean on changed
+  frontend files (backend files fail root eslint config's missing Node env —
+  pre-existing, affects all backend files).
+
+---
+
+## Dashboard vulnerability/threat separation + historical trends (DASH-REVISION-001) — July 13, 2026
+
+Frontend-only. No backend, API-contract, or schema changes — all new views are
+derived from data the existing endpoints already return.
+
+- `src/components/dashboard/SummarySection.jsx`: restructured into labeled
+  sections (`Vulnerability Overview`, `Threat Monitoring`, `Historical
+  Detection Trends`, `Network Encryption`) with semantic `<section>`/`h2`
+  headings. The combined "Total Vulnerabilities/Threats" card is replaced by
+  separate "Vulnerabilities Detected" and "Threat Events Detected" cards
+  (totals derived client-side from `severityData`, which the backend already
+  splits per kind). Open/Encrypted Networks cards replaced by a single "Total
+  Networks" card (open/encrypted counts remain in Networks by Encryption).
+  "Severity by Kind" chart replaced by "Vulnerability Severity Distribution"
+  (vulnerability findings only, severity-token bar colors, value labels,
+  tooltip, empty state). New Threat Monitoring section: threat metric tiles
+  (threat events, high/critical threat events, most detected threat), "Threat
+  Events by Type" horizontal bar chart, and "Recent Threat Activity" list —
+  all from `detailedFindings` rows filtered to `kind === "Threat"`. Top-5
+  table column renamed SEVERITIES → FINDINGS (value is a findings count).
+- `src/components/dashboard/HistoricalTrendsSection.jsx` (new): Historical
+  Detection Trends with a Last 7 Days / Last 30 Days / All Time selector and
+  two separate area charts (Vulnerability History, Threat Activity History)
+  built from the existing `/history/vulnerabilities` and `/history/threats`
+  endpoints, aggregated per day client-side. Honest empty state ("No
+  historical detection data is available for the selected period."), loading
+  and error states. No fabricated data.
+- `src/components/dashboard/SummaryDetailContent.jsx`: new drawer types
+  `vulnFindings` / `threatEvents` (findings list pre-filtered by kind, Type
+  filter hidden); `severityKind` drawer now shows vulnerability counts only.
+- `src/components/modals/FindingDetailModal/FindingDetailModal.jsx` (+`.css`):
+  threat header gains a WFVT identifier chip (name lookup against the frontend
+  `RECOMMENDATION_MAP`); status strip gains an Affected Network item (new
+  `networkContext` prop passed from `SAM.jsx`); recommendations renamed
+  "Recommended Actions", rendered as a numbered `<ol>` with step markers and
+  per-recommendation priority tags, and visually separated from detection
+  evidence with a top border. Evidence/sessions content unchanged.
+- `src/pages/Dashboard/Dashboard.css`: section title/header, panel subtitle,
+  shared `.panel-empty`, threat-monitoring and history grids, responsive rules
+  (1024px: metrics row spans; 768px: single column).
+- Known limitation: per-scan client snapshots and threat "active now" state are
+  not in the summary payload, so Threat Monitoring reflects latest-scan
+  findings, not live detection state (live state stays on the SAM page).
+
+---
+
 ## Expire stale AP apply locks on Device Management state read (DM-BUGFIX-001) — June 30, 2026
 
 Backend-only. No frontend changes. No schema change (`ap_apply_locked_at`

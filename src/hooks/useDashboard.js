@@ -30,6 +30,9 @@ export const useDashboard = () => {
   const [selectedScanId, setSelectedScanId] = useState(null);
   const [scanList, setScanList] = useState([]);
 
+  // ΓöÇΓöÇ Summary Date: null = Latest, else "YYYY-MM-DD" (as-of summary) ΓöÇΓöÇ
+  const [summaryDate, setSummaryDate] = useState(null);
+
   // ΓöÇΓöÇ Data state (null = not yet loaded) ΓöÇΓöÇ
   const [summary, setSummary] = useState(null);
   const [networkData, setNetworkData] = useState(null);
@@ -75,6 +78,8 @@ export const useDashboard = () => {
     setViewMode(mode);
     setSelectedScanId(null);
     setScanList([]);
+    setSummaryDate(null); // view switches always land on Latest
+
     // Clear stale data so loading shows
     if (mode === "Summary") {
       setNetworkData(null);
@@ -90,7 +95,7 @@ export const useDashboard = () => {
     run(
       async () => {
         if (isSummary) {
-          const res = await getDashboardSummary();
+          const res = await getDashboardSummary(summaryDate);
           if (!cancelled) setSummary(res.data);
         } else {
           const networkId = viewMode;
@@ -111,7 +116,7 @@ export const useDashboard = () => {
     );
 
     return () => { cancelled = true; };
-  }, [viewMode, isSummary, selectedScanId, run]);
+  }, [viewMode, isSummary, selectedScanId, summaryDate, run]);
 
   return {
     viewMode,
@@ -130,6 +135,8 @@ export const useDashboard = () => {
     scanList,
     selectedScanId,
     setSelectedScanId,
+    summaryDate,
+    setSummaryDate,
     piStatus,
   };
 };

@@ -4,11 +4,21 @@
 // All routes require JWT (applied in dashboardRoutes.js).
 
 const dashboardService = require("../services/dashboardService");
+const { isValidDateString } = require("../utils/asOfAggregation");
 
 // GET /api/dashboard/summary
+// Optional query param: ?asOf=YYYY-MM-DD — historical summary (latest
+// completed scan per network as of the end of that date, Manila time).
+// Absent → latest summary (unchanged behavior).
 exports.getSummary = async (req, res) => {
   try {
-    const data = await dashboardService.getSummaryData();
+    const { asOf } = req.query;
+    if (asOf !== undefined && !isValidDateString(asOf)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid asOf date. Expected YYYY-MM-DD." });
+    }
+    const data = await dashboardService.getSummaryData(asOf || null);
     return res.json(data);
   } catch (err) {
     console.error("[dashboard/summary]", err);

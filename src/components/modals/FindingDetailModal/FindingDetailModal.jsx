@@ -4,7 +4,19 @@ import BaseModal from "../../common/Modal/BaseModal";
 import SeverityBadge from "../../common/SeverityBadge/SeverityBadge";
 import RawEvidenceModal from "../RawEvidenceModal/RawEvidenceModal";
 import { X, Info, CaretRight, Eye } from "@phosphor-icons/react";
+import { RECOMMENDATION_MAP } from "../../../data/recommendationMap";
 import "./FindingDetailModal.css";
+
+/** Resolve the WFVT identifier for a finding from the approved frontend
+ *  mapping (case-insensitive name match). Returns null when unknown. */
+const wfvtCodeForName = (name) => {
+  if (!name) return null;
+  const target = String(name).trim().toLowerCase();
+  for (const [code, entry] of Object.entries(RECOMMENDATION_MAP)) {
+    if (String(entry.name || "").trim().toLowerCase() === target) return code;
+  }
+  return null;
+};
 
 const formatEpoch = (sec) =>
   sec ? new Date(sec * 1000).toLocaleString() : "—";
@@ -26,6 +38,7 @@ const FindingDetailModal = ({
   finding,
   rawFinding,
   findingType = "vulnerability",
+  networkContext = null,
   loading,
   error,
 }) => {
@@ -49,13 +62,13 @@ const FindingDetailModal = ({
       : [];
 
     return (
-      <div className="fdm-section">
+      <div className="fdm-section fdm-rec-section">
         <div className="fdm-rec-header">
-          <h3>Recommendations</h3>
+          <h3>Recommended Actions</h3>
           <span className="fdm-rec-subtitle">Sourced from published standards</span>
         </div>
         {recs.length > 0 ? (
-          <ul className="fdm-rec-list">
+          <ol className="fdm-rec-list">
             {recs.map((rec, index) => {
               const isExpanded = expandedRecs.has(index);
               return (
@@ -69,11 +82,17 @@ const FindingDetailModal = ({
                     onClick={() => toggleRec(index)}
                     aria-expanded={isExpanded}
                   >
+                    <span className="fdm-rec-number" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <span className="fdm-rec-text">{rec.text}</span>
+                    {rec.priority && (
+                      <span className="fdm-rec-priority">{rec.priority}</span>
+                    )}
                     <CaretRight
                       size={14}
                       className={`fdm-rec-chevron${isExpanded ? " rotated" : ""}`}
                     />
-                    <span className="fdm-rec-text">{rec.text}</span>
                   </button>
 
                   {Array.isArray(rec.sources) && rec.sources.length > 0 && (
@@ -123,7 +142,7 @@ const FindingDetailModal = ({
                 </li>
               );
             })}
-          </ul>
+          </ol>
         ) : (
           <p className="fdm-rec-empty">
             No recommendations available for this finding.
@@ -196,6 +215,10 @@ const FindingDetailModal = ({
 
   const sessions = rawFinding?.sessions || [];
   const activeSession = rawFinding?.activeSession;
+  const wfvtCode = wfvtCodeForName(finding.name);
+  const affectedNetwork =
+    networkContext?.ssid || rawFinding?.ssid || null;
+  const affectedBssid = networkContext?.bssid || rawFinding?.bssid || null;
 
   return (
     <>
@@ -209,6 +232,7 @@ const FindingDetailModal = ({
             <div className="fdm-title-row">
               <SeverityBadge level={finding.severity} />
               <h2>{finding.name}</h2>
+              {wfvtCode && <span className="fdm-wfvt-chip">{wfvtCode}</span>}
               <button
                 className="fdm-info-btn"
                 onClick={() => setShowEvidence(true)}
@@ -248,6 +272,17 @@ const FindingDetailModal = ({
           <div className="fdm-body">
             {/* Status strip */}
             <div className="fdm-status-strip">
+              {affectedNetwork && (
+                <div className="fdm-status-item">
+                  <span className="fdm-status-label">Network</span>
+                  <span className="fdm-status-value">
+                    {affectedNetwork}
+                    {affectedBssid && (
+                      <span className="fdm-status-sub"> {affectedBssid}</span>
+                    )}
+                  </span>
+                </div>
+              )}
               <div className="fdm-status-item">
                 <span className="fdm-status-label">Status</span>
                 <span className={`fdm-status-value fdm-status-${(rawFinding?.status || "").toLowerCase()}`}>

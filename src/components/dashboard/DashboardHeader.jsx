@@ -9,6 +9,9 @@ const DashboardHeader = ({
   scanList,
   selectedScanId,
   onScanChange,
+  summaryDate,
+  onSummaryDateChange,
+  availableScanDates = [],
   piStatus,
 }) => {
   const formatDate = (iso) => {
@@ -23,6 +26,22 @@ const DashboardHeader = ({
       return "Unknown";
     }
   };
+
+  // "YYYY-MM-DD" → "Jun 25, 2026" (plain calendar date, no TZ math needed).
+  const formatDay = (day) => {
+    if (!day) return "Unknown";
+    try {
+      return new Date(`${day}T00:00:00`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return day;
+    }
+  };
+
+  const latestDate = availableScanDates[0] || null;
 
   const isOnline = piStatus?.online === true;
   const isLoading = piStatus?.online === null;
@@ -41,6 +60,28 @@ const DashboardHeader = ({
             onChange={setViewMode}
           />
         </div>
+
+        {isSummary && (
+          <div className="filter-group">
+            <label htmlFor="summary-date-select">SUMMARY DATE</label>
+            <select
+              id="summary-date-select"
+              value={summaryDate || ""}
+              onChange={(e) => onSummaryDateChange?.(e.target.value || null)}
+              disabled={availableScanDates.length === 0}
+              aria-label="Summary date"
+            >
+              <option value="">
+                {latestDate ? `Latest — ${formatDay(latestDate)}` : "Latest"}
+              </option>
+              {availableScanDates.map((day) => (
+                <option key={day} value={day}>
+                  {formatDay(day)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {!isSummary && (
           <div className="filter-group">

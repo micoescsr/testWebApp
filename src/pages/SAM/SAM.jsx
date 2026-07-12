@@ -605,6 +605,13 @@ const SAM = () => {
           finding={currentDetail}
           rawFinding={rawFinding}
           findingType={findingType}
+          networkContext={{
+            ssid:
+              backendState?.ssid ||
+              (lastScannedNetwork || selectedNetwork)?.ssid ||
+              null,
+            bssid: (lastScannedNetwork || selectedNetwork)?.bssid || null,
+          }}
           loading={detailLoading}
           error={detailError}
         />

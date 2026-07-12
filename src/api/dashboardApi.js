@@ -1,9 +1,13 @@
 ﻿// api/dashboardApi.js
 import api from "./axios";
 
-// Summary (all networks aggregated)
-export const getDashboardSummary = () => {
-  return api.get("/dashboard/summary");
+// Summary (all networks aggregated).
+// Optional asOfDate (YYYY-MM-DD) → historical summary: latest completed scan
+// per network as of the end of that date. Omitted → latest summary.
+export const getDashboardSummary = (asOfDate) => {
+  const params = {};
+  if (asOfDate) params.asOf = asOfDate;
+  return api.get("/dashboard/summary", { params });
 };
 
 // Per-network dashboard data (optional scanId for date filter)

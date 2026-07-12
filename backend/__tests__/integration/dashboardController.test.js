@@ -69,6 +69,33 @@ describe("GET /api/dashboard/summary", () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("Failed to load summary");
   });
+
+  test("passes null to service when no asOf param", async () => {
+    await request(app).get("/api/dashboard/summary").set("Authorization", AUTH);
+    expect(mockDashboardService.getSummaryData).toHaveBeenCalledWith(null);
+  });
+
+  test("passes valid asOf date to service", async () => {
+    const res = await request(app)
+      .get("/api/dashboard/summary?asOf=2026-06-25")
+      .set("Authorization", AUTH);
+    expect(res.status).toBe(200);
+    expect(mockDashboardService.getSummaryData).toHaveBeenCalledWith("2026-06-25");
+  });
+
+  test.each([
+    "2026-6-25",
+    "not-a-date",
+    "2026-02-30",
+    "2026-06-25T00:00:00Z",
+    "2026-06-25'; DROP TABLE scans;--",
+  ])("rejects invalid asOf %s with 400", async (bad) => {
+    const res = await request(app)
+      .get(`/api/dashboard/summary?asOf=${encodeURIComponent(bad)}`)
+      .set("Authorization", AUTH);
+    expect(res.status).toBe(400);
+    expect(mockDashboardService.getSummaryData).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/dashboard/networks", () => {

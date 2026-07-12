@@ -138,10 +138,146 @@
   margin-bottom: var(--space-2);
 }
 
-.panel-header h2 {
+.panel-header h2,
+.panel-header h3 {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+}
+
+.panel-subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Shared empty state inside panel bodies */
+.panel-empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-4) var(--space-2);
+}
+
+/* Historical summary context note */
+.dash-context-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Metric whose historical snapshot is unavailable (data limitation, not error) */
+.stat-card--unavailable .stat-value {
+  color: var(--text-muted);
+}
+
+/* ── Dashboard sections (Vulnerability Overview / Threat Monitoring / …) ── */
+.dash-section {
+  margin-bottom: var(--space-5);
+}
+
+.dash-section-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+.dash-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.dash-section-header .dash-section-title {
+  margin-bottom: 0;
+}
+
+/* ── Threat Monitoring layout ── */
+.dash-threat-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 2fr 1.5fr;
+  gap: var(--space-4);
+}
+
+.dash-threat-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stat-value-text {
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.threat-type-body {
+  height: 260px;
+}
+
+.threat-activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.threat-activity-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.threat-activity-item:last-child {
+  border-bottom: none;
+}
+
+.threat-activity-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.threat-activity-name {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.threat-activity-net {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── Historical Detection Trends ── */
+.dash-history-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.history-chart-body {
+  height: 240px;
+}
+
+.history-range-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.history-range-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 .panel-body {
@@ -562,6 +698,20 @@
     grid-template-columns: 1fr;
   }
 
+  /* Threat monitoring: metrics row on top, charts side by side */
+  .dash-threat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-threat-metrics {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+
+  .dash-threat-metrics .stat-card {
+    flex: 1;
+  }
+
   .dash-stats-row-6 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -584,10 +734,20 @@
 
   /* Make all rows 1 column */
   .dash-main-row,
-  .dash-bottom-row {
+  .dash-bottom-row,
+  .dash-threat-row,
+  .dash-history-row {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+
+  .dash-threat-metrics {
+    flex-direction: column;
+  }
+
+  .dash-section-header {
+    flex-wrap: wrap;
   }
 
   /* Stat cards: 2 per row max */

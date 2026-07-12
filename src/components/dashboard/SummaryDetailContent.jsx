@@ -118,10 +118,12 @@ function buildConfig(type, rows) {
       defaultSort: "clients_desc",
     };
   }
-  if (type === "findings") {
+  if (type === "findings" || type === "vulnFindings" || type === "threatEvents") {
     return {
       // rows here are normalized findings (see flattenFindings): network + finding
       // are both searchable; ssid alias mirrors `network` for the SSID search.
+      // vulnFindings/threatEvents are pre-filtered by kind, so the Type filter
+      // only shows on the combined "findings" drawer.
       searchFields: ["network", "finding"],
       filters: [
         { id: "severity", label: "Severity",
@@ -133,12 +135,14 @@ function buildConfig(type, rows) {
           ],
           match: (r, v) =>
             String(r.severity || "").toLowerCase() === v.toLowerCase() },
-        { id: "kind", label: "Type", allLabel: "All",
-          options: [
-            { value: "Vulnerability", label: "Vulnerability" },
-            { value: "Threat", label: "Threat" },
-          ],
-          match: (r, v) => r.kind === v },
+        ...(type === "findings"
+          ? [{ id: "kind", label: "Type", allLabel: "All",
+              options: [
+                { value: "Vulnerability", label: "Vulnerability" },
+                { value: "Threat", label: "Threat" },
+              ],
+              match: (r, v) => r.kind === v }]
+          : []),
         { id: "category", label: "Category", allLabel: "All",
           options: [
             { value: "openAndWeakCrypto", label: "Open / Weak Crypto" },
@@ -211,6 +215,16 @@ const SummaryDetailContent = ({ type, data, onSelectNetwork }) => {
     if (type === "findings") {
       return flattenFindings(detailedFindings);
     }
+    if (type === "vulnFindings") {
+      return flattenFindings(detailedFindings).filter(
+        (f) => f.kind === "Vulnerability"
+      );
+    }
+    if (type === "threatEvents") {
+      return flattenFindings(detailedFindings).filter(
+        (f) => f.kind === "Threat"
+      );
+    }
     return [];
   }, [type, networkDirectory, detailedFindings]);
 
@@ -250,7 +264,9 @@ const SummaryDetailContent = ({ type, data, onSelectNetwork }) => {
       onClear={onClear}
       activeCount={activeFilterCount(config, state)}
       searchPlaceholder={
-        type === "findings" ? "Search network or finding…" : "Search by SSID…"
+        type === "findings" || type === "vulnFindings" || type === "threatEvents"
+          ? "Search network or finding…"
+          : "Search by SSID…"
       }
     />
   );
@@ -364,13 +380,13 @@ const SummaryDetailContent = ({ type, data, onSelectNetwork }) => {
     );
   }
 
-  // ── Severity by Kind (aggregate — unchanged) ──
+  // ── Vulnerability Severity Distribution (aggregate, vulnerabilities only) ──
   if (type === "severityKind") {
-    const hasData = severityData.some(
-      (s) => (s.vulnerabilities || 0) + (s.threats || 0) > 0
-    );
+    const hasData = severityData.some((s) => (s.vulnerabilities || 0) > 0);
     if (!hasData) {
-      return <EmptyState message="No findings recorded in the latest scan." />;
+      return (
+        <EmptyState message="No vulnerability findings recorded in the latest scan." />
+      );
     }
     return (
       <div>
@@ -380,7 +396,8 @@ const SummaryDetailContent = ({ type, data, onSelectNetwork }) => {
               <SeverityBadge level={s.severity} size="sm" />
             </span>
             <span className="dd-stat-value">
-              {s.vulnerabilities || 0} vuln · {s.threats || 0} threat
+              {s.vulnerabilities || 0} finding
+              {(s.vulnerabilities || 0) === 1 ? "" : "s"}
             </span>
           </div>
         ))}
@@ -388,10 +405,20 @@ const SummaryDetailContent = ({ type, data, onSelectNetwork }) => {
     );
   }
 
-  // ── Total Vulnerabilities/Threats — flattened, filterable findings list ──
-  if (type === "findings") {
+  // ── Findings lists — combined, vulnerability-only, or threat-only ──
+  if (type === "findings" || type === "vulnFindings" || type === "threatEvents") {
     if (baseRows.length === 0) {
-      return <EmptyState message="No detailed findings available for this metric." />;
+      return (
+        <EmptyState
+          message={
+            type === "vulnFindings"
+              ? "No vulnerability findings recorded in the latest scan."
+              : type === "threatEvents"
+              ? "No threat events detected in the latest scans."
+              : "No detailed findings available for this metric."
+          }
+        />
+      );
     }
     return (
       <>
