@@ -27,7 +27,6 @@
 | `/accounts-audit` | `AccountsAudit` | ✓ | Protected + superadmin | User management & audit logs |
 | `/history` | `History` | ✓ | Protected | Historical scan data browser |
 | `/profile` | `Profile` | ✓ | Protected | View profile & reset password |
-| `/test-auth` | `TestAuth` | ✓ | Protected | Debug/test authentication (dev only) |
 
 ---
 
@@ -55,7 +54,6 @@ graph TD
         ACC["/accounts-audit<br/>(superadmin only)"]
         HIST["/history"]
         PROF["/profile"]
-        TEST["/test-auth"]
     end
 
     LOGIN -->|"Login success, MFA enrolled"| DASH
@@ -444,8 +442,7 @@ sequenceDiagram
 
 ---
 
-## ⚠️ Needs Verification
+## Routing Notes
 
-- **`/test-auth` page**: This appears to be a development/debug tool (47KB). Verify if it should be included in production builds.
-- **Dynamic routes**: No dynamic route segments (`:id`) are used in the frontend router — all entity-level navigation uses query parameters or modals.
-- **Fallback routes**: No explicit 404/catch-all route is defined. Unmatched paths under `/*` will render an empty main content area.
+- **Dynamic routes**: No dynamic route segments (`:id`) are used in the frontend router; entity-level navigation uses query parameters or modals.
+- **Fallback routes**: Unknown authenticated paths redirect to `/dashboard`.

@@ -123,18 +123,18 @@ All detection lifecycle transitions are logged to the audit table:
 ## Where to look in the code
 
 ### Backend
-- **Detection state service**: [backend/services/detectStateService.js](backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, `startServerHeartbeatLoop`, `stopServerHeartbeatLoop`, optimistic locking).
-- **Detection controller**: [backend/controllers/detectController.js](backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints. Contains moved `loadThreatDefinitions()`, `mapPollResultsToThreatRows()`, `findLatestScanIdForBssid()`, `persistThreatRows()` helpers.
-- **Detection routes**: [backend/routes/detectRoutes.js](backend/routes/detectRoutes.js) — Express router mapping endpoints to controller handlers.
-- **Server mount**: [backend/server.js](backend/server.js) — mounts `detectRoutes` at `/api/detect`, calls `detectStateService.ensureRow()` and `detectStateService.startServerHeartbeatLoop()` on startup.
-- **Auto-start on scan save**: [backend/controllers/rasPiController.js](backend/controllers/rasPiController.js) — calls `detectStateService.startOrSwitch()` after risk pipeline.
-- **Threat detail endpoint** (modal data): [backend/controllers/samController.js](backend/controllers/samController.js) at `/api/sam/threats/:idOrName`.
+- **Detection state service**: [backend/services/detectStateService.js](../../backend/services/detectStateService.js) — single source of truth for `detection_state` table operations (`ensureRow`, `getStatusAndMaybeFail`, `startOrSwitch`, `stop`, `heartbeat`, `startServerHeartbeatLoop`, `stopServerHeartbeatLoop`, optimistic locking).
+- **Detection controller**: [backend/controllers/detectController.js](../../backend/controllers/detectController.js) — Express handlers for all `/api/detect/*` endpoints and threat mapping/persistence helpers.
+- **Detection routes**: [backend/routes/detectRoutes.js](../../backend/routes/detectRoutes.js) — Express router mapping endpoints to controller handlers.
+- **Server mount**: [backend/server.js](../../backend/server.js) — mounts `detectRoutes` at `/api/detect` and starts detection-state services.
+- **Auto-start on scan save**: [backend/controllers/rasPiController.js](../../backend/controllers/rasPiController.js) — calls `detectStateService.startOrSwitch()` after the risk pipeline.
+- **Threat detail endpoint** (modal data): [backend/controllers/samController.js](../../backend/controllers/samController.js) at `/api/sam/threats/:idOrName`.
 
 ### Frontend
-- **Detection API helpers**: [src/api/detectApi.js](src/api/detectApi.js) — `getDetectStatus()`, `startDetect()`, `stopDetect()`, `pollDetect()`.
-- **Detection hook**: [src/hooks/useSAM.js](src/hooks/useSAM.js) — `useThreatDetection()` bootstraps from `/detect/status` on mount, runs axios-based polling at 3s intervals, exposes `refreshStatus()`.
-- **SAM page**: [src/pages/SAM/SAM.jsx](src/pages/SAM/SAM.jsx) — destructures `failureReason`/`refreshStatus` from hook, shows FAILED banner.
-- **Display**: [src/components/sam/ThreatsTable.jsx](src/components/sam/ThreatsTable.jsx) — renders parent rows and expanded sessions panel.
+- **Detection API helpers**: [src/api/detectApi.js](../../src/api/detectApi.js) — `getDetectStatus()`, `startDetect()`, `stopDetect()`, `pollDetect()`.
+- **Detection hook**: [src/hooks/useSAM.js](../../src/hooks/useSAM.js) — bootstraps status and provides the polling actions consumed by the global context.
+- **SAM page**: [src/pages/SAM/SAM.jsx](../../src/pages/SAM/SAM.jsx) — presents detection state and findings.
+- **Display**: [src/components/sam/ThreatsTable.jsx](../../src/components/sam/ThreatsTable.jsx) — renders parent rows and expanded sessions.
 
 ---
 
@@ -149,7 +149,6 @@ All detection lifecycle transitions are logged to the audit table:
 
 ## Local dev and testing
 
-- **Mock data**: `src/data/mockThreats.js` provides `mappedThreats` and `rawPollSamples` for UI testing when the detector is offline.
 - **Against real detector**:
   1. Ensure FastAPI detector is reachable and `FASTAPI_BASE` is set in backend `.env`.
   2. Start Express backend (`npm run dev` in `backend/`).
@@ -199,16 +198,16 @@ All detection lifecycle transitions are logged to the audit table:
 
 ## Files to inspect quickly
 
-- [backend/services/detectStateService.js](backend/services/detectStateService.js)
-- [backend/controllers/detectController.js](backend/controllers/detectController.js)
-- [backend/routes/detectRoutes.js](backend/routes/detectRoutes.js)
-- [backend/server.js](backend/server.js)
-- [backend/controllers/rasPiController.js](backend/controllers/rasPiController.js)
-- [src/api/detectApi.js](src/api/detectApi.js)
-- [src/hooks/useSAM.js](src/hooks/useSAM.js)
-- [src/pages/SAM/SAM.jsx](src/pages/SAM/SAM.jsx)
-- [src/components/sam/ThreatsTable.jsx](src/components/sam/ThreatsTable.jsx)
-- [backend/controllers/samController.js](backend/controllers/samController.js)
+- [backend/services/detectStateService.js](../../backend/services/detectStateService.js)
+- [backend/controllers/detectController.js](../../backend/controllers/detectController.js)
+- [backend/routes/detectRoutes.js](../../backend/routes/detectRoutes.js)
+- [backend/server.js](../../backend/server.js)
+- [backend/controllers/rasPiController.js](../../backend/controllers/rasPiController.js)
+- [src/api/detectApi.js](../../src/api/detectApi.js)
+- [src/hooks/useSAM.js](../../src/hooks/useSAM.js)
+- [src/pages/SAM/SAM.jsx](../../src/pages/SAM/SAM.jsx)
+- [src/components/sam/ThreatsTable.jsx](../../src/components/sam/ThreatsTable.jsx)
+- [backend/controllers/samController.js](../../backend/controllers/samController.js)
 
 ---
 Updated on March 2, 2026

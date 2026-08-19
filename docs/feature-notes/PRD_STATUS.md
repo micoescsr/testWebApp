@@ -114,7 +114,7 @@ meta: { error: err.message },
 | `localStorage` for BSSID "cleared" timestamps | `src/hooks/useSAM.js` lines 131, 149 | LOW | Switch to `sessionStorage` for tab-scope isolation |
 | Debug `console.log` (2 occurrences) | `src/api/rasPiApi.js` | LOW | Remove or wrap in `import.meta.env.DEV` |
 | Debug `console.log` present | `src/hooks/useDevice.js`, `src/hooks/useSAM.js` | LOW | Remove or wrap in `import.meta.env.DEV` |
-| Raw backend error displayed to user | `src/pages/AccountsAudit/AccountsAudit.jsx`, `src/pages/TestAuth/TestAuth.jsx` | LOW | Sanitize before display |
+| Raw backend error displayed to user | `src/pages/AccountsAudit/AccountsAudit.jsx` | LOW | Sanitize before display |
 
 ---
 

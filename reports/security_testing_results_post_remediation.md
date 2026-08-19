@@ -4,8 +4,7 @@
 > **Tester:** Automated Security Test Suite (`backend/scripts/run-security-tests.ps1`) + Manual Code-Level Verification
 > **Target:** http://localhost:3000
 > **Scope:** Full-Stack Application (React + Express.js + Supabase)
-> **Baseline:** [`security_testing_results.md`](./security_testing_results.md) (2026-05-18)
-> **Raw automated output:** [`security_testing_results_rerun.md`](./security_testing_results_rerun.md)
+> **Comparison baseline:** 2026-05-18 security assessment (consolidated into this final report)
 
 ---
 
@@ -121,7 +120,7 @@ cd backend
 npm run lint:security              # Chunk 1.1
 npm audit                          # Chunk 1.2
 npm run start:dev                  # start server on :3000 (separate terminal)
-powershell -File scripts/run-security-tests.ps1   # Chunks 2-5, writes reports/security_testing_results_rerun.md
+powershell -File scripts/run-security-tests.ps1   # Chunks 2-5; writes a generated report under reports/
 npm test                           # full regression suite (402 tests)
 ```
 

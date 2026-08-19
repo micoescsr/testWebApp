@@ -1,100 +1,52 @@
-# Threat Detection (Polling) — End-to-end
+# Threat Detection
 
-This document explains the threat-detection polling flow implemented in the codebase, how the backend proxies and processes poll responses from the FastAPI service on the Pi, and where results are persisted.
+Why-PII? performs passive, rule-based Wi-Fi threat detection. The application does not deauthenticate clients, capture authentication handshakes or packet payloads, brute-force networks, or actively exploit assessed access points.
 
-**Primary backend polling endpoint**
+## API Surface
 
-- `GET /api/detect/poll` — defined in [backend/server.js](backend/server.js#L81). This endpoint proxies to the FastAPI `detect/poll` endpoint on the machine defined by `FASTAPI_BASE`.
+All detection routes are mounted under `/api/detect` and require a valid JWT, an active profile, and AAL2/MFA:
 
-**Frontend caller**
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/status` | Read authoritative detection state |
+| `POST` | `/start` | Start or switch the monitored scan/network |
+| `POST` | `/stop` | Stop detection and drain the Pi queue |
+| `POST` | `/heartbeat` | Update liveness for the active detection session |
+| `GET` | `/poll` | Poll passive findings from the Pi |
 
-- The frontend invokes the backend poll at: [src/hooks/useSAM.js](src/hooks/useSAM.js#L291) (fetch to `http://localhost:3000/api/detect/poll`).
+See [`routes/detectRoutes.js`](./routes/detectRoutes.js) and [`controllers/detectController.js`](./controllers/detectController.js).
 
-How the flow works (high level)
+## End-to-End Flow
 
-1. Frontend requests polling: calls backend `GET /api/detect/poll`.
-2. Backend proxies the request to FastAPI: `${FASTAPI_BASE}/detect/poll?max_items=<n>`.
-3. FastAPI responds with a JSON payload containing a `results` array of detection cycles.
-4. Backend maps FastAPI results to local threat rows via `loadThreatDefinitions()` and `mapPollResultsToThreatRows()`.
-5. Backend optionally persists mapped threat rows into Supabase tables via `persistThreatRows()` which looks up the most recent `scan_id` for a target BSSID and inserts rows into `vulnerabilities_threat`.
-6. Backend returns the original FastAPI response augmented with `threatRows` to the frontend.
+1. The frontend's global [`ThreatDetectionContext`](../src/context/ThreatDetectionContext.jsx) uses the detection hook in [`useSAM.js`](../src/hooks/useSAM.js). Consumers read the shared state rather than creating independent poll loops.
+2. The Express controller reads the authoritative row through [`detectStateService.js`](./services/detectStateService.js).
+3. `poll` calls the Pi's `/detect/poll` endpoint through [`piFetch.js`](./utils/piFetch.js), which keeps HMAC signing and Pi credentials on the server.
+4. `mapPollResultsToThreatRows()` accepts the implemented FastAPI finding keys (`evil_twin`, `mac_spoofing`, and `deauthentication`) and enriches their study-defined WFVT codes from `vulnerability_threat_details`.
+5. `persistThreatRows()` records event history, updates current finding state for the active scan, recomputes risk through the `compute_scan_risk` RPC with a tested JavaScript fallback, and invokes the risk pipeline for portal freshness updates.
+6. The original Pi response plus normalized `threatRows` is returned to the frontend.
 
-Key backend logic and where to find it
+Threat classification and scoring are deterministic. No AI or machine-learning model is used.
 
-- Proxy endpoint: [backend/server.js](backend/server.js#L81) — see `app.get('/api/detect/poll', ...)`.
-- Loading threat definitions: `loadThreatDefinitions(supabaseClient)` — reads `vulnerability_threat_details` to map vt_code → metadata.
-- Mapping results: `mapPollResultsToThreatRows(results, defsByCode)` — produces a normalized array of threat rows (id/name/severity/score/status/occurrences/sessions/raw).
-- Persistence orchestration: `persistThreatRows(threatRows, targetBssid, supabaseClient)` — finds latest `scan_id` for the target BSSID and inserts rows into `vulnerabilities_threat`.
-- Helpers: `findLatestScanIdForBssid(targetBssid, supabaseClient)` — finds networks by BSSID then recent `scans` for that network.
+## Persistence
 
-Supabase tables referenced
+The flow uses these database records:
 
-- `vulnerability_threat_details` — catalog of threat/vulnerability codes, names, CVSS scores, severity ratings.
-- `vulnerabilities_threat` — per-scan findings persisted by the backend.
-- `scans` — stores scan runs (linked to `networks`).
-- `networks` — stores access point metadata (bssid, ssid, etc.).
+- `detection_state` for the active target, scan, lifecycle status, heartbeat, and optimistic-lock version.
+- `vulnerability_threat_details` for WFVT metadata and severity values.
+- `vulnerability_threat_events` for event history.
+- `vulnerabilities_threat` for current per-scan finding state.
+- `scans` and `networks` for assessment identity and aggregate risk.
 
-Expected FastAPI `detect/poll` response (example)
+Database migrations are retained under [`migrations/`](./migrations/), including detection-state support, portal freshness, and the current risk formula.
 
-```json
-{
-  "running": true,
-  "results": [
-    {
-      "bssid": "AA:BB:CC:DD:EE:FF",
-      "detection_cycle_start": "2026-02-18T12:00:00Z",
-      "findings": {
-        "evil_twin": {
-          "id": "WFVT-006",
-          "status": "DETECTED",
-          "details": { "first_seen_epoch": 1676726400, "last_seen_epoch": 1676726460 },
-          "value": "Open"
-        },
-        "deauthentication": null,
-        "mac_spoofing": { }
-      }
-    }
-  ]
-}
-```
+## Configuration and Verification
 
-Notes on the mapping logic
+The Pi base URL and HMAC secret come from environment variables documented in [`.env.example`](./.env.example). Do not hardcode operational URLs or secrets.
 
-- `mapPollResultsToThreatRows` looks for specific finding keys like `evil_twin`, `mac_spoofing`, `deauthentication`. For each detected finding it:
-  - reads the `id` (vt_code) and looks up metadata in `vulnerability_threat_details`
-  - builds a grouped object per `vt_code` with aggregated occurrences, status (DETECTED/CLEARED), sessions array and raw results attached
+Relevant automated coverage includes:
 
-- `loadThreatDefinitions()` returns a Map keyed by `vt_code` (e.g., `WFVT-006`) used to populate name, score and severity when mapping.
-
-Persistence behavior
-
-- `persistThreatRows` will: find the latest `scan_id` for the target BSSID (via `findLatestScanIdForBssid`) and insert rows into `vulnerabilities_threat`.
-- When inserting it queries `vulnerability_threat_details` to obtain `vt_detail_id` and `vt_kind`.
-
-Where to change the FastAPI target
-
-- `FASTAPI_BASE` is declared in [backend/server.js](backend/server.js) (and in some controllers as `process.env.FASTAPI_BASE`). Update the environment variable or the constant to point to the Pi/FastAPI instance used for detection.
-
-Example curl request to backend poll (local)
-
-```bash
-curl "http://localhost:PORT/api/detect/poll?max_items=50"
-```
-
-Troubleshooting & verification
-
-- If `threatRows` is empty but FastAPI returns results: inspect `vulnerability_threat_details` to ensure vt_codes present in FastAPI results are catalogued.
-- If persistence is not happening: confirm `findLatestScanIdForBssid` finds a `network` and recent `scan` for the `bssid`—otherwise persistence is skipped.
-- Check logs in `backend/server.js` — the poll handler logs mapped rows and warnings when no network/scan is found.
-
-Next steps (suggestions)
-
-- Add additional finding keys in `mapPollResultsToThreatRows` if FastAPI adds more detection categories.
-- Add an audit trail table (e.g., `vulnerability_threat_events`) and update `persistThreatRows` to optionally insert events; currently no code references `vulnerability_threat_events` in the repository.
-- Add unit tests for `mapPollResultsToThreatRows` to verify aggregation semantics.
-
-References (code)
-
-- Poll handler: [backend/server.js](backend/server.js#L81)
-- Mapping & persistence helpers: [backend/server.js](backend/server.js#L120)
-- Frontend caller: [src/hooks/useSAM.js](src/hooks/useSAM.js#L291)
+- [`integration/detectController.test.js`](./__tests__/integration/detectController.test.js)
+- [`unit/detectStateService.test.js`](./__tests__/unit/detectStateService.test.js)
+- [`unit/threatPersistence.test.js`](./__tests__/unit/threatPersistence.test.js)
+- [`unit/piFetch.test.js`](./__tests__/unit/piFetch.test.js)
+- [`unit/signing.test.js`](./__tests__/unit/signing.test.js)

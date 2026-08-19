@@ -93,7 +93,7 @@ Other env: `NODE_ENV`, `APP_ENV`, `DATABASE_URL` (cross-wire check only).
 - Service layer (`services/*`: authService, dashboardService, detectStateService, apJobStore)
 - Repository layer (`repositories/*`)
 - Utility/helper layer (`utils/*`: piFetch, signing, scoring, riskPipeline, reportAggregations, auditLogger)
-- Local data modules (`src/data/recommendationMap.cjs` + `recommendationData.json`)
+- Backend-local data modules (`backend/src/data/recommendationMap.cjs` + `backend/src/data/recommendationData.json`)
 - Supabase client (`config/supabaseClient.js`, service role, resilient fetch)
 - Supabase (Postgres + Auth/JWKS + RPC)
 - Raspberry Pi / FastAPI agent (via Tailscale)
@@ -207,7 +207,7 @@ Persistence is mediated exclusively through the Supabase JavaScript SDK using a 
 | `middleware/mfaMiddleware.js` | AAL2 enforcement |
 | `middleware/rateLimiter.js` | In-memory per-IP limiters (global/login/refresh/mfa) |
 | `routes/samRoutes.js` + `controllers/samController.js` | SAM finding-detail endpoints + recommendation assembly |
-| `src/data/recommendationMap.cjs` | Backend-local CJS view of finding→recommendation map + helpers |
+| `backend/src/data/recommendationMap.cjs` | Backend-local CJS view of finding→recommendation map + helpers |
 | `src/data/recommendationData.json` | Static SOURCES + RECOMMENDATION_MAP data (referenced, head not opened) |
 | `controllers/piProxyController.js` | Raw signed proxy to the 6 Pi endpoints |
 | `services/detectStateService.js` | Detection state (optimistic lock) + server heartbeat loop |

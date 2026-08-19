@@ -1,11 +1,9 @@
 // utils/reportDataAdapter.js
-// Maps live /api/dashboard responses into the shape reportTemplates.js expects
-// (previously fed by src/data/mockReportData.js). See
-// docs/feature-notes/SAM_EXPORT_IMPLEMENTATION_PLAN.md for the field mapping.
+// Maps live /api/dashboard responses into the shape reportTemplates.js expects.
 
 import { getDashboardSummary, getDashboardForNetwork } from "../api/dashboardApi";
 // ESM mirror of the recommendation map (the backend uses the .cjs twin). Vite
-// can't transform the CommonJS .cjs from src/, so the frontend imports the .js.
+// The frontend imports the ESM .js module while the backend uses its local .cjs module.
 import {
   RECOMMENDATION_MAP,
   SOURCES,

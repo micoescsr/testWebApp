@@ -23,7 +23,7 @@ Score% = ( Σ Pi × CVSSi ) / Rmax × 100
 result to `LOW / MEDIUM / HIGH / CRITICAL` using the official 0/1-39/40-69/70-89/90-100
 scale.
 
-### The dilemma (`wifi_risk_scoring_review.md`)
+### Earlier weighted-sum model
 
 A network with **only** "Open System Authentication" detected (CVSS 9.4):
 

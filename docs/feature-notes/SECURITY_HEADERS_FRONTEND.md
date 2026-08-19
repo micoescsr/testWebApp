@@ -2,7 +2,7 @@
 
 ## Source
 
-ZAP scan (`ZAP-Security-Report.md`) against `http://localhost:5173/` (Vite dev server) found 3 missing-header alerts:
+A baseline ZAP scan against `http://localhost:5173/` (Vite dev server) found 3 missing-header alerts:
 
 | Alert | Risk | Plugin ID | Instances |
 |---|---|---|---|

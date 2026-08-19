@@ -7,8 +7,8 @@
 Public Wi-Fi networks in shared spaces often lack basic protections — no encryption, no client isolation, and no monitoring — leaving users vulnerable to packet sniffing, evil-twin attacks, and session hijacking. **Why-PII?** addresses this by combining a remotely controlled Raspberry Pi with a cloud-hosted dashboard that lets administrators:
 
 - **Scan** nearby wireless networks and catalogue their security posture (encryption type, signal strength, client count).
-- **Deploy a captive portal** on a controlled access point to demonstrate how credentials can be intercepted over unsecured connections.
-- **Detect threats in real time** — the Pi runs continuous monitoring and pushes alerts (rogue APs, deauth floods, ARP spoofing) to the dashboard.
+- **Publish security advisories** through a controlled captive portal without requesting credentials or collecting personal information.
+- **Detect supported Wi-Fi threats in real time** — the Pi passively monitors wireless metadata and pushes rule-based alerts to the dashboard.
 - **Score and track** each assessed network over time with a structured vulnerability history and exportable reports.
 - **Manage users and audit trails** — role-based access (admin / superadmin) with full audit logging of every action.
 
@@ -23,7 +23,7 @@ The browser never communicates with the Pi directly; the Express backend acts as
 | **Network Scanning** | Discover and profile nearby Wi-Fi networks via the Raspberry Pi |
 | **Threat Detection** | Real-time monitoring with live dashboard indicators and alert badges |
 | **Security Scoring** | Quantitative risk scoring per network with historical trend charts |
-| **Captive Portal Demo** | Controlled AP + portal to illustrate credential interception risks |
+| **Captive Portal Advisories** | Controlled AP + portal that presents assessment-based security guidance without credential entry |
 | **Device Management** | Remote Raspberry Pi administration (AP control, service status, logs) |
 | **User & Role Management** | Admin / superadmin roles, account CRUD, password policies |
 | **Audit Logging** | Immutable, append-only audit trail with archival support |
@@ -124,42 +124,31 @@ npm start             # Express on http://localhost:3000
 ### Tests
 
 ```bash
-# Backend unit/integration tests
+# Frontend unit tests
+npm test
+
+# Backend unit/integration tests (from the repository root)
 cd backend
 npm test
 npm run test:coverage
 
-# E2E tests (Playwright)
+# E2E tests (run from the repository root; requires a configured test environment)
+cd ..
 npm run test:e2e
 npm run test:e2e:headed
 ```
 
 ---
 
-## Security Hardening
+## Scope and Security Model
 
-The project is undergoing a phased security hardening process documented in [`SECURITY_HARDENING_PLAN.md`](docs/feature-notes/SECURITY_HARDENING_PLAN.md).
+- Assessment is passive-only: the system observes wireless metadata and does not capture packet payloads or authentication handshakes, deauthenticate clients, brute-force networks, or exploit assessed access points.
+- Threat classification and risk scoring are deterministic and rule-based; the system does not use AI or machine learning for detection.
+- The captive portal presents simplified security guidance derived from assessment results. It does not request or store visitor credentials or personal information.
+- Protected web routes use JWT authentication, mandatory TOTP MFA, role checks, rate limiting, input validation, and audit logging.
+- Express-to-Pi control requests are HMAC-signed, and secrets are supplied only through environment variables.
 
-### Current Security Posture: 8/10
-
-| Phase | Name                        | Status       | Key Items                                                      |
-|-------|-----------------------------|--------------|----------------------------------------------------------------|
-| 0     | Secrets Remediation         | **Done**     | Pi secrets generated, `CONTROL_SIGNING_SECRET` in env (unified HMAC auth for all Pi endpoints) |
-| 1     | P0 Infrastructure           | **Done**     | `trust proxy`, Helmet/CSP, rate limiting, env validation, CORS/cookies (`CROSS_ORIGIN_COOKIES`) |
-| 2     | Route Auth Lockdown         | **Done**     | `authJWT` + `requireActiveProfile` mounted on all 11 protected route groups; `requireSuperadmin` on audit |
-| 3     | Bug Fixes & Info Disclosure | **Partial**  | `rasPiController` audit-log leaks sealed (generic `SCAN_TRIGGER_ERROR` / `SCAN_SAVE_ERROR` codes); residual `err.message` remains in `detectController` audit meta |
-| 4     | Deployment Readiness        | **Partial**  | CORS via env, `VITE_API_BASE_URL` in axios; `deviceApi.js` still hardcoded |
-| 4.5   | Pi Connectivity Readiness   | Not started  | Funnel URL stability, nginx binding, timeouts, Idempotency-Key |
-| 5     | Optional Polish             | **Done**     | UUID validation middleware on device/user/rasPi routes; dead `userValidators.js` removed |
-| 6     | Testing Deliverables        | **Done**     | 11 integration + 16 unit Jest suites, Playwright E2E, coverage reports |
-
-### Deployment Watchlist Items
-
-1. **CSP `connect-src`** — auto-configured per environment; Railway + Supabase domains added in prod
-2. **CORS / cookies** — set `CROSS_ORIGIN_COOKIES=true` on Railway backend for `SameSite=None; Secure`
-3. **Multi-instance** — in-memory rate limiter resets on restart; Redis required if Railway auto-scales
-4. **`deviceApi.js` hardcoded URL** — still uses `localhost:3000`; should use shared axios instance
-5. **Funnel ports** — Funnel only listens on 443/8443/10000; nginx 9000 is internal only
+See [`SECURITY_AND_RISKS.md`](docs/SECURITY_AND_RISKS.md) for the current security model and risk register.
 
 ---
 
@@ -167,25 +156,12 @@ The project is undergoing a phased security hardening process documented in [`SE
 
 | Document                                                                  | Covers                                              |
 |---------------------------------------------------------------------------|------------------------------------------------------|
-| [`SECURITY_HARDENING_PLAN.md`](docs/feature-notes/SECURITY_HARDENING_PLAN.md) | Full phased security plan, audit findings, risk notes |
-| [`SECURITY_AND_RISKS.md`](docs/SECURITY_AND_RISKS.md)                     | Architectural security model & risk register         |
-| [`DEVICE_MANAGEMENT_README.md`](docs/feature-notes/DEVICE_MANAGEMENT_README.md) | Device management feature (AP, portal, scans)   |
-| [`AP_ENABLE_PORTAL_README.md`](docs/feature-notes/AP_ENABLE_PORTAL_README.md) | Access Point & captive portal flow                |
-| [`ACCOUNTS_FLOW_README.md`](docs/feature-notes/ACCOUNTS_FLOW_README.md)   | User account management flow                         |
-| [`AUDIT_README.md`](docs/feature-notes/AUDIT_README.md)                   | Audit logging system                                 |
-| [`SESSION_PERSISTENCE_README.md`](docs/feature-notes/SESSION_PERSISTENCE_README.md) | Session persistence & token refresh         |
-| [`SAM_CHANGES_README.md`](docs/feature-notes/SAM_CHANGES_README.md)       | Security Assessment Management changes               |
-| [`HISTORY_CHANGES_README.md`](docs/feature-notes/HISTORY_CHANGES_README.md) | History/vulnerability tracking changes             |
-| [`CHANGES_README.md`](docs/feature-notes/CHANGES_README.md)               | General changelog                                    |
-| [`scanREADME.md`](docs/feature-notes/scanREADME.md)                       | Scan workflow                                        |
-| [`threatsREADME.md`](docs/feature-notes/threatsREADME.md)                 | Threat detection system                              |
-| [`clearListREADME.md`](docs/feature-notes/clearListREADME.md)             | Clear list functionality                             |
-| [`PRD_STATUS.md`](docs/feature-notes/PRD_STATUS.md)                       | Whitebox assessment PRD & remediation tracker        |
-| [`backend/TESTING.md`](backend/TESTING.md)                               | Backend test guide                                   |
-| [`backend/THREATS.md`](backend/THREATS.md)                                | Backend threat model                                 |
-
----
-
-## Recent UI Changes
-
-The threat detection system now features a **global detection state provider** with a single polling loop, **sidebar status indicators** (green = monitoring, blue = starting, red = failed), a **compact status pill** on the SAM page, and **dismissible out-of-range banners**. See [`CHANGES_README.md`](CHANGES_README.md) for full details.
+| [`DOCUMENTATION_INDEX.md`](docs/DOCUMENTATION_INDEX.md) | Complete documentation map |
+| [`PROJECT_CONTEXT_AND_PRD.md`](docs/PROJECT_CONTEXT_AND_PRD.md) | Implemented scope and product context |
+| [`AUTHENTICATION_AND_AUTHORIZATION.md`](docs/AUTHENTICATION_AND_AUTHORIZATION.md) | Authentication, MFA, and RBAC |
+| [`BUILD_DEPLOYMENT_RUNTIME.md`](docs/BUILD_DEPLOYMENT_RUNTIME.md) | Build, configuration, and deployment |
+| [`SECURITY_AND_RISKS.md`](docs/SECURITY_AND_RISKS.md) | Security model and risk register |
+| [`TESTING_AND_QUALITY_ASSURANCE.md`](docs/TESTING_AND_QUALITY_ASSURANCE.md) | Automated and manual test guidance |
+| [`WIFI_RISK_SCORE_SPEC.md`](docs/scoring-refactor/WIFI_RISK_SCORE_SPEC.md) | Implemented risk-scoring methodology |
+| [`backend/TESTING.md`](backend/TESTING.md) | Backend test guide |
+| [`backend/THREATS.md`](backend/THREATS.md) | Backend threat model |

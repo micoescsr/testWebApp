@@ -5,7 +5,6 @@
 > MFA mechanics (TOTP enroll/challenge, AAL2 enforcement) are documented in
 > [`../AUTHENTICATION_AND_AUTHORIZATION.md` §11](../AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp) —
 > this file only covers the Reset MFA action as it appears in the Accounts page flow.
-> See also [`CHANGES_README.md`](./CHANGES_README.md) for the MFA merge changelog entry.
 
 ---
 

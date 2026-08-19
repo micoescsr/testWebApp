@@ -31,11 +31,6 @@ import "./App.css";
 import UserMenu from "./components/common/UserMenu/UserMenu";
 import Spinner from "./components/common/Spinner/Spinner";
 
-// QA debug harness — never ship to production builds
-const TestAuth = import.meta.env.DEV
-  ? lazy(() => import("./pages/TestAuth/TestAuth"))
-  : null;
-
 // Wraps the active page in an error boundary that resets on navigation, so a
 // crash (or a failed lazy-chunk load) in one page shows a fallback instead of
 // blanking the whole app — and moving to another page recovers automatically.
@@ -156,16 +151,6 @@ function App() {
                         />
                         <Route path="/history" element={<History />} />
                         <Route path="/profile" element={<Profile />} />
-                        {import.meta.env.DEV && (
-                          <Route
-                            path="/test-auth"
-                            element={
-                              <Suspense fallback={null}>
-                                <TestAuth />
-                              </Suspense>
-                            }
-                          />
-                        )}
                         {/* Unknown authenticated path → Dashboard (no blank screen) */}
                         <Route
                           path="*"

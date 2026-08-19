@@ -432,7 +432,7 @@ The frontend has a solid security architecture:
 |---------|------|----------|--------|
 | Debug console.logs | `src/api/rasPiApi.js`, `src/hooks/useDevice.js`, `src/hooks/useSAM.js` | LOW | Network IDs, BSSID data, payload structures logged to console. Strip or wrap in `import.meta.env.DEV` check. |
 | localStorage for SAM timestamps | `src/hooks/useSAM.js` | LOW | Uses `localStorage` for BSSID "cleared" timestamps. Persists across sessions. Should use `sessionStorage` for tab-scope isolation. |
-| Raw error display | `src/pages/AccountsAudit/AccountsAudit.jsx`, `src/pages/TestAuth/TestAuth.jsx` | LOW | Backend error messages displayed directly to users. If backend leaks internal details, frontend amplifies them. |
+| Raw error display | `src/pages/AccountsAudit/AccountsAudit.jsx` | LOW | Backend error messages displayed directly to users. If backend leaks internal details, frontend amplifies them. |
 | Report template injection surface | `src/utils/reportTemplates.js` | LOW | Builds HTML via template literals with `JSON.stringify()`. SSID/threat names could break JSON context. Low risk since reports are generated client-side. |
 
 ---

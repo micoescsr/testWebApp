@@ -36,7 +36,7 @@ These gaps expose users to packet sniffing, evil-twin attacks, deauthentication 
 | Vulnerability assessment | Rule-based scoring using CVSS base scores for detected misconfigurations |
 | Real-time threat detection | Continuous monitoring for rogue APs, deauthentication attacks, evil twins |
 | Risk scoring | Quantitative risk percentages (0–100%) with classification bands |
-| Captive portal demonstration | Controlled AP with portal to illustrate credential interception |
+| Captive portal advisories | Controlled AP with assessment-based security guidance; no credential or personal-data collection |
 | Report generation | Exportable PDF reports with charts, findings, and NIST/OWASP recommendations |
 | Multi-user management | Role-based access control (admin/superadmin) with audit logging |
 | Historical tracking | Vulnerability and threat history across scans |

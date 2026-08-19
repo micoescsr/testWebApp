@@ -573,7 +573,6 @@ Provides global threat detection state — single polling loop for the entire ap
 /accounts-audit          → Accounts & Audit page (superadmin)
 /history                 → History page
 /profile                 → User Profile page
-/test-auth               → Auth testing page (dev)
 ```
 
 ### 9.2 Auth Guard

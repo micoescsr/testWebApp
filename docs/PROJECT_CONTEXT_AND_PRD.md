@@ -29,21 +29,21 @@
 | 12 | [CAPSTONE_DOCUMENTATION.md](./CAPSTONE_DOCUMENTATION.md) | Formal academic documentation of the entire system |
 | 13 | [DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md) | Full categorized index of every file in `docs/`, canonical status, last-verified dates |
 
-> See also `feature-notes/ACCOUNTS_FLOW_README.md` (accounts/audit deep-dive, includes Reset MFA) and `feature-notes/CHANGES_README.md` (file-level changelog, includes the MFA merge and risk-trend reporting).
+> See also `feature-notes/ACCOUNTS_FLOW_README.md` for the accounts/audit deep-dive, including Reset MFA.
 
 ---
 
 ## 1. Project Overview
 
-**Why-PII?** is a full-stack web application for assessing the security of public Wi-Fi access points in communal spaces (cafés, libraries, co-working areas). It uses a Raspberry Pi microcontroller as a field probe to perform passive wireless scanning, threat detection, and captive portal demonstrations.
+**Why-PII?** is a full-stack web application for assessing the security of public Wi-Fi access points in communal spaces (cafés, libraries, co-working areas). It uses a Raspberry Pi microcontroller as a field probe for passive wireless scanning and rule-based threat detection, with a captive portal that presents security advisories.
 
 ### Core Purpose
 
 The system enables network administrators and security professionals to:
 
 1. **Scan** nearby wireless networks and catalogue their security posture
-2. **Deploy a captive portal** on a controlled access point to demonstrate credential interception risks
-3. **Detect threats in real-time** — rogue APs, deauth floods, evil twin attacks, MAC spoofing
+2. **Publish assessment-based security advisories** through a controlled captive portal without collecting credentials or personal information
+3. **Detect supported Wi-Fi threats in real time** through passive, deterministic monitoring
 4. **Score and track** each network's risk over time with CVSS-based scoring
 5. **Manage users and audit trails** — role-based access with full audit logging, mandatory TOTP MFA on every account
 
@@ -151,7 +151,7 @@ graph TB
 whypii/
 ├── src/                          # React frontend (Vite)
 │   ├── api/                      # Axios instance + API service modules (10 files)
-│   ├── assets/                   # Static assets (react.svg)
+│   ├── assets/                   # Application static assets
 │   ├── components/               # Reusable UI components (9 subdirs)
 │   │   ├── accounts/             # AccountsTable, AuditLogsTable, UserForm
 │   │   ├── auth/                 # TotpQrDisplay (MFA enrollment QR/secret)
@@ -163,7 +163,7 @@ whypii/
 │   │   ├── profile/              # ProfileModal
 │   │   └── sam/                  # ExportDropdown, SAMSidebar, ThreatDetail, ThreatsTable, VulnerabilitiesTable
 │   ├── context/                  # React Context providers (NetworkContext, ThreatDetectionContext)
-│   ├── data/                     # Mock/fallback data (dashboardData, mockReportData, mockThreats)
+│   ├── data/                     # Dashboard constants and recommendation data
 │   ├── hooks/                    # Custom React hooks (10 files)
 │   ├── layouts/                  # Sidebar layout component
 │   ├── lib/                      # Supabase client configuration
@@ -175,8 +175,7 @@ whypii/
 │   │   ├── History/              # Scan History page
 │   │   ├── Login/                # Login page
 │   │   ├── Profile/              # Profile page
-│   │   ├── SAM/                  # Security Assessment Management page
-│   │   └── TestAuth/             # Debug/test authentication page
+│   │   └── SAM/                  # Security Assessment Management page
 │   ├── utils/                    # Utilities (exportReport, pollUntil, reportTemplates)
 │   ├── App.jsx                   # Root component with routing
 │   ├── App.css                   # Global layout styles

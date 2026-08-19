@@ -13,7 +13,7 @@ testWebApp/
 │   │   ├── accounts/ auth/ common/ dashboard/ device/ history/ modals/ profile/ sam/
 │   ├── pages/                   # Route-level views, one folder per route group
 │   │   ├── AccountsAudit/ Auth/ Dashboard/ DeviceManagement/ History/
-│   │   │   Login/ Profile/ SAM/ TestAuth/   (TestAuth = dev-only QA harness, excluded from prod build)
+│   │   │   Login/ Profile/ SAM/
 │   ├── context/                 # React context providers
 │   │   ├── NetworkContext.jsx
 │   │   ├── ThreatDetectionContext.jsx   # wraps entire authenticated route tree, single global poll loop
@@ -23,7 +23,6 @@ testWebApp/
 │   │   └── supabaseClient.js
 │   ├── utils/                   # Frontend pure helpers
 │   ├── data/                    # Static/seed data for UI
-│   ├── assets/                  # Images, icons, static assets
 │   └── layouts/                 # Page layout wrappers
 │
 ├── backend/                     # Express API (separate npm project)
@@ -50,15 +49,8 @@ testWebApp/
 ├── public/                       # Static assets served as-is
 ├── docs/                         # Project documentation (see docs/DOCUMENTATION_INDEX.md)
 │   ├── feature-notes/             # Per-feature design/implementation notes
-│   ├── scoring-refactor/
-│   └── superpowers/plans/
-├── patches/                       # Dependency patches
-├── qa-results/, reports/, test-results/   # Generated test/QA artifacts (not source)
-│
-├── .claude/                       # Claude Code config: CLAUDE.md, rules.md, skills/, worktrees/
-├── .agents/skills/                 # Portable/marketplace skill packs (tool-agnostic, outside .claude/)
-├── .vscode/
-├── .vite-cache/
+│   └── scoring-refactor/
+├── reports/                      # Selected final academic security evidence
 │
 ├── vite.config.js                 # CSP headers here must stay in sync with backend/server.js (Helmet)
 ├── eslint.config.js
@@ -73,4 +65,4 @@ testWebApp/
 
 New pure-function logic goes in `backend/utils/` (unit-tested, coverage-enforced). Most scoring/formatting bugs belong there, not in controllers.
 
-See [`../.claude/CLAUDE.md`](../.claude/CLAUDE.md) for full architecture rules and non-negotiables, and [`DOCUMENTATION_INDEX.md`](DOCUMENTATION_INDEX.md) for the full docs map.
+See [`DOCUMENTATION_INDEX.md`](DOCUMENTATION_INDEX.md) for the full documentation map.

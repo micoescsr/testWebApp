@@ -1,8 +1,8 @@
 # Security & Risks
 
-> **Security Hardening Phase:** Partially complete (8/10 current posture per README)  
-> **Reference:** `SECURITY_HARDENING_PLAN.md` in project root  
-> **Last Updated:** 2026-06-22
+> **Status:** As-built security model and known-risk register
+> **Reference:** [`feature-notes/SECURITY_HARDENING_PLAN.md`](./feature-notes/SECURITY_HARDENING_PLAN.md)
+> **Last Updated:** 2026-08-14
 
 > Full MFA/AAL2 architecture, mechanics, and recovery procedure live in
 > [`AUTHENTICATION_AND_AUTHORIZATION.md` §11](./AUTHENTICATION_AND_AUTHORIZATION.md#11-multi-factor-authentication-totp) —
@@ -264,7 +264,7 @@ The backend performs fail-fast validation on startup. Missing required variables
 
 | Risk | Description | Mitigation Status |
 |------|-------------|:-----------------:|
-| `deviceApi.js` hardcoded URL | Uses `localhost:3000` instead of shared Axios instance | ⚠️ Not fixed |
+| Frontend API base URL | `deviceApi.js` uses the shared Axios instance and environment-configured base URL | ✅ Implemented |
 | In-memory rate limiter | Resets on restart, no cross-instance sharing | ⚠️ Needs Redis |
 | `err.message` leaks | Some controllers expose internal error messages | ⚠️ Partial fix |
 | No CSRF tokens | Relies on SameSite + CORS (sufficient for modern browsers) | ℹ️ Acceptable |
@@ -274,7 +274,6 @@ The backend performs fail-fast validation on startup. Missing required variables
 | Risk | Description | Mitigation Status |
 |------|-------------|:-----------------:|
 | `unsafe-inline` styles | CSP allows inline styles for Recharts | ℹ️ Acceptable trade-off |
-| No explicit 404 route | Unmatched frontend routes show empty content | ⚠️ Not implemented |
 | Report template injection | `reportTemplates.js` generates HTML from user data | ℹ️ Opens in new tab |
 | `console.log` statements | Debug logs in production (multiple hooks) | ⚠️ Should be removed |
 | No request body validation on some routes | Some POST endpoints may lack express-validator | ⚠️ Needs audit |
@@ -291,7 +290,7 @@ The backend performs fail-fast validation on startup. Missing required variables
 
 ## 10. Security Hardening Progress
 
-Reference: `SECURITY_HARDENING_PLAN.md`
+Reference: [`feature-notes/SECURITY_HARDENING_PLAN.md`](./feature-notes/SECURITY_HARDENING_PLAN.md)
 
 | Phase | Name | Status | Key Items |
 |:---:|------|:------:|-----------|
@@ -299,7 +298,7 @@ Reference: `SECURITY_HARDENING_PLAN.md`
 | 1 | P0 Infrastructure | ✅ Done | `trust proxy`, Helmet/CSP, rate limiting, env validation |
 | 2 | Route Auth Lockdown | ✅ Done | `authJWT` on all 9 route groups, `requireSuperadmin` on audit |
 | 3 | Bug Fixes & Info Disclosure | ⚠️ Partial | Most leaks sealed; residual `err.message` in some controllers |
-| 4 | Deployment Readiness | ⚠️ Partial | CORS via env, `VITE_API_BASE_URL`; `deviceApi.js` still hardcoded |
+| 4 | Deployment Readiness | ⚠️ Partial | CORS and frontend API base URL are environment-configured; deployment values still require environment-specific verification |
 | 4.5 | Pi Connectivity Readiness | ❌ Not started | Funnel URL stability, nginx binding, Idempotency-Key |
 | 5 | Optional Polish | ✅ Done | UUID validation middleware |
 | 6 | Testing Deliverables | ✅ Done | Jest unit/integration, Playwright E2E, coverage |

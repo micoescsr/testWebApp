@@ -109,10 +109,10 @@ src/
 │   ├── NetworkContext.jsx        # Network/scan selection (sessionStorage-backed)
 │   └── ThreatDetectionContext.jsx # Global threat detection state + polling
 │
-├── data/                         # Static / Mock Data
-│   ├── dashboardData.js          # Fallback chart data + color constants
-│   ├── mockReportData.js         # Mock data for PDF report generation
-│   └── mockThreats.js            # Mock threat definitions
+├── data/                         # Static application data
+│   ├── dashboardData.js          # Shared chart color constants
+│   ├── recommendationData.json   # Finding-specific recommendation data
+│   └── recommendationMap.js      # Frontend recommendation helpers
 │
 ├── hooks/                        # Custom React Hooks
 │   ├── useAuditLogs.js           # Paginated audit log fetching + CSV export
@@ -141,8 +141,7 @@ src/
 │   ├── History/                  # Historical scan data browser
 │   ├── Login/                    # Email/password login
 │   ├── Profile/                  # User profile viewer
-│   ├── SAM/                      # Security Assessment Management (main feature page)
-│   └── TestAuth/                 # Debug authentication testing page
+│   └── SAM/                      # Security Assessment Management (main feature page)
 │
 ├── utils/                        # Utility Functions
 │   ├── exportReport.js           # Print-to-PDF report export
@@ -207,7 +206,7 @@ sequenceDiagram
 | **Type** | Client-Side SPA (CSR) |
 | **SSR/SSG** | Not used |
 | **Bundler** | Vite 7 with `@vitejs/plugin-react` |
-| **Code Splitting** | `lazy()`/`Suspense` route-level splitting — every page (`Dashboard`, `SAM`, `DeviceManagement`, `AccountsAudit`, `History`, `Profile`, `Login`, `ForgotPassword`, `ResetPassword`, `ForceResetPassword`, `MFASetup`, dev-only `TestAuth`) is dynamically imported in `src/App.jsx:11-34` |
+| **Code Splitting** | `lazy()`/`Suspense` route-level splitting for all route-level pages in `src/App.jsx` |
 | **Dev Server** | Vite dev server on `:5173` with proxy to backend `:3000` |
 | **Production** | `vite build` → `dist/` → `serve -s dist` on Railway |
 

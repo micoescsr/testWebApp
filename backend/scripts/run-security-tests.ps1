@@ -1,6 +1,6 @@
 ###############################################################################
 # COMPREHENSIVE SECURITY TESTING - All Chunks
-# Outputs results to: security_testing_results.md
+# Outputs generated results under reports/ (ignored by Git).
 ###############################################################################
 
 $base = "http://localhost:3000"
@@ -408,7 +408,7 @@ Write-Host " GENERATING RESULTS FILE..." -ForegroundColor Cyan
 Write-Host "====================================================================" -ForegroundColor Cyan
 
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$outPath = Join-Path (Join-Path $repoRoot "reports") "security_testing_results_rerun.md"
+$outPath = Join-Path (Join-Path $repoRoot "reports") "security-testing-latest.generated.md"
 
 # Count results
 $passCount = ($results | Where-Object { $_.Status -eq "PASS" }).Count
@@ -497,5 +497,5 @@ Write-Host ""
 Write-Host "====================================================================" -ForegroundColor Cyan
 Write-Host " TESTING COMPLETE" -ForegroundColor Cyan
 Write-Host " PASS: $passCount | FAIL: $failCount | WARN: $warnCount | TOTAL: $totalCount" -ForegroundColor Cyan
-Write-Host " Results saved to: security_testing_results.md" -ForegroundColor Cyan
+Write-Host " Results saved to: $outPath" -ForegroundColor Cyan
 Write-Host "====================================================================" -ForegroundColor Cyan
